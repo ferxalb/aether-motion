@@ -9,8 +9,8 @@ use crate::parse::values::tokens::split_top;
 use crate::parse::values::transform::parse_transform;
 use anyhow::{anyhow, bail, Context, Result};
 
-/// `backdrop-filter`: only `none` or a single `blur(<px>)` (at most 200 px) is supported.
-fn parse_backdrop_blur(value: &str, property: &str) -> Result<f32> {
+/// `backdrop-filter` and `filter`: only `none` or a single `blur(<px>)` (at most 200 px) is supported.
+fn parse_blur_filter(value: &str, property: &str) -> Result<f32> {
     let value = value.trim();
     if value == "none" {
         return Ok(0.0);
@@ -53,8 +53,9 @@ pub(super) fn apply(key: &str, value: &str, style: &mut Style) -> Result<bool> {
         }
         "box-shadow" => style.shadows = parse_box_shadows(value)?,
         "backdrop-filter" | "-webkit-backdrop-filter" => {
-            style.backdrop_blur = parse_backdrop_blur(value, key)?
+            style.backdrop_blur = parse_blur_filter(value, key)?
         }
+        "filter" | "-webkit-filter" => style.filter_blur = parse_blur_filter(value, key)?,
         "border" => {
             (style.border_width, style.border_color) = (0.0, None);
             for token in split_top(value, ' ') {

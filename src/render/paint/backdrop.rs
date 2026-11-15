@@ -8,7 +8,7 @@ use crate::render::geometry::{clip_pixels, Rect};
 use crate::render::paint::Surface;
 
 /// Radius in pixels of each box blur so that three of them approximate a gaussian of `sigma`.
-fn box_radius(sigma: f32) -> usize {
+pub(super) fn box_radius(sigma: f32) -> usize {
     let width = (4.0 * sigma * sigma + 1.0).sqrt();
     ((width - 1.0) / 2.0).round().max(0.0) as usize
 }
@@ -74,7 +74,7 @@ fn blur_vertical(
 }
 
 /// Three horizontal then three vertical box blurs over a `width` x `height` plane.
-fn blur_plane(plane: &mut [f32], width: usize, height: usize, radius: usize) {
+pub(super) fn blur_plane(plane: &mut [f32], width: usize, height: usize, radius: usize) {
     let mut tmp = Vec::with_capacity(width.max(height));
     for _ in 0..3 {
         for row in plane.chunks_exact_mut(width) {

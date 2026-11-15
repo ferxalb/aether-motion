@@ -187,6 +187,9 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
             }
             p.element.motion = motion_from_camera(rest, &p.camera);
         }
+        if idx == 0 && p.element.style.filter_blur > 0.0 {
+            bail!("filter: blur cannot be on the root; add a container inside it");
+        }
         if let Some(spec) = p.reveal.take() {
             if idx == 0 {
                 bail!("data-hf-reveal cannot be on the root; add a container inside it");

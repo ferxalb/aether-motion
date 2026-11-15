@@ -33,6 +33,29 @@ pub enum OutputSize {
     Uhd,
 }
 
+impl OutputSize {
+    /// Output `(width, height)` for a composition of the given size: 16:9 landscape or 9:16 portrait.
+    ///
+    /// The preset names the short edge of a portrait frame and the long edge of a landscape one, so
+    /// `1080p` is 1920x1080 or 1080x1920 and `4k` is 3840x2160 or 2160x3840.
+    pub fn dimensions(self, width: u32, height: u32) -> Result<(u32, u32)> {
+        let (long, short) = match self {
+            Self::FullHd => (1920, 1080),
+            Self::Uhd => (3840, 2160),
+        };
+        let (w, h) = (u64::from(width), u64::from(height));
+        if w * 9 == h * 16 {
+            Ok((long, short))
+        } else if w * 16 == h * 9 {
+            Ok((short, long))
+        } else {
+            Err(anyhow!(
+                "size requires a 16:9 or 9:16 composition; use --scale for other aspect ratios"
+            ))
+        }
+    }
+}
+
 impl std::str::FromStr for OutputSize {
     type Err = anyhow::Error;
 
@@ -77,15 +100,7 @@ pub(crate) fn check_image(path: &Path) -> Result<()> {
 
 impl<'a> Renderer<'a> {
     pub fn with_output_size(composition: &'a Composition, size: OutputSize) -> Result<Self> {
-        if u64::from(composition.width) * 9 != u64::from(composition.height) * 16 {
-            return Err(anyhow!(
-                "size requires a 16:9 composition; use --scale for other aspect ratios"
-            ));
-        }
-        let (width, height) = match size {
-            OutputSize::FullHd => (1920, 1080),
-            OutputSize::Uhd => (3840, 2160),
-        };
+        let (width, height) = size.dimensions(composition.width, composition.height)?;
         Self::with_dimensions(
             composition,
             width as f32 / composition.width as f32,
@@ -285,5 +300,31 @@ impl<'a> Renderer<'a> {
                 row.as_chunks_mut::<4>().0.fill(rgba);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod size_tests {
+    use super::OutputSize;
+
+    #[test]
+    fn presets_follow_the_orientation_of_the_composition() {
+        assert_eq!(
+            OutputSize::FullHd.dimensions(1920, 1080).unwrap(),
+            (1920, 1080)
+        );
+        assert_eq!(
+            OutputSize::FullHd.dimensions(1080, 1920).unwrap(),
+            (1080, 1920)
+        );
+        assert_eq!(OutputSize::Uhd.dimensions(1280, 720).unwrap(), (3840, 2160));
+        assert_eq!(OutputSize::Uhd.dimensions(540, 960).unwrap(), (2160, 3840));
+    }
+
+    #[test]
+    fn other_aspect_ratios_are_rejected() {
+        let error = OutputSize::FullHd.dimensions(1000, 1000).unwrap_err();
+        assert!(error.to_string().contains("9:16"), "{error}");
+        assert!(OutputSize::Uhd.dimensions(1080, 1080).is_err());
     }
 }

@@ -1,11 +1,11 @@
-//! `box-shadow` (a list of outer shadows) and `text-shadow` (one) parsing.
+//! `box-shadow` (a list of outer and `inset` shadows) and `text-shadow` (one) parsing.
 use crate::model::{Color, Length, Shadow};
 use crate::parse::values::color::parse_color;
 use crate::parse::values::length::parse_length;
 use crate::parse::values::tokens::split_top;
 use anyhow::{bail, Result};
 
-/// Parses a `box-shadow` list (comma separated outer shadows, at most 8) in CSS order.
+/// Parses a `box-shadow` list (comma separated outer or inset shadows, at most 8) in CSS order.
 pub(in crate::parse) fn parse_box_shadows(raw: &str) -> Result<Vec<Shadow>> {
     let raw = raw.trim();
     if raw == "none" {
@@ -35,9 +35,16 @@ pub(in crate::parse) fn parse_shadow(raw: &str, property: &str) -> Result<Option
     }
     let mut lengths = Vec::new();
     let mut color = None;
+    let mut inset = false;
     for token in split_top(raw, ' ') {
         if token == "inset" {
-            bail!("{property}: inset is unsupported");
+            if !allow_spread {
+                bail!("{property}: inset is unsupported");
+            }
+            if std::mem::replace(&mut inset, true) {
+                bail!("{property}: inset given twice: {raw}");
+            }
+            continue;
         }
         let numeric =
             token.starts_with(|c: char| c.is_ascii_digit() || matches!(c, '.' | '-' | '+'));
@@ -69,6 +76,7 @@ pub(in crate::parse) fn parse_shadow(raw: &str, property: &str) -> Result<Option
         blur,
         spread,
         color: color.unwrap_or(Color::BLACK),
+        inset,
     }))
 }
 
@@ -87,8 +95,16 @@ mod tests {
     }
 
     #[test]
-    fn rejects_inset_and_long_lists() {
-        assert!(parse_box_shadows("inset 0 2px 4px #000").is_err());
+    fn parses_inset_anywhere_in_a_layer() {
+        let list = parse_box_shadows("inset 0 2px 4px #000, 0 1px 2px #fff inset").unwrap();
+        assert!(list[0].inset && list[1].inset);
+        assert!(!parse_box_shadows("0 2px 4px #000").unwrap()[0].inset);
+        assert!(parse_box_shadows("inset inset 0 2px #000").is_err());
+        assert!(parse_shadow("inset 0 2px 4px #000", "text-shadow").is_err());
+    }
+
+    #[test]
+    fn rejects_long_lists_and_none_in_a_list() {
         assert!(parse_box_shadows(&["0 1px 2px #000"; 9].join(", ")).is_err());
         assert!(parse_box_shadows("0 2px 4px #000, none").is_err());
     }

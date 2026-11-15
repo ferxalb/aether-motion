@@ -2,7 +2,7 @@
 
 use crate::model::{Color, Shadow};
 use crate::render::geometry::{clip_pixels, Rect};
-use crate::render::paint::shape::{erfc, rounded_distance};
+use crate::render::paint::shape::{rounded_distance, GaussianEdge};
 use crate::render::paint::surface::Surface;
 
 impl Surface {
@@ -31,7 +31,8 @@ impl Surface {
             element[2] + shadow.x * unit + spread,
             element[3] + shadow.y * unit + spread,
         ];
-        let tail = sigma * 3.0;
+        let edge = GaussianEdge::new(sigma);
+        let tail = edge.tail;
         let reach = tail.ceil() + 1.0;
         let Some(bounds) = clip_pixels(
             (self.width, self.height),
@@ -46,33 +47,6 @@ impl Surface {
         let cast_radius = (radius * k + spread).max(0.0);
         let element_radius = radius * k;
         let strength = alpha * f32::from(shadow.color.a) / 255.0;
-        // Gaussian edge profile sampled every 1/16 px; beyond +-3 sigma it is flat.
-        const STEPS_PER_PX: f32 = 16.0;
-        let table: Vec<f32> = if sigma < 0.01 {
-            Vec::new()
-        } else {
-            let n = (tail * 2.0 * STEPS_PER_PX).ceil() as usize + 1;
-            (0..=n)
-                .map(|i| {
-                    let d = -tail + i as f32 / STEPS_PER_PX;
-                    0.5 * erfc(d / (sigma * std::f32::consts::SQRT_2))
-                })
-                .collect()
-        };
-        let coverage = |distance: f32| -> f32 {
-            if table.is_empty() {
-                (0.5 - distance).clamp(0.0, 1.0)
-            } else if distance >= tail {
-                0.0
-            } else if distance <= -tail {
-                1.0
-            } else {
-                let position = (distance + tail) * STEPS_PER_PX;
-                let i = (position as usize).min(table.len() - 2);
-                let fraction = position - i as f32;
-                table[i] + (table[i + 1] - table[i]) * fraction
-            }
-        };
         let (center_y, half_y) = (
             (element[1] + element[3]) / 2.0,
             (element[3] - element[1]) / 2.0,
@@ -98,7 +72,7 @@ impl Surface {
                 }
                 let px = x as f32 + 0.5;
                 let distance = rounded_distance(px, py, cast, cast_radius);
-                let hidden = coverage(distance) * strength;
+                let hidden = edge.coverage(distance) * strength;
                 if hidden > 0.002 {
                     // CSS clips the shadow under the element itself.
                     let outside =

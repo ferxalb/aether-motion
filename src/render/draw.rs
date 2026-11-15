@@ -67,6 +67,21 @@ impl<'a> Renderer<'a> {
             rect.y = cy - rect.h / 2.0;
             cumulative *= state.scale;
         }
+        let sigma = self.composition.elements[idx].style.filter_blur * cumulative * self.scale;
+        if idx != 0 && sigma > 0.0 {
+            return self.draw_filtered(idx, rect, cumulative, sigma);
+        }
+        self.draw_posed(idx, rect, cumulative)
+    }
+
+    /// Draws a placed element through its reveal, rotation, or plain box path.
+    pub(in crate::render) fn draw_posed(
+        &mut self,
+        idx: usize,
+        rect: Rect,
+        cumulative: f32,
+    ) -> Result<()> {
+        let state = self.current[idx];
         if idx != 0 && state.reveal < 1.0 {
             if let Some(from) = self.composition.elements[idx].motion.wipe {
                 return self.draw_revealed(idx, rect, cumulative, state.reveal, from);
@@ -92,7 +107,7 @@ impl<'a> Renderer<'a> {
             return Ok(());
         }
         // The first shadow of the list sits on top, so paint from the last one backwards.
-        for &shadow in element.style.shadows.iter().rev() {
+        for &shadow in element.style.shadows.iter().rev().filter(|s| !s.inset) {
             self.surface
                 .draw_shadow(rect, radius, shadow, alpha, cumulative);
         }
@@ -122,6 +137,18 @@ impl<'a> Renderer<'a> {
             None => {}
         }
         let border = element.style.border_width * cumulative;
+        // Inset shadows live in the padding box: above the background, below border and content.
+        let padding_box = Rect {
+            x: rect.x + border,
+            y: rect.y + border,
+            w: (rect.w - 2.0 * border).max(0.0),
+            h: (rect.h - 2.0 * border).max(0.0),
+        };
+        let inner_radius = (radius - border).max(0.0);
+        for &shadow in element.style.shadows.iter().rev().filter(|s| s.inset) {
+            self.surface
+                .draw_inset_shadow(padding_box, inner_radius, shadow, alpha, cumulative);
+        }
         if border > 0.0 {
             let color = element.style.border_color.unwrap_or(Color::WHITE);
             self.surface.draw_border(rect, radius, border, color, alpha);

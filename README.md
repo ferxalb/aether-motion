@@ -35,6 +35,7 @@ cargo run --release -- render examples/title-card.html --output /tmp/title-ffmpe
 | `data-hf-reveal` | Native extension; uncover an element from one edge (wipes, growing bars, mask reveals) |
 | `data-hf-counter` | Native extension; animated numbers with prefix, suffix, decimals, and thousands separators |
 | `data-hf-transition` | Native extension; crossfade, push, cover, wipe, and zoom transitions between overlapping scene clips |
+| `filter: blur()` | Blurs the whole element (box, shadows, content, children) on an offscreen layer |
 | `backdrop-filter: blur()` | Glass cards: blurs the already painted backdrop behind a translucent element |
 | `data-hf-vignette`, `data-hf-grain` | Native extension on the root; frame-wide corner darkening and deterministic film grain |
 | `data-hf-camera` | Native extension; zoom in/out and pan with a focus point over a container's whole subtree |
@@ -61,7 +62,7 @@ aether-hyperframes render examples/motion.html --size 1080p --fps 60 --output /t
 aether-hyperframes render examples/motion.html --size 4k --fps 30 --output /tmp/motion-4k.mp4
 ```
 
-The presets produce 1920×1080 and 3840×2160 from 16:9 compositions. Both support 30 and 60 fps. For other aspect ratios, use `--scale` or set the output dimensions in the HTML. Native MP4 supports up to 60 fps and even dimensions up to 3840×2160 or 2160×3840. The file uses a constant frame rate. Export time depends on the scene and the machine.
+The presets produce 1920×1080 and 3840×2160 from 16:9 compositions, and 1080×1920 and 2160×3840 from 9:16 (vertical) ones. Both support 30 and 60 fps. For other aspect ratios, use `--scale` or set the output dimensions in the HTML. Native MP4 supports up to 60 fps and even dimensions up to 3840×2160 or 2160×3840. The file uses a constant frame rate. Export time depends on the scene and the machine.
 
 In MCP, the same presets are available through `size`. Use either `size` or `scale` in each call.
 
@@ -99,6 +100,6 @@ The code uses portable Rust APIs, and the repository includes a CI matrix for Li
 
 - `src/model.rs`: parsed composition, styles, and time-sampled motion tracks.
 - `src/parse/`: HTML/CSS parser; unsupported features fail with explicit errors. `mod.rs` is the `parse_file` facade; `css/` (stylesheet, selectors, cascade, variables), `values/` (lengths, colors, backgrounds, transforms, shadows), `style/` (property groups: layout, text, visual), `animation/` (CSS animation, `data-hf-keyframes`, and `data-hf-camera` into motion tracks), `split.rs` (`data-hf-split` kinetic text), `transition.rs` (`data-hf-transition` scene transitions), `tree.rs` (DOM walk), `timeline.rs` (`data-start`), `html.rs` (node helpers).
-- `src/render/`: software renderer. `mod.rs` holds the public `Renderer` and frame loop; `draw.rs` walks the scene; `layout/` sizes and places flex items; `paint/` holds the `Surface` pixel buffer and its primitives (fills, borders, box shadows, backdrop blur, images, rotation, and the vignette/grain `finish` pass); `text/` handles fonts, inherited properties, line wrapping (`wrap.rs`), block layout (`block.rs`), glyph painting, and `text-shadow` (`shadow.rs`); `geometry.rs` and `frame_state.rs` hold small shared types.
+- `src/render/`: software renderer. `mod.rs` holds the public `Renderer` and frame loop; `draw.rs` walks the scene; `layout/` sizes and places flex items; `paint/` holds the `Surface` pixel buffer and its primitives (fills, borders, outer and inset box shadows, backdrop and element blur, images, rotation, and the vignette/grain `finish` pass); `text/` handles fonts, inherited properties, line wrapping (`wrap.rs`), block layout (`block.rs`), glyph painting, and `text-shadow` (`shadow.rs`); `geometry.rs` and `frame_state.rs` hold small shared types.
 - `src/blocks/` and `blocks/`: ready-made blocks and themes. `blocks/*.html` are `{{name|default}}` templates embedded by `catalog.rs`; `template.rs` fills them; `mod.rs` serves the `block` CLI command and the `aether_block` MCP tool.
 - `src/encode.rs`: native H.264/MP4 encoding. `src/agent.rs`: `check` and the MCP server.

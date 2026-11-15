@@ -511,8 +511,8 @@ fn box_shadow_falls_off_outside_and_stays_under_the_element() {
 fn flex_and_shadow_errors_are_explicit() {
     let cases = [
         (
-            ".a { box-shadow: inset 0 0 4px #000 }",
-            "inset is unsupported",
+            ".a { box-shadow: inset inset 0 0 4px #000 }",
+            "inset given twice",
         ),
         (".a { flex-direction: row-reverse }", "flex-direction"),
         (".a { padding: -1px }", "non-negative"),

@@ -93,7 +93,7 @@ pub struct Gradient {
     pub stops: Vec<Stop>,
 }
 
-/// Single outer `box-shadow` (no inset).
+/// One `box-shadow` layer (outer or `inset`) or the single `text-shadow` (never inset).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Shadow {
     pub x: f32,
@@ -101,6 +101,8 @@ pub struct Shadow {
     pub blur: f32,
     pub spread: f32,
     pub color: Color,
+    /// `inset`: the shadow is cast inside the padding box instead of outside the border box.
+    pub inset: bool,
 }
 
 /// `line-height`: a multiple of the font size (unitless) or an absolute size in px.
@@ -152,10 +154,13 @@ pub struct Style {
     pub scale: Option<f32>,
     /// Static `transform: rotate()` in degrees, clockwise, around the element center.
     pub rotate: f32,
-    /// `box-shadow` layers in CSS order (the first is painted on top); empty means none.
+    /// `box-shadow` layers (outer and inset) in CSS order (the first is painted on top); empty means none.
     pub shadows: Vec<Shadow>,
     /// `backdrop-filter: blur(<px>)` radius (standard deviation) in composition px; 0 means none.
     pub backdrop_blur: f32,
+    /// `filter: blur(<px>)` radius (standard deviation) in composition px applied to the whole element
+    /// (box, shadows, content, children); 0 means none.
+    pub filter_blur: f32,
     /// Solid border drawn inside the box (border-box sizing); `None` color means white.
     pub border_width: f32,
     pub border_color: Option<Color>,
