@@ -24,9 +24,21 @@ fn box_line(line: &mut [f32], tmp: &mut Vec<f32>, radius: usize) {
     let window = (2 * radius + 1) as f32;
     let mut sum: f32 = (-r..=r).map(|k| line[k.clamp(0, last) as usize]).sum();
     tmp.clear();
-    for i in 0..n as isize {
+    // Interior pixels need no index clamping; only the first and last `radius` pixels do.
+    // The sums are updated in the same order as the clamped version, so results are identical.
+    let interior_from = (r + 1).min(n as isize) as usize;
+    let interior_to = (n as isize - r - 1).max(interior_from as isize) as usize;
+    for i in 0..interior_from {
         tmp.push(sum / window);
-        sum += line[(i + r + 1).min(last) as usize] - line[(i - r).max(0) as usize];
+        sum += line[(i as isize + r + 1).min(last) as usize] - line[(i as isize - r).max(0) as usize];
+    }
+    for i in interior_from..interior_to {
+        tmp.push(sum / window);
+        sum += line[i + radius + 1] - line[i - radius];
+    }
+    for i in interior_to.max(interior_from)..n {
+        tmp.push(sum / window);
+        sum += line[(i as isize + r + 1).min(last) as usize] - line[(i as isize - r).max(0) as usize];
     }
     line.copy_from_slice(tmp);
 }
@@ -159,6 +171,21 @@ mod tests {
         assert_eq!(box_radius(0.0), 0);
         assert_eq!(box_radius(10.0), 10);
         assert!(box_radius(30.0) > box_radius(10.0));
+    }
+
+    #[test]
+    fn box_line_matches_a_clamped_reference_for_every_radius() {
+        let src: Vec<f32> = (0..13).map(|i| ((i * 29) % 17) as f32).collect();
+        for radius in [1usize, 2, 5, 6, 7, 30] {
+            let mut fast = src.clone();
+            box_line(&mut fast, &mut Vec::new(), radius);
+            let r = radius as isize;
+            let mut sum: f32 = (-r..=r).map(|k| src[k.clamp(0, 12) as usize]).sum();
+            for i in 0..13isize {
+                assert_eq!(fast[i as usize], sum / (2 * radius + 1) as f32, "r={radius} i={i}");
+                sum += src[(i + r + 1).min(12) as usize] - src[(i - r).max(0) as usize];
+            }
+        }
     }
 
     #[test]

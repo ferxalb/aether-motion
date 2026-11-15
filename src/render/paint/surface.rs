@@ -19,6 +19,8 @@ pub(in crate::render) struct Surface {
     pub(in crate::render) finish_lut: Option<super::finish::FinishLut>,
     /// Rasterized gradients reused across frames (see `gradient::GradientCache`).
     pub(in crate::render) gradient_cache: super::gradient::GradientCache,
+    /// Soft box-shadow masks reused across frames (see `shadow::ShadowCache`).
+    pub(in crate::render) shadow_cache: super::shadow::ShadowCache,
 }
 
 impl Surface {
@@ -33,6 +35,7 @@ impl Surface {
             scale,
             finish_lut: None,
             gradient_cache: Default::default(),
+            shadow_cache: Default::default(),
         }
     }
 

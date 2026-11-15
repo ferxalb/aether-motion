@@ -100,3 +100,29 @@ Estimated cost of each effect now: vignette plus grain about 1.5 ms per frame (w
 | 1920×1080 (`--size 1080p`), one run | 25.3 s | 265 MB | 2,068,017 bytes |
 
 Both 540p exports have the same SHA-256, so output is deterministic. The 1080p file's container was parsed directly: 450 samples, 15.000 s at a timescale of 30, and a 1920×1080 track. No external player or transcoder was available, so decoding was not verified here. These are single runs; treat differences under about 10% as noise.
+
+## Tile cache and lower default CPU use
+
+Release build, drawing only (`bench`), `--scale 0.25` of a 1920x1080 composition (480x270), 30 fps, one run per row at `nice 10`; treat differences under about 10% as noise. "Before" is the build prior to this change.
+
+| Composition | Frames | Before | After | Change |
+| --- | ---: | ---: | ---: | ---: |
+| [`premium-promo.html`](examples/premium-promo.html) | 450 | 2.69 s | 1.48 s | −45% |
+| [`glass.html`](examples/glass.html) | 120 | 0.80 s | 0.40 s | −50% |
+
+At 960x540 the first step (the radial glows) took `premium-promo.html` from 10.27 s to about 7.7 s before the cache was added. Earlier profiling showed the two full-frame radial glows were about half of the drawing time.
+
+What changed:
+
+- Square-cornered gradients (the drifting glows) and soft box shadows (sigma of 2 px or more) are rasterized once per size and blended on later frames. Each tile is fixed point (gradient color x256, alpha x4096; shadow coverage x65535), so output can differ from direct drawing by up to one level per channel, and a moving card's shadow snaps to whole pixels. Tests compare both paths.
+- The horizontal pass of the backdrop blur has an interior loop without index clamping; it is bit-identical to the old loop (tested).
+- Remaining cost in `premium-promo.html` (attribution by removing one effect, 480x270): `backdrop-filter` about 0.47 s, glows about 0.33 s, box shadows about 0.25 s of 1.48 s. The backdrop blur reads what changes every frame, so it cannot use this cache.
+
+Native MP4 export of `premium-promo.html` at `--scale 0.25` (30 fps, 450 frames):
+
+| Build | Workers | Wall time | User CPU time |
+| --- | ---: | ---: | ---: |
+| Before | 4 | 0.95 s | 3.22 s |
+| Now (defaults) | 3 | 0.79 s | 2.03 s |
+
+The default worker count is now a quarter of the cores (1 to 4) and the priority is lowered, so the MP4 is no longer byte-identical to earlier builds, though it is still identical for any `--threads` value. Measured once; a second measurement after the shadow cache and blur change was not repeated.

@@ -14,6 +14,7 @@ mod rotate;
 mod shadow;
 mod shape;
 mod surface;
+mod tile_cache;
 
 pub(super) use images::{CachedImage, ImageKey};
 pub(super) use surface::Surface;

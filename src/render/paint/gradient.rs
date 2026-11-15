@@ -8,7 +8,7 @@
 use crate::model::{Color, Gradient, GradientKind, LinearDirection, Stop};
 use crate::render::geometry::{clip_pixels, Rect};
 use crate::render::paint::surface::Surface;
-use std::collections::HashMap;
+use crate::render::paint::tile_cache::TileCache;
 
 /// 4x4 Bayer matrix, mapped to thresholds in (-0.5, 0.5).
 const BAYER: [[f32; 4]; 4] = [
@@ -118,12 +118,9 @@ impl Mapper {
     }
 }
 
-/// Memory one surface may spend on cached gradient tiles.
-const TILE_BUDGET_BYTES: usize = 64 * 1024 * 1024;
-
 /// One rasterized gradient: premultiplied color (x256) and alpha (x4096) per texel, plus the
 /// painted column range of each row so fully transparent margins cost nothing.
-struct Tile {
+pub(in crate::render) struct Tile {
     width: usize,
     texels: Vec<[u16; 4]>,
     spans: Vec<(u32, u32)>,
@@ -161,50 +158,8 @@ impl Tile {
     }
 }
 
-enum Slot {
-    /// Drawn once directly; a second draw of the same size builds the tile.
-    Seen,
-    Ready(Tile),
-    /// Over budget: always drawn directly.
-    Direct,
-}
-
-/// Tiles keyed by gradient identity and pixel size. Drawing a gradient once (a snapshot) never
-/// pays for a tile.
-#[derive(Default)]
-pub(in crate::render) struct GradientCache {
-    slots: HashMap<(usize, usize, usize), Slot>,
-    bytes: usize,
-}
-
-impl GradientCache {
-    /// The tile to blend, or `None` when this draw should take the direct path.
-    fn tile(&mut self, gradient: &Gradient, width: usize, height: usize) -> Option<&Tile> {
-        let key = (gradient as *const Gradient as usize, width, height);
-        match self.slots.get(&key) {
-            None => {
-                self.slots.insert(key, Slot::Seen);
-                return None;
-            }
-            Some(Slot::Direct) => return None,
-            Some(Slot::Seen) => {
-                let cost = width * height * 8;
-                if self.bytes + cost > TILE_BUDGET_BYTES {
-                    self.slots.insert(key, Slot::Direct);
-                    return None;
-                }
-                self.bytes += cost;
-                self.slots
-                    .insert(key, Slot::Ready(Tile::build(gradient, width, height)));
-            }
-            Some(Slot::Ready(_)) => {}
-        }
-        match self.slots.get(&key) {
-            Some(Slot::Ready(tile)) => Some(tile),
-            _ => None,
-        }
-    }
-}
+/// Gradient tiles keyed by gradient identity and pixel size.
+pub(in crate::render) type GradientCache = TileCache<(usize, usize, usize), Tile>;
 
 impl Surface {
     pub(in crate::render) fn fill_gradient_general(
@@ -226,7 +181,11 @@ impl Surface {
             if alpha <= 0.0 {
                 return;
             }
-            if let Some(tile) = self.gradient_cache.tile(gradient, w, h) {
+            let key = (gradient as *const Gradient as usize, w, h);
+            if let Some(tile) = self
+                .gradient_cache
+                .get_or_build(key, w * h * 8, || Tile::build(gradient, w, h))
+            {
                 let alpha = alpha.clamp(0.0, 1.0);
                 for y in bounds.y0..bounds.y1 {
                     let ty = (y as i32 - y0) as usize;
