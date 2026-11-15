@@ -1,10 +1,14 @@
 //! General gradient fills: angled and corner `linear-gradient`, multi-stop, translucent stops,
 //! and `radial-gradient`. Evaluated per pixel with an ordered dither so dark ramps do not band.
 //! The two-opaque-stop axis case stays on the faster `Surface::fill_gradient`.
+//!
+//! A square gradient that is drawn again with the same size (a drifting glow, for example) is
+//! rasterized once into a fixed-point tile; later frames only blend that tile at the new offset.
 
 use crate::model::{Color, Gradient, GradientKind, LinearDirection, Stop};
 use crate::render::geometry::{clip_pixels, Rect};
 use crate::render::paint::surface::Surface;
+use std::collections::HashMap;
 
 /// 4x4 Bayer matrix, mapped to thresholds in (-0.5, 0.5).
 const BAYER: [[f32; 4]; 4] = [
@@ -114,6 +118,94 @@ impl Mapper {
     }
 }
 
+/// Memory one surface may spend on cached gradient tiles.
+const TILE_BUDGET_BYTES: usize = 64 * 1024 * 1024;
+
+/// One rasterized gradient: premultiplied color (x256) and alpha (x4096) per texel, plus the
+/// painted column range of each row so fully transparent margins cost nothing.
+struct Tile {
+    width: usize,
+    texels: Vec<[u16; 4]>,
+    spans: Vec<(u32, u32)>,
+}
+
+impl Tile {
+    fn build(gradient: &Gradient, width: usize, height: usize) -> Self {
+        let mapper = Mapper::new(&gradient.kind, [0.0, 0.0, width as f32, height as f32]);
+        let mut texels = Vec::with_capacity(width * height);
+        let mut spans = Vec::with_capacity(height);
+        for y in 0..height {
+            let start = texels.len();
+            for x in 0..width {
+                let [r, g, b, a] = sample(&gradient.stops, mapper.t(x as f32 + 0.5, y as f32 + 0.5));
+                texels.push([
+                    (r * 256.0).round() as u16,
+                    (g * 256.0).round() as u16,
+                    (b * 256.0).round() as u16,
+                    (a * 4096.0).round() as u16,
+                ]);
+            }
+            let row = &texels[start..];
+            let first = row.iter().position(|t| t[3] > 0);
+            let last = row.iter().rposition(|t| t[3] > 0);
+            spans.push(match (first, last) {
+                (Some(f), Some(l)) => (f as u32, l as u32 + 1),
+                _ => (0, 0),
+            });
+        }
+        Self {
+            width,
+            texels,
+            spans,
+        }
+    }
+}
+
+enum Slot {
+    /// Drawn once directly; a second draw of the same size builds the tile.
+    Seen,
+    Ready(Tile),
+    /// Over budget: always drawn directly.
+    Direct,
+}
+
+/// Tiles keyed by gradient identity and pixel size. Drawing a gradient once (a snapshot) never
+/// pays for a tile.
+#[derive(Default)]
+pub(in crate::render) struct GradientCache {
+    slots: HashMap<(usize, usize, usize), Slot>,
+    bytes: usize,
+}
+
+impl GradientCache {
+    /// The tile to blend, or `None` when this draw should take the direct path.
+    fn tile(&mut self, gradient: &Gradient, width: usize, height: usize) -> Option<&Tile> {
+        let key = (gradient as *const Gradient as usize, width, height);
+        match self.slots.get(&key) {
+            None => {
+                self.slots.insert(key, Slot::Seen);
+                return None;
+            }
+            Some(Slot::Direct) => return None,
+            Some(Slot::Seen) => {
+                let cost = width * height * 8;
+                if self.bytes + cost > TILE_BUDGET_BYTES {
+                    self.slots.insert(key, Slot::Direct);
+                    return None;
+                }
+                self.bytes += cost;
+                self.slots
+                    .insert(key, Slot::Ready(Tile::build(gradient, width, height)));
+            }
+            Some(Slot::Ready(_)) => {}
+        }
+        match self.slots.get(&key) {
+            Some(Slot::Ready(tile)) => Some(tile),
+            _ => None,
+        }
+    }
+}
+
 impl Surface {
     pub(in crate::render) fn fill_gradient_general(
         &mut self,
@@ -128,9 +220,47 @@ impl Surface {
             return;
         };
         self.mark_painted(bounds);
+        let width = self.width as usize;
+        if radius == 0.0 {
+            let (w, h) = ((x1 - x0) as usize, (y1 - y0) as usize);
+            if alpha <= 0.0 {
+                return;
+            }
+            if let Some(tile) = self.gradient_cache.tile(gradient, w, h) {
+                let alpha = alpha.clamp(0.0, 1.0);
+                for y in bounds.y0..bounds.y1 {
+                    let ty = (y as i32 - y0) as usize;
+                    let (lo, hi) = tile.spans[ty];
+                    let first = (bounds.x0 as i32).max(x0 + lo as i32) as usize;
+                    let last = (bounds.x1 as i32).min(x0 + hi as i32).max(0) as usize;
+                    if first >= last {
+                        continue;
+                    }
+                    let row = &tile.texels[ty * tile.width..(ty + 1) * tile.width];
+                    let dither_row = [0, 1, 2, 3].map(|i| dither(i, y));
+                    let dest = &mut self.pixels[(y * width + first) * 4..(y * width + last) * 4];
+                    let source = &row[(first as i32 - x0) as usize..(last as i32 - x0) as usize];
+                    for (i, (pixel, texel)) in
+                        dest.as_chunks_mut::<4>().0.iter_mut().zip(source).enumerate()
+                    {
+                        let d = dither_row[(first + i) & 3];
+                        let keep = 1.0 - f32::from(texel[3]) * (alpha / 4096.0);
+                        for c in 0..3 {
+                            let blended = f32::from(texel[c]) * (alpha / 256.0)
+                                + f32::from(pixel[c]) * keep
+                                + d;
+                            pixel[c] = (blended + 0.5).clamp(0.0, 255.0) as u8;
+                        }
+                        if texel[3] > 0 {
+                            pixel[3] = 255;
+                        }
+                    }
+                }
+                return;
+            }
+        }
         let float_edges = edges.map(|edge| edge as f32);
         let mapper = Mapper::new(&gradient.kind, float_edges);
-        let width = self.width as usize;
         for y in bounds.y0..bounds.y1 {
             let (left, right) = Self::rounded_span(float_edges, radius, y);
             let first = (left.floor().max(bounds.x0 as f32)) as usize;
@@ -154,5 +284,60 @@ impl Surface {
                 dest[3] = 255;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn glow() -> Gradient {
+        let color = |r, g, b, a| Color { r, g, b, a };
+        Gradient {
+            kind: GradientKind::Radial {
+                circle: false,
+                center: (0.5, 0.5),
+                farthest_side: true,
+            },
+            stops: vec![
+                Stop {
+                    pos: 0.0,
+                    color: color(111, 141, 255, 87),
+                },
+                Stop {
+                    pos: 1.0,
+                    color: color(111, 141, 255, 0),
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn cached_tile_matches_direct_drawing_within_one_level() {
+        let gradient = glow();
+        let rect = |x| Rect {
+            x,
+            y: -7.0,
+            w: 90.0,
+            h: 70.0,
+        };
+        let mut cached = Surface::filled(64, 48, 1.0, Color::BLACK);
+        for x in [-30.0, -29.0, -26.5] {
+            cached.fill_gradient_general(rect(x), &gradient, 0.8, 0.0);
+        }
+        // Direct drawing of all three on a cache-less surface each time.
+        let mut expected = Surface::filled(64, 48, 1.0, Color::BLACK);
+        for x in [-30.0, -29.0, -26.5] {
+            expected.gradient_cache = GradientCache::default();
+            expected.fill_gradient_general(rect(x), &gradient, 0.8, 0.0);
+        }
+        let worst = cached
+            .pixels
+            .iter()
+            .zip(&expected.pixels)
+            .map(|(a, b)| a.abs_diff(*b))
+            .max()
+            .unwrap();
+        assert!(worst <= 1, "tile differs from direct drawing by {worst}");
     }
 }

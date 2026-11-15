@@ -16,7 +16,7 @@ fn usage() -> &'static str {
     "aether-hyperframes 0.1\n\
 Usage:\n\
   aether-hyperframes inspect <composition.html>\n\
-  aether-hyperframes render <composition.html> --output <video.mp4|frame.png> [--fps 30] [--scale 1 | --size 1080p|4k] [--threads N (default: cores, max 4)] [--encoder native|ffmpeg] [--frame N]\n\
+  aether-hyperframes render <composition.html> --output <video.mp4|frame.png> [--fps 30] [--scale 1 | --size 1080p|4k] [--threads N (default: cores/4, 1 to 4)] [--priority low|normal (default: low)] [--encoder native|ffmpeg] [--frame N]\n\
   aether-hyperframes bench <composition.html> [--fps 30] [--scale 1 | --size 1080p|4k]\n\
   aether-hyperframes check <composition.html>   (JSON; exits with 1 on failure)\n\
   aether-hyperframes block [list | <name> [--set key=value]...]   (print a ready-made block or theme as HTML)\n\
@@ -35,6 +35,7 @@ struct Options {
     size: Option<OutputSize>,
     threads: u32,
     encoder: String,
+    low_priority: bool,
     frame: Option<usize>,
 }
 
@@ -64,6 +65,7 @@ fn options() -> Result<Option<Options>> {
         size: None,
         threads: aether_hyperframes::encode::default_threads(),
         encoder: "native".to_string(),
+        low_priority: true,
         frame: None,
     };
     while let Some(arg) = args.next() {
@@ -77,6 +79,13 @@ fn options() -> Result<Option<Options>> {
             "--size" => opts.size = Some(value.parse()?),
             "--threads" => opts.threads = value.parse().context("invalid --threads")?,
             "--encoder" => opts.encoder = value,
+            "--priority" => {
+                opts.low_priority = match value.as_str() {
+                    "low" => true,
+                    "normal" => false,
+                    _ => bail!("--priority must be low or normal"),
+                }
+            }
             "--frame" => opts.frame = Some(value.parse().context("invalid --frame")?),
             _ => bail!("unknown option: {arg}"),
         }
@@ -232,6 +241,9 @@ fn main() -> Result<()> {
         Some(size) => Renderer::with_output_size(&composition, size)?,
         None => Renderer::new(&composition, opts.scale.unwrap_or(1.0))?,
     };
+    if opts.low_priority {
+        aether_hyperframes::encode::lower_priority();
+    }
     let (w, h) = renderer.dimensions();
     let frames = renderer.frame_count(opts.fps);
     let start = Instant::now();

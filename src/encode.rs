@@ -302,12 +302,22 @@ fn write_video(
 /// Fixed, so the MP4 is byte-identical for any worker count.
 const SEGMENT_SECONDS: usize = 1;
 
-/// Worker count that fits this machine: all cores up to 4, because each 4K worker holds
-/// roughly 140 MB. Old PCs get what they have; large machines do not exhaust memory.
+/// Default worker count: a quarter of the cores, between 1 and 4. The total CPU work of a render
+/// is fixed, so fewer workers trade a little wall time for a machine that stays responsive
+/// (each 4K worker also holds roughly 140 MB). Pass `--threads` to use more.
 pub fn default_threads() -> u32 {
-    std::thread::available_parallelism()
-        .map_or(2, |n| n.get())
-        .clamp(1, 4) as u32
+    let cores = std::thread::available_parallelism().map_or(2, |n| n.get());
+    (cores / 4).clamp(1, 4) as u32
+}
+
+/// Lowers this process's scheduling priority (nice 10) so a render yields to the user's own
+/// applications. Threads started afterwards inherit it. A no-op where unsupported.
+pub fn lower_priority() {
+    #[cfg(unix)]
+    // SAFETY: `setpriority` only changes this process's niceness; failure is harmless.
+    unsafe {
+        libc::setpriority(libc::PRIO_PROCESS, 0, 10);
+    }
 }
 
 fn encode_segment(

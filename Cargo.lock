@@ -17,6 +17,7 @@ dependencies = [
  "fontdue",
  "image",
  "kuchiki",
+ "libc",
  "mp4",
  "openh264",
  "serde_json",

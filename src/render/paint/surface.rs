@@ -17,6 +17,8 @@ pub(in crate::render) struct Surface {
     pub(in crate::render) scale: f32,
     /// Cached vignette brightness table of the frame-wide finishing pass.
     pub(in crate::render) finish_lut: Option<super::finish::FinishLut>,
+    /// Rasterized gradients reused across frames (see `gradient::GradientCache`).
+    pub(in crate::render) gradient_cache: super::gradient::GradientCache,
 }
 
 impl Surface {
@@ -30,6 +32,7 @@ impl Surface {
             backdrop,
             scale,
             finish_lut: None,
+            gradient_cache: Default::default(),
         }
     }
 
