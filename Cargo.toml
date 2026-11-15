@@ -1,0 +1,20 @@
+[package]
+name = "aether-hyperframes"
+version = "0.1.0"
+edition = "2021"
+description = "Lightweight native renderer for a documented subset of HyperFrames HTML"
+license = "Apache-2.0"
+
+[dependencies]
+anyhow = "1.0"
+fontdb = "0.24"
+fontdue = "0.9"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+kuchiki = "0.8"
+mp4 = "0.14"
+openh264 = "0.9"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

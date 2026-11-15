@@ -1,0 +1,7 @@
+/target/
+/out/
+*.mp4
+*.png
+!examples/*.png
+target
+aether
