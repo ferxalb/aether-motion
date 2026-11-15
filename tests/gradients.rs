@@ -26,14 +26,23 @@ fn an_angled_gradient_runs_along_its_diagonal() {
 
 #[test]
 fn intermediate_stops_are_honored() {
-    let shot = paint("stops", "linear-gradient(to right, #f00 0%, #00f 50%, #0f0 100%)");
+    let shot = paint(
+        "stops",
+        "linear-gradient(to right, #f00 0%, #00f 50%, #0f0 100%)",
+    );
     let (left, mid, right) = (shot.at(1, 50), shot.at(50, 50), shot.at(98, 50));
-    assert!(left[0] > 240 && mid[2] > 240 && right[1] > 240, "{left:?} {mid:?} {right:?}");
+    assert!(
+        left[0] > 240 && mid[2] > 240 && right[1] > 240,
+        "{left:?} {mid:?} {right:?}"
+    );
 }
 
 #[test]
 fn translucent_stops_blend_over_what_is_below() {
-    let shot = paint("alpha", "linear-gradient(to right, rgba(255,255,255,0), #fff)");
+    let shot = paint(
+        "alpha",
+        "linear-gradient(to right, rgba(255,255,255,0), #fff)",
+    );
     assert!(shot.at(1, 50)[0] < 8);
     assert!(shot.at(98, 50)[0] > 247);
     assert!(shot.at(50, 50)[0].abs_diff(128) <= 8);

@@ -114,7 +114,10 @@ mod tests {
     fn a_newline_forces_a_break_and_keeps_byte_ranges() {
         assert_eq!(lines("aa bb\ncc", None), ["aa bb", "cc"]);
         assert_eq!(lines("aa\n\ncc", None), ["aa", "", "cc"]);
-        assert_eq!(lines("aaa bbb\nc ddd", Some(4.0)), ["aaa", "bbb", "c", "ddd"]);
+        assert_eq!(
+            lines("aaa bbb\nc ddd", Some(4.0)),
+            ["aaa", "bbb", "c", "ddd"]
+        );
     }
 
     #[test]

@@ -22,7 +22,12 @@ fn dither(x: usize, y: usize) -> f32 {
 fn sample(stops: &[Stop], t: f32) -> [f32; 4] {
     let premultiplied = |c: Color| {
         let a = f32::from(c.a) / 255.0;
-        [f32::from(c.r) * a, f32::from(c.g) * a, f32::from(c.b) * a, a]
+        [
+            f32::from(c.r) * a,
+            f32::from(c.g) * a,
+            f32::from(c.b) * a,
+            a,
+        ]
     };
     let (first, last) = (stops[0], stops[stops.len() - 1]);
     if t <= first.pos {
@@ -41,8 +46,15 @@ fn sample(stops: &[Stop], t: f32) -> [f32; 4] {
 
 /// Maps a pixel center to the gradient parameter `t` for one box.
 enum Mapper {
-    Linear { center: (f32, f32), dir: (f32, f32), len: f32 },
-    Radial { center: (f32, f32), radii: (f32, f32) },
+    Linear {
+        center: (f32, f32),
+        dir: (f32, f32),
+        len: f32,
+    },
+    Radial {
+        center: (f32, f32),
+        radii: (f32, f32),
+    },
 }
 
 impl Mapper {
@@ -78,7 +90,9 @@ impl Mapper {
                     (true, true) => (fx.max(fy), fx.max(fy)),
                     (true, false) => (fx.hypot(fy), fx.hypot(fy)),
                     (false, true) => (fx, fy),
-                    (false, false) => (fx * std::f32::consts::SQRT_2, fy * std::f32::consts::SQRT_2),
+                    (false, false) => {
+                        (fx * std::f32::consts::SQRT_2, fy * std::f32::consts::SQRT_2)
+                    }
                 };
                 Self::Radial {
                     center: (cx, cy),
@@ -123,7 +137,8 @@ impl Surface {
             let last = (right.ceil().min(bounds.x1 as f32)) as usize;
             for x in first..last {
                 let coverage = (right.min(x as f32 + 1.0) - left.max(x as f32)).clamp(0.0, 1.0);
-                let [pr, pg, pb, pa] = sample(&gradient.stops, mapper.t(x as f32 + 0.5, y as f32 + 0.5));
+                let [pr, pg, pb, pa] =
+                    sample(&gradient.stops, mapper.t(x as f32 + 0.5, y as f32 + 0.5));
                 // `pa` carries the stop alpha; the premultiplied colors already include it.
                 let a = (alpha * coverage).clamp(0.0, 1.0);
                 if a <= 0.0 || pa <= 0.0 {

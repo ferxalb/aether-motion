@@ -8,7 +8,8 @@ use crate::render::paint::Surface;
 
 /// Integer hash of a pixel position and seed; every bit depends on all inputs.
 fn hash(x: u32, y: u32, seed: u32) -> u32 {
-    let mut h = x.wrapping_mul(0x9E37_79B1) ^ y.wrapping_mul(0x85EB_CA77) ^ seed.wrapping_mul(0xC2B2_AE3D);
+    let mut h =
+        x.wrapping_mul(0x9E37_79B1) ^ y.wrapping_mul(0x85EB_CA77) ^ seed.wrapping_mul(0xC2B2_AE3D);
     h ^= h >> 15;
     h = h.wrapping_mul(0x2C1B_3C6D);
     h ^= h >> 12;
@@ -35,7 +36,10 @@ impl Surface {
             for x in 0..width {
                 let nx = (x as f32 + 0.5) / width as f32 * 2.0 - 1.0;
                 let factor = if vignette > 0.0 {
-                    vignette_factor(vignette, (nx * nx + ny * ny).sqrt() / std::f32::consts::SQRT_2)
+                    vignette_factor(
+                        vignette,
+                        (nx * nx + ny * ny).sqrt() / std::f32::consts::SQRT_2,
+                    )
                 } else {
                     1.0
                 };

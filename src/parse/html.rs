@@ -24,10 +24,7 @@ pub(in crate::parse) fn direct_text(node: &NodeRef) -> String {
     let mut segments: Vec<Vec<String>> = vec![Vec::new()];
     for child in node.children() {
         if let Some(text) = child.as_text() {
-            segments
-                .last_mut()
-                .unwrap()
-                .push(text.borrow().to_string());
+            segments.last_mut().unwrap().push(text.borrow().to_string());
         } else if child
             .as_element()
             .is_some_and(|element| &*element.name.local == "br")
@@ -37,7 +34,13 @@ pub(in crate::parse) fn direct_text(node: &NodeRef) -> String {
     }
     let mut lines: Vec<String> = segments
         .iter()
-        .map(|parts| parts.join(" ").split_whitespace().collect::<Vec<_>>().join(" "))
+        .map(|parts| {
+            parts
+                .join(" ")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
         .collect();
     if lines.len() > 1 && lines.last().is_some_and(String::is_empty) {
         lines.pop();

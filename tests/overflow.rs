@@ -51,7 +51,11 @@ fn rounded_corners_clip_the_content_too() {
 #[test]
 fn the_border_stays_visible_and_content_clips_inside_it() {
     let shot = clipped("ov-border", "border:4px solid #00f", "");
-    assert_eq!(shot.at(11, 30), [0, 0, 255], "border is drawn over the box edge");
+    assert_eq!(
+        shot.at(11, 30),
+        [0, 0, 255],
+        "border is drawn over the box edge"
+    );
     assert_eq!(shot.bbox(red), Some((14, 14, 45, 45)));
 }
 

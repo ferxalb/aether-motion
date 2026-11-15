@@ -52,7 +52,12 @@ fn cross_axis_alignment_uses_the_margin_box() {
 #[test]
 fn margins_count_in_the_free_space_for_centering() {
     // Row content: 20 + 20 + 40 margin = 80 of 200, so it starts at 60.
-    let shot = row("m-center", "justify-content: center", "margin-right: 40px", "");
+    let shot = row(
+        "m-center",
+        "justify-content: center",
+        "margin-right: 40px",
+        "",
+    );
     assert_eq!(shot.bbox(red).unwrap().0, 60);
 }
 

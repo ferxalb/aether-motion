@@ -24,7 +24,10 @@ fn a_trailing_br_adds_no_line_and_a_double_br_adds_a_blank_one() {
     let found = bands("br-blank", "AAA<br><br>AAA");
     assert_eq!(found.len(), 2);
     let single = bands("br-adjacent", "AAA<br>AAA");
-    assert!(found[1].0 > single[1].0, "the blank line pushes the last line down");
+    assert!(
+        found[1].0 > single[1].0,
+        "the blank line pushes the last line down"
+    );
 }
 
 #[test]

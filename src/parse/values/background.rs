@@ -3,9 +3,7 @@
 //! Two opaque stops along an axis keep the cheap `Background::Linear` fast path; every other
 //! gradient (angles, corners, several stops, translucent stops, radial) becomes `Background::Gradient`.
 
-use crate::model::{
-    Background, Color, Gradient, GradientKind, LinearDirection, Stop,
-};
+use crate::model::{Background, Color, Gradient, GradientKind, LinearDirection, Stop};
 use crate::parse::values::color::parse_color;
 use crate::parse::values::tokens::split_top;
 use anyhow::{bail, Context, Result};
@@ -47,7 +45,11 @@ fn parse_linear(body: &str) -> Result<Background> {
                 } else {
                     (a.color, b.color)
                 };
-                return Ok(Background::Linear { from, to, horizontal });
+                return Ok(Background::Linear {
+                    from,
+                    to,
+                    horizontal,
+                });
             }
         }
     }
@@ -91,7 +93,9 @@ fn parse_direction(part: &str) -> Result<LinearDirection> {
         .find(|c: char| c.is_ascii_alphabetic())
         .context("linear-gradient: invalid angle")?;
     let (number, unit) = part.split_at(split);
-    let n: f32 = number.parse().with_context(|| format!("linear-gradient: invalid angle: {part}"))?;
+    let n: f32 = number
+        .parse()
+        .with_context(|| format!("linear-gradient: invalid angle: {part}"))?;
     let degrees = match unit {
         "deg" => n,
         "turn" => n * 360.0,
@@ -224,8 +228,8 @@ fn parse_stops(parts: &[&str]) -> Result<Vec<Stop>> {
         let start = i - 1;
         let end = (i..raw.len()).find(|&j| raw[j].1.is_some()).unwrap();
         let (a, b) = (raw[start].1.unwrap(), raw[end].1.unwrap());
-        for j in start + 1..end {
-            raw[j].1 = Some(a + (b - a) * (j - start) as f32 / (end - start) as f32);
+        for (j, item) in raw.iter_mut().enumerate().take(end).skip(start + 1) {
+            item.1 = Some(a + (b - a) * (j - start) as f32 / (end - start) as f32);
         }
         i = end + 1;
     }
@@ -246,11 +250,17 @@ mod tests {
     fn two_opaque_axis_stops_keep_the_fast_path() {
         assert!(matches!(
             parse_background("linear-gradient(to right, red, blue)").unwrap(),
-            Background::Linear { horizontal: true, .. }
+            Background::Linear {
+                horizontal: true,
+                ..
+            }
         ));
         assert!(matches!(
             parse_background("linear-gradient(#000, #fff)").unwrap(),
-            Background::Linear { horizontal: false, .. }
+            Background::Linear {
+                horizontal: false,
+                ..
+            }
         ));
     }
 
@@ -275,7 +285,10 @@ mod tests {
         };
         assert_eq!(g.kind, GradientKind::Linear(LinearDirection::Corner(1, 1)));
         let positions: Vec<_> = g.stops.iter().map(|s| s.pos).collect();
-        assert!(positions.iter().zip([0.0, 1.0 / 3.0, 2.0 / 3.0, 1.0]).all(|(a, b)| (a - b).abs() < 1e-6));
+        assert!(positions
+            .iter()
+            .zip([0.0, 1.0 / 3.0, 2.0 / 3.0, 1.0])
+            .all(|(a, b)| (a - b).abs() < 1e-6));
     }
 
     #[test]
@@ -287,7 +300,11 @@ mod tests {
         };
         assert_eq!(
             g.kind,
-            GradientKind::Radial { circle: true, center: (0.3, 0.0), farthest_side: false }
+            GradientKind::Radial {
+                circle: true,
+                center: (0.3, 0.0),
+                farthest_side: false
+            }
         );
     }
 

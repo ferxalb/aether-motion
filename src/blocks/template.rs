@@ -87,10 +87,7 @@ pub fn render(template: &str, values: &BTreeMap<String, String>) -> Result<Strin
     for key in values.keys() {
         if !known.iter().any(|p| &p.name == key) {
             let names: Vec<&str> = known.iter().map(|p| p.name.as_str()).collect();
-            bail!(
-                "unknown parameter '{key}'; available: {}",
-                names.join(", ")
-            );
+            bail!("unknown parameter '{key}'; available: {}", names.join(", "));
         }
     }
     let mut out = String::with_capacity(template.len());
