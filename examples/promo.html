@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Aether HyperFrames promo</title>
+  <style>
+    :root {
+      --bg: #070b16;
+      --white: #f5f8ff;
+      --muted: #8fa3c4;
+      --mint: #4be0b8;
+      --blue: #6f8dff;
+      --violet: #a77bff;
+      --panel: #101a2e;
+      --line: #25375a;
+      --pop: cubic-bezier(0.34, 1.4, 0.64, 1);
+    }
+
+    @keyframes rise {
+      from { transform: translate(0, 34px); opacity: 0; }
+      to   { transform: translate(0, 0); opacity: 1; }
+    }
+    @keyframes pop {
+      from { transform: translate(0, 24px) scale(0.82); opacity: 0; }
+      to   { transform: translate(0, 0) scale(1); opacity: 1; }
+    }
+    @keyframes sweep {
+      from { transform: translateX(-120px); opacity: 0; }
+      to   { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
+    }
+    @keyframes drift {
+      from { transform: translate(-30px, 12px); }
+      to   { transform: translate(30px, -12px); }
+    }
+
+    /* Ambient background light */
+    .glow-a {
+      left: -260px; top: -300px; width: 1100px; height: 1000px;
+      background: radial-gradient(ellipse farthest-side at 50% 50%, rgba(111, 141, 255, 0.34), rgba(111, 141, 255, 0));
+      animation: drift 17s linear 0s 1 both;
+    }
+    .glow-b {
+      left: 640px; top: 160px; width: 1000px; height: 900px;
+      background: radial-gradient(ellipse farthest-side at 50% 50%, rgba(75, 224, 184, 0.24), rgba(75, 224, 184, 0));
+      animation: drift 17s linear 0s 1 reverse both;
+    }
+
+    .scene {
+      left: 0; top: 0; width: 1280px; height: 720px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 22px;
+    }
+    .kicker { font-size: 18px; font-weight: 700; color: var(--mint); text-align: center; animation: rise 0.6s ease-out 0.05s 1 both; }
+    .headline { font-size: 78px; font-weight: 800; color: var(--white); text-align: center; text-shadow: 0 6px 30px rgba(0, 0, 0, 0.5); animation: rise 0.8s ease-out 0.2s 1 both; }
+    .headline-s { font-size: 60px; font-weight: 800; color: var(--white); text-align: center; text-shadow: 0 6px 30px rgba(0, 0, 0, 0.5); animation: rise 0.8s ease-out 0.15s 1 both; }
+    .sub { font-size: 26px; color: var(--muted); text-align: center; max-width: 820px; animation: rise 0.8s ease-out 0.5s 1 both; }
+
+    .pill {
+      padding: 14px 30px; border-radius: 30px;
+      background: linear-gradient(135deg, #4be0b8, #6f8dff);
+      color: #06101c; font-size: 22px; font-weight: 700;
+      box-shadow: 0 14px 40px 0 rgba(75, 224, 184, 0.28);
+      animation: pop 0.7s var(--pop) 0.9s 1 both;
+    }
+
+    .row { display: flex; flex-direction: row; gap: 28px; }
+    .card {
+      width: 330px; height: 250px; border-radius: 24px; padding: 30px;
+      display: flex; flex-direction: column; gap: 14px; justify-content: flex-start;
+      background: linear-gradient(160deg, #16253f, #0e1729);
+      border: 1px solid var(--line);
+      box-shadow: 0 24px 60px 0 rgba(0, 0, 0, 0.45);
+    }
+    .card-1 { animation: pop 0.7s var(--pop) 0.3s 1 both; }
+    .card-2 { animation: pop 0.7s var(--pop) 0.5s 1 both; }
+    .card-3 { animation: pop 0.7s var(--pop) 0.7s 1 both; }
+    .badge { width: 52px; height: 52px; border-radius: 16px; }
+    .b-mint { background: linear-gradient(135deg, #4be0b8, #2aa6c9); }
+    .b-blue { background: linear-gradient(135deg, #6f8dff, #4a5cd6); }
+    .b-violet { background: linear-gradient(135deg, #a77bff, #6f46d9); }
+    .card-title { font-size: 28px; font-weight: 700; color: var(--white); }
+    .card-copy { font-size: 20px; color: var(--muted); line-height: 1.35; }
+
+    .stat-row { display: flex; flex-direction: row; gap: 60px; }
+    .stat { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+    .stat-n { font-size: 64px; line-height: 1.25; font-weight: 800; color: var(--white); text-align: center; }
+    .stat-l { font-size: 20px; color: var(--muted); text-align: center; }
+    .s1 { animation: pop 0.7s var(--pop) 0.4s 1 both; }
+    .s2 { animation: pop 0.7s var(--pop) 0.6s 1 both; }
+    .s3 { animation: pop 0.7s var(--pop) 0.8s 1 both; }
+    .spinner {
+      width: 96px; height: 96px; border-radius: 24px;
+      background: linear-gradient(135deg, #a77bff, #4be0b8);
+      box-shadow: 0 0 60px 6px rgba(167, 123, 255, 0.4);
+      animation: spin 3.6s linear 0s 1 both;
+    }
+
+    .code {
+      width: 760px; border-radius: 22px; padding: 34px;
+      display: flex; flex-direction: column; gap: 14px;
+      background: #0b1324; border: 1px solid var(--line);
+      box-shadow: 0 30px 70px 0 rgba(0, 0, 0, 0.5);
+      animation: pop 0.8s var(--pop) 0.3s 1 both;
+    }
+    .line { font-size: 24px; font-family: monospace; color: #cfe0ff; white-space: nowrap; }
+    .l1 { animation: sweep 0.6s ease-out 0.7s 1 both; }
+    .l2 { animation: sweep 0.6s ease-out 1.0s 1 both; color: var(--mint); }
+    .l3 { animation: sweep 0.6s ease-out 1.3s 1 both; }
+    .l4 { animation: sweep 0.6s ease-out 1.6s 1 both; color: var(--violet); }
+
+    .brand {
+      font-size: 92px; font-weight: 800; color: var(--white); text-align: center;
+      text-shadow: 0 0 50px rgba(111, 141, 255, 0.55);
+      animation: pop 0.9s var(--pop) 0.2s 1 both;
+    }
+    .cmd {
+      padding: 18px 34px; border-radius: 16px;
+      background: #0b1324; border: 1px solid var(--line);
+      font-size: 24px; font-family: monospace; color: var(--mint); white-space: nowrap;
+      animation: rise 0.8s ease-out 0.9s 1 both;
+    }
+  </style>
+</head>
+<body>
+  <main data-composition-id="aether-promo" data-width="1280" data-height="720" data-duration="17"
+        style="background: var(--bg)">
+    <div class="clip glow-a" data-track-index="0" data-start="0" data-duration="17"></div>
+    <div class="clip glow-b" data-track-index="0" data-start="0" data-duration="17"></div>
+
+    <!-- 1. Hook -->
+    <div class="clip scene" data-track-index="1" data-start="0" data-duration="3.6"
+         data-hf-fade-in="0.4" data-hf-fade-out="0.5">
+      <div class="kicker">AETHER HYPERFRAMES</div>
+      <div class="headline">Write HTML. Render video.</div>
+      <div class="sub">A native renderer for deterministic motion. No browser required.</div>
+      <div class="pill">Frame = f(time)</div>
+    </div>
+
+    <!-- 2. Pillars -->
+    <div class="clip scene" data-track-index="1" data-start="3.6" data-duration="3.8"
+         data-hf-fade-in="0.4" data-hf-fade-out="0.5">
+      <div class="kicker">WHAT YOU GET</div>
+      <div class="headline-s">Everything a frame needs.</div>
+      <div class="row">
+        <div class="card card-1">
+          <div class="badge b-mint"></div>
+          <div class="card-title">Deterministic</div>
+          <div class="card-copy">Same input, same pixels. Every render, every machine.</div>
+        </div>
+        <div class="card card-2">
+          <div class="badge b-blue"></div>
+          <div class="card-title">Real CSS</div>
+          <div class="card-copy">Flex, gradients, shadows, borders, transforms, and animation.</div>
+        </div>
+        <div class="card card-3">
+          <div class="badge b-violet"></div>
+          <div class="card-title">Explicit errors</div>
+          <div class="card-copy">Unsupported features fail loudly. Never a silently wrong video.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Native -->
+    <div class="clip scene" data-track-index="1" data-start="7.4" data-duration="3.6"
+         data-hf-fade-in="0.4" data-hf-fade-out="0.5">
+      <div class="spinner"></div>
+      <div class="headline-s">Native, not a browser.</div>
+      <div class="stat-row">
+        <div class="stat s1"><div class="stat-n">1 binary</div><div class="stat-l">no Chrome, no Node</div></div>
+        <div class="stat s2"><div class="stat-n">60 fps</div><div class="stat-l">1080p and 4K MP4</div></div>
+        <div class="stat s3"><div class="stat-n">0 scripts</div><div class="stat-l">just HTML and CSS</div></div>
+      </div>
+    </div>
+
+    <!-- 4. Agents -->
+    <div class="clip scene" data-track-index="1" data-start="11" data-duration="3.4"
+         data-hf-fade-in="0.4" data-hf-fade-out="0.5">
+      <div class="kicker">BUILT FOR AGENTS</div>
+      <div class="headline-s">Check. Inspect. Render.</div>
+      <div class="code">
+        <div class="line l1">$ aether-hyperframes check promo.html</div>
+        <div class="line l2">{ "ok": true }</div>
+        <div class="line l3">$ aether-hyperframes render promo.html</div>
+        <div class="line l4">→ promo.mp4</div>
+      </div>
+    </div>
+
+    <!-- 5. Call to action -->
+    <div class="clip scene" data-track-index="1" data-start="14.4" data-duration="2.6"
+         data-hf-fade-in="0.5" data-hf-fade-out="0.4">
+      <div class="brand">Aether</div>
+      <div class="sub">HTML in. Video out.</div>
+      <div class="cmd">aether-hyperframes render video.html --output video.mp4</div>
+    </div>
+  </main>
+</body>
+</html>

@@ -26,7 +26,8 @@ cargo run --release -- render examples/title-card.html --output /tmp/title-ffmpe
 | `data-track-index`, clips using `<div>`, text, and local PNG/JPEG/WebP images | Yes |
 | Type, class, ID, and descendant CSS selectors; inline styles | Yes |
 | `left`, `top`, `width`, `height` in px or %, hex/basic named colors, opacity, fonts, centered flex layout, `object-fit` | Yes |
-| `border-radius` and `linear-gradient(...)` | Background radius in px and vertical or horizontal gradients with two opaque colors |
+| `border-radius`, `linear-gradient(...)`, `radial-gradient(...)` | Background radius in px; angled, corner, and multi-stop gradients with translucent stops; radial glows |
+| `font-weight` | `normal`, `bold`, or 1-1000, matched to installed font faces |
 | `data-hf-fade-in`, `data-hf-fade-out` | Native extension; seconds, linear transition |
 | `data-hf-keyframes` | Native extension; interpolated position and opacity with four easing curves |
 | GSAP, `<script>`, `<video>`, `<audio>`, `<svg>`, canvas, complex effects, external compositions, general CSS | Not yet; explicit error |
