@@ -37,12 +37,15 @@ impl<'a> Renderer<'a> {
             }
         } else {
             let style = &element.style;
+            let width = style
+                .width
+                .map_or(parent.w, |n| n.resolve_scaled(parent.w, ps));
             Rect {
                 x: parent.x + style.left.map_or(0.0, |n| n.resolve_scaled(parent.w, ps)),
                 y: parent.y + style.top.map_or(0.0, |n| n.resolve_scaled(parent.h, ps)),
                 w: style
-                    .width
-                    .map_or(parent.w, |n| n.resolve_scaled(parent.w, ps)),
+                    .max_width
+                    .map_or(width, |n| width.min(n.resolve_scaled(parent.w, ps))),
                 h: style
                     .height
                     .map_or(parent.h, |n| n.resolve_scaled(parent.h, ps)),
@@ -120,7 +123,7 @@ impl<'a> Renderer<'a> {
                 element.style.object_fit.as_deref().unwrap_or("fill"),
                 alpha,
             )?,
-            Content::Text(text) => self.draw_text(text, content, idx, alpha, cumulative)?,
+            Content::Text(_) => self.draw_text(idx, content, alpha, cumulative)?,
             Content::Container => {}
         }
         let layout = if element.style.display.as_deref() == Some("flex") {

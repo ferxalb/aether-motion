@@ -31,7 +31,7 @@ cargo run --release -- render examples/title-card.html --output /tmp/title-ffmpe
 | `data-hf-keyframes` | Native extension; interpolated position and opacity with four easing curves |
 | GSAP, `<script>`, `<video>`, `<audio>`, `<svg>`, canvas, complex effects, external compositions, general CSS | Not yet; explicit error |
 
-Fonts are looked up on the system. Text is limited to one line and does not implement all browser typography shaping. Only local images are accepted. For a real composition, run `inspect` first; if a feature is unsupported, the program reports the first incompatibility.
+Fonts are looked up on the system. Text wraps at spaces (`max-width`, `line-height`, `white-space: nowrap`) but does not implement all browser typography shaping: no kerning, hyphenation, or breaks inside words. Only local images are accepted. For a real composition, run `inspect` first; if a feature is unsupported, the program reports the first incompatibility.
 
 ## Export at 1080p and 4K
 

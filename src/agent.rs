@@ -19,6 +19,11 @@ fn fix_hint(message: &str) -> &'static str {
         "define --name on :root or an ancestor, or add a fallback: var(--name, value)"
     } else if message.contains("animation") || message.contains("@keyframes") {
         "define @keyframes name { from {..} 50% {..} to {..} } using only transform (translate/scale), opacity and animation-timing-function, then use animation: name 1s ease-out [delay] [count] [direction] [fill-mode]"
+    } else if message.contains("line-height")
+        || message.contains("white-space")
+        || message.contains("max-width")
+    {
+        "use line-height as a positive number or px, white-space: normal or nowrap, and a non-negative max-width in px or %"
     } else if message.contains("unsupported CSS") || message.contains("unsupported transform") {
         "use a supported CSS value; see the contract in AGENTS.md"
     } else if message.contains("could not read image") || message.contains("local images") {

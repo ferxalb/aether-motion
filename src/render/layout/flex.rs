@@ -1,8 +1,9 @@
 //! Flex container layout: content-sized dimensions and placement of in-flow children.
 
-use crate::model::Composition;
+use crate::model::{Composition, Content};
 use crate::render::geometry::Rect;
 use crate::render::layout::in_flow;
+use crate::render::layout::sizing::Room;
 use crate::render::Renderer;
 use anyhow::Result;
 
@@ -15,11 +16,14 @@ pub(in crate::render) struct FlexItem {
 }
 
 impl<'a> Renderer<'a> {
-    /// Content-sized dimensions of a flex container, padding included.
+    /// Content-sized dimensions of a flex container, padding and border included.
+    ///
+    /// `inner_room` is the content width the container may use, if known; text children wrap to it.
     pub(in crate::render) fn flex_intrinsic(
         &mut self,
         idx: usize,
         ps: f32,
+        inner_room: Option<f32>,
     ) -> Result<Option<(f32, f32)>> {
         let composition: &'a Composition = self.composition;
         let style = &composition.elements[idx].style;
@@ -33,18 +37,23 @@ impl<'a> Renderer<'a> {
             return Ok(None);
         }
         let (mut main, mut cross) = (0.0_f32, 0.0_f32);
+        let avail = (inner_room.unwrap_or(0.0), 0.0);
+        let room = Room {
+            width: inner_room,
+            fill: false,
+        };
         for &kid in &kids {
-            let (w, h) = self.item_size(kid, ps, (0.0, 0.0))?;
+            let (w, h) = self.item_size(kid, ps, avail, room)?;
             let (m, c) = if style.column { (h, w) } else { (w, h) };
             main += m.unwrap_or(0.0);
             cross = cross.max(c.unwrap_or(0.0));
         }
         main += style.gap * ps * (kids.len() - 1) as f32;
-        let [top, right, bottom, left] = style.padding.map(|p| p * ps);
+        let (chrome_x, chrome_y) = self.chrome(idx, ps);
         Ok(Some(if style.column {
-            (cross + left + right, main + top + bottom)
+            (cross + chrome_x, main + chrome_y)
         } else {
-            (main + left + right, cross + top + bottom)
+            (main + chrome_x, cross + chrome_y)
         }))
     }
 
@@ -79,7 +88,11 @@ impl<'a> Renderer<'a> {
         );
         let mut items = Vec::with_capacity(kids.len());
         for &kid in &kids {
-            let (w, h) = self.item_size(kid, ps, (content.w, content.h))?;
+            let room = Room {
+                width: Some(content.w),
+                fill: column && stretch,
+            };
+            let (w, h) = self.item_size(kid, ps, (content.w, content.h), room)?;
             let (main, cross) = if column { (h, w) } else { (w, h) };
             let kid_style = &composition.elements[kid].style;
             items.push(FlexItem {
@@ -117,9 +130,18 @@ impl<'a> Renderer<'a> {
         let mut position = start;
         let mut placed = Vec::with_capacity(items.len());
         for item in items {
-            let cross = item
-                .cross
-                .unwrap_or(if stretch { cross_space } else { 0.0 });
+            let kid = &composition.elements[item.idx];
+            let mut cross = item.cross;
+            // A row item's final width (after `flex-grow`) decides how many lines its text takes.
+            if !column && matches!(kid.content, Content::Text(_)) && kid.style.height.is_none() {
+                cross = Some(self.text_height_at(item.idx, ps, item.main)?);
+            }
+            let mut cross = cross.unwrap_or(if stretch { cross_space } else { 0.0 });
+            if column {
+                if let Some(max) = kid.style.max_width {
+                    cross = cross.min(max.resolve_scaled(content.w, ps));
+                }
+            }
             let offset = match style.align_items.as_deref() {
                 Some("center") => (cross_space - cross) / 2.0,
                 Some("flex-end" | "end") => cross_space - cross,

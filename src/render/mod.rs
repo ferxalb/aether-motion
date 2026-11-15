@@ -18,7 +18,8 @@ use geometry::{PixelRect, Rect};
 use paint::{CachedImage, ImageKey};
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
-use text::{FontStore, TextRun};
+use std::sync::Arc;
+use text::{FontStore, TextBlock, TextRun};
 
 #[derive(Default, Debug)]
 pub struct RenderStats {
@@ -57,7 +58,8 @@ pub struct Renderer<'a> {
     previous: Vec<FrameState>,
     current: Vec<FrameState>,
     children: Vec<Vec<usize>>,
-    text_runs: HashMap<(usize, u32), TextRun>,
+    text_runs: HashMap<(usize, u32, i64), TextRun>,
+    text_blocks: HashMap<(usize, i64), Arc<TextBlock>>,
     text_cache_bytes: usize,
     images: HashMap<ImageKey<'a>, CachedImage>,
     image_order: VecDeque<ImageKey<'a>>,
@@ -173,6 +175,7 @@ impl<'a> Renderer<'a> {
             current: Vec::with_capacity(composition.elements.len()),
             children,
             text_runs: HashMap::new(),
+            text_blocks: HashMap::new(),
             text_cache_bytes: 0,
             images: HashMap::new(),
             image_order: VecDeque::new(),

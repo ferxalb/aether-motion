@@ -66,12 +66,28 @@ pub struct Shadow {
     pub color: Color,
 }
 
+/// `line-height`: a multiple of the font size (unitless) or an absolute size in px.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum LineHeight {
+    Multiple(f32),
+    Px(f32),
+}
+
+/// `white-space`: `Normal` wraps text at spaces; `Nowrap` keeps one line.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum WhiteSpace {
+    Normal,
+    Nowrap,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Style {
     pub left: Option<Length>,
     pub top: Option<Length>,
     pub width: Option<Length>,
     pub height: Option<Length>,
+    /// Upper bound for the border-box width (`max-width`); `None` means no limit.
+    pub max_width: Option<Length>,
     pub background: Option<Background>,
     pub border_radius: f32,
     pub color: Option<Color>,
@@ -79,6 +95,9 @@ pub struct Style {
     pub font_family: Option<String>,
     pub opacity: Option<f32>,
     pub text_align: Option<String>,
+    /// Inherited text wrapping controls; see [`LineHeight`] and [`WhiteSpace`].
+    pub line_height: Option<LineHeight>,
+    pub white_space: Option<WhiteSpace>,
     pub display: Option<String>,
     pub align_items: Option<String>,
     pub justify_content: Option<String>,

@@ -1,6 +1,6 @@
 //! Text properties: color, font size and family, and alignment.
 
-use crate::model::{Length, Style};
+use crate::model::{Length, LineHeight, Style, WhiteSpace};
 use crate::parse::values::color::parse_color;
 use crate::parse::values::length::parse_length;
 use anyhow::{bail, Result};
@@ -21,6 +21,25 @@ pub(super) fn apply(key: &str, value: &str, style: &mut Style) -> Result<bool> {
                 bail!("unsupported text-align: {value}");
             }
             style.text_align = Some(value.to_string());
+        }
+        "line-height" => {
+            style.line_height = Some(match value.parse::<f32>() {
+                Ok(n) if n.is_finite() && n > 0.0 => LineHeight::Multiple(n),
+                Ok(_) => bail!("line-height must be positive: {value}"),
+                Err(_) => match parse_length(value, key) {
+                    Ok(Length::Px(n)) if n > 0.0 => LineHeight::Px(n),
+                    _ => bail!(
+                        "unsupported line-height: {value}; use a positive number or a px value"
+                    ),
+                },
+            });
+        }
+        "white-space" => {
+            style.white_space = Some(match value {
+                "normal" => WhiteSpace::Normal,
+                "nowrap" => WhiteSpace::Nowrap,
+                _ => bail!("unsupported white-space: {value}; use normal or nowrap"),
+            });
         }
         _ => return Ok(false),
     }

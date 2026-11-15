@@ -1,6 +1,6 @@
 //! Layout properties: offsets, size, positioning, flex container and item, gap, and padding.
 
-use crate::model::Style;
+use crate::model::{Length, Style};
 use crate::parse::values::length::{parse_box, parse_length, spacing_px};
 use anyhow::{anyhow, bail, Context, Result};
 
@@ -11,6 +11,17 @@ pub(super) fn apply(key: &str, value: &str, style: &mut Style) -> Result<bool> {
         "top" => style.top = Some(parse_length(value, key)?),
         "width" => style.width = Some(parse_length(value, key)?),
         "height" => style.height = Some(parse_length(value, key)?),
+        "max-width" => {
+            style.max_width = match value {
+                "none" => None,
+                _ => match parse_length(value, key)? {
+                    Length::Px(n) | Length::Percent(n) if n < 0.0 => {
+                        bail!("max-width must not be negative: {value}")
+                    }
+                    length => Some(length),
+                },
+            }
+        }
         "display" => {
             if value != "flex" && value != "block" {
                 bail!("unsupported display: {value}");
