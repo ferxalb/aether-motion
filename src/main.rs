@@ -16,6 +16,8 @@ Uso:\n\
   aether-hyperframes inspect <composicion.html>\n\
   aether-hyperframes render <composicion.html> --output <video.mp4|frame.png> [--fps 30] [--scale 1] [--threads 2] [--encoder native|ffmpeg] [--frame N]\n\
   aether-hyperframes bench <composicion.html> [--fps 30] [--scale 1]\n\
+  aether-hyperframes check <composicion.html>   (JSON; sale con 1 si falla)\n\
+  aether-hyperframes mcp                        (servidor MCP por stdio, para agentes)\n\
 El backend nativo acepta un subconjunto explícito de HTML/CSS de HyperFrames.\n\
 MP4 usa OpenH264 integrado por defecto; --encoder ffmpeg requiere FFmpeg en PATH."
 }
@@ -171,6 +173,17 @@ fn mp4_ffmpeg(renderer: &mut Renderer<'_>, output: &Path, fps: u32, threads: u32
 }
 
 fn main() -> Result<()> {
+    let mut raw = env::args().skip(1);
+    match raw.next().as_deref() {
+        Some("mcp") => return aether_hyperframes::agent::serve(),
+        Some("check") => {
+            let file = raw.next().ok_or_else(|| anyhow!("falta <composicion.html>"))?;
+            let report = aether_hyperframes::agent::check(Path::new(&file));
+            println!("{}", serde_json::to_string_pretty(&report)?);
+            std::process::exit(if report["ok"] == true { 0 } else { 1 });
+        }
+        _ => {}
+    }
     let Some(opts) = options()? else {
         return Ok(());
     };

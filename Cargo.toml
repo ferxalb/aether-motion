@@ -12,6 +12,7 @@ fontdue = "0.9"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 kuchiki = "0.8"
 mp4 = "0.14"
+serde_json = "1"
 openh264 = "0.9"
 
 [profile.release]

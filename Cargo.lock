@@ -19,6 +19,7 @@ dependencies = [
  "kuchiki",
  "mp4",
  "openh264",
+ "serde_json",
 ]
 
 [[package]]

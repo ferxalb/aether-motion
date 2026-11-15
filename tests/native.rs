@@ -87,3 +87,16 @@ fn rejects_browser_only_script() {
     assert!(error.contains("<script>"), "{error}");
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn check_reports_ok_and_actionable_errors() {
+    let ok = aether_hyperframes::agent::check(fixture());
+    assert_eq!(ok["ok"], true);
+    let dir = std::env::temp_dir().join(format!("aether-hf-check-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let bad = dir.join("bad.html");
+    std::fs::write(&bad, r#"<div data-composition-id="x" data-width="100" data-height="100" data-duration="1"><script>1</script></div>"#).unwrap();
+    let report = aether_hyperframes::agent::check(&bad);
+    assert_eq!(report["ok"], false);
+    assert!(report["fix"].as_str().unwrap().contains("elimina"));
+}
