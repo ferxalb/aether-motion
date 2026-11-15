@@ -221,3 +221,28 @@ export with one worker completed in 1.013 s (one run, without a baseline MP4
 timing; this export overlapped test compilation and is not a performance comparison).
 No resolution, smoothing, effect strength, or encoder settings changed.
 No older-PC measurements were made.
+
+## Exact row-wise glyph painting
+
+Glyph painting now clips once per glyph and zips destination rows with coverage
+rows. This removes repeated coordinate checks and per-pixel destination offsets
+from `blend_at`, preserving its floating-point operation order and alpha clamp.
+No extra cache or buffer is allocated.
+
+Release, one thread, 1080p, 30 fps, frames 15–34 of
+[`animated-text.html`](benchmarks/animated-text.html), five alternating runs:
+baseline 0.303 / 0.307 / 0.323 / 0.315 / 0.296 s; updated
+0.290 / 0.291 / 0.283 / 0.288 / 0.285 s. Median drawing time decreased
+6.2% (0.307 to 0.288 s). The stress scene deliberately overlaps large text
+blocks and paints beyond frame edges; it is not a typography example.
+An initial 96px-font variant measured baseline 0.143 / 0.133 / 0.157 s and
+updated 0.129 / 0.135 / 0.144 s, too small a difference for a confident claim.
+
+The targeted `clipped_glyph_rows_match_coordinate_blending` release test passed
+against the original coordinate-based path, including all 256 coverage values,
+nine opacity combinations, and clipping on all four sides. PNGs at frames
+0, 30, and 59 and the entire 60-frame native MP4 were byte-identical. The
+composition check passed and frame 30 was visually inspected. Single MP4
+exports at 1080p/30 fps, one worker: baseline 2.749 s, updated 2.687 s; these
+single runs do not establish an export speedup. No quality or encoder settings
+changed, and older PCs were not measured.

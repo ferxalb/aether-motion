@@ -225,22 +225,82 @@ fn paint_line(
             continue;
         };
         *painted = Some(painted.map_or(bounds, |area| area.union(bounds)));
+        let stride = width as usize * 4;
         for y in bounds.y0..bounds.y1 {
-            for x in bounds.x0..bounds.x1 {
-                let offset = (y as i64 - i64::from(gy)) as usize * metrics.width
-                    + (x as i64 - i64::from(gx)) as usize;
-                let coverage = glyph.coverage[offset] as f32 / 255.0;
-                if coverage > 0.0 {
-                    Surface::blend_at(
-                        pixels,
-                        width,
-                        height,
-                        x as i32,
-                        y as i32,
-                        color,
-                        alpha * coverage,
-                    );
+            let source_start = (y as i64 - i64::from(gy)) as usize * metrics.width
+                + (bounds.x0 as i64 - i64::from(gx)) as usize;
+            let count = bounds.x1 - bounds.x0;
+            let source = &glyph.coverage[source_start..source_start + count];
+            let dest = &mut pixels[y * stride + bounds.x0 * 4..y * stride + bounds.x1 * 4];
+            for (pixel, &coverage) in dest.as_chunks_mut::<4>().0.iter_mut().zip(source) {
+                if coverage == 0 {
+                    continue;
                 }
+                // Bounds were clipped once per glyph. Preserve blend_at's arithmetic order
+                // without rechecking coordinates and recomputing offsets for every pixel.
+                let a =
+                    ((alpha * (coverage as f32 / 255.0)) * color.a as f32 / 255.0).clamp(0.0, 1.0);
+                if a > 0.0 {
+                    Surface::blend_pixel(pixel, color, a);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clipped_glyph_rows_match_coordinate_blending() {
+        let glyph = Glyph {
+            metrics: fontdue::Metrics {
+                width: 32,
+                height: 16,
+                xmin: -3,
+                ymin: 0,
+                advance_width: 32.0,
+                ..Default::default()
+            },
+            coverage: (0..512).map(|i| i as u8).collect(),
+        };
+        for alpha in [0.0, 0.17, 1.0] {
+            for opacity in [0, 137, 255] {
+                let color = Color {
+                    r: 37,
+                    g: 183,
+                    b: 247,
+                    a: opacity,
+                };
+                let mut actual: Vec<u8> = (0..24 * 12 * 4).map(|i| i as u8).collect();
+                let mut expected = actual.clone();
+                let mut painted = None;
+                paint_line(
+                    &mut actual,
+                    (24, 12),
+                    &mut painted,
+                    std::slice::from_ref(&glyph),
+                    (0.0, 14.0),
+                    (color, alpha),
+                );
+                for y in 0..16 {
+                    for x in 0..32 {
+                        let coverage = glyph.coverage[y * 32 + x] as f32 / 255.0;
+                        if coverage > 0.0 {
+                            Surface::blend_at(
+                                &mut expected,
+                                24,
+                                12,
+                                x as i32 - 3,
+                                y as i32 - 2,
+                                color,
+                                alpha * coverage,
+                            );
+                        }
+                    }
+                }
+                assert_eq!(actual, expected, "alpha {alpha}, color opacity {opacity}");
             }
         }
     }
