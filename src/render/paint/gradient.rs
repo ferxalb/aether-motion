@@ -4,6 +4,7 @@
 //!
 //! A square gradient that is drawn again with the same size (a drifting glow, for example) is
 //! rasterized once into a fixed-point tile; later frames only blend that tile at the new offset.
+//! Full element opacity uses exact integer blending of that tile, preserving ordered dithering.
 
 use crate::model::{Color, Gradient, GradientKind, LinearDirection, Stop};
 use crate::render::geometry::{clip_pixels, Rect};
@@ -20,6 +21,23 @@ const BAYER: [[f32; 4]; 4] = [
 
 fn dither(x: usize, y: usize) -> f32 {
     (BAYER[y & 3][x & 3] + 0.5) / 16.0 - 0.5
+}
+
+/// At full element opacity every term in the cached float blend is an exact multiple
+/// of 1/4096. The numerator stays below 2^24, so this preserves its rounding exactly.
+fn blend_full_opacity(dest: &mut [[u8; 4]], source: &[[u16; 4]], first: usize, y: usize) {
+    let bias = BAYER[y & 3].map(|b| (b as i32 * 2 - 15) * 128 + 2048);
+    for (i, (pixel, texel)) in dest.iter_mut().zip(source).enumerate() {
+        let keep = 4096 - i32::from(texel[3]);
+        let d = bias[(first + i) & 3];
+        for c in 0..3 {
+            let numerator = i32::from(texel[c]) * 16 + i32::from(pixel[c]) * keep + d;
+            pixel[c] = (numerator >> 12).clamp(0, 255) as u8;
+        }
+        if texel[3] > 0 {
+            pixel[3] = 255;
+        }
+    }
 }
 
 /// Premultiplied RGBA (0..=255 scale) at `t`, clamped to the first and last stop.
@@ -134,7 +152,8 @@ impl Tile {
         for y in 0..height {
             let start = texels.len();
             for x in 0..width {
-                let [r, g, b, a] = sample(&gradient.stops, mapper.t(x as f32 + 0.5, y as f32 + 0.5));
+                let [r, g, b, a] =
+                    sample(&gradient.stops, mapper.t(x as f32 + 0.5, y as f32 + 0.5));
                 texels.push([
                     (r * 256.0).round() as u16,
                     (g * 256.0).round() as u16,
@@ -199,8 +218,16 @@ impl Surface {
                     let dither_row = [0, 1, 2, 3].map(|i| dither(i, y));
                     let dest = &mut self.pixels[(y * width + first) * 4..(y * width + last) * 4];
                     let source = &row[(first as i32 - x0) as usize..(last as i32 - x0) as usize];
-                    for (i, (pixel, texel)) in
-                        dest.as_chunks_mut::<4>().0.iter_mut().zip(source).enumerate()
+                    if alpha == 1.0 {
+                        blend_full_opacity(dest.as_chunks_mut::<4>().0, source, first, y);
+                        continue;
+                    }
+                    for (i, (pixel, texel)) in dest
+                        .as_chunks_mut::<4>()
+                        .0
+                        .iter_mut()
+                        .zip(source)
+                        .enumerate()
                     {
                         let d = dither_row[(first + i) & 3];
                         let keep = 1.0 - f32::from(texel[3]) * (alpha / 4096.0);
@@ -268,6 +295,39 @@ mod tests {
                     color: color(111, 141, 255, 0),
                 },
             ],
+        }
+    }
+
+    #[test]
+    fn integer_full_opacity_matches_cached_float_blend_exactly() {
+        for y in 0..4 {
+            for first in 0..4 {
+                for a in [0, 1, 17, 1024, 2048, 4095, 4096] {
+                    for color in [0, 1, 255, 12345, 32768, 65280] {
+                        let source = vec![[color, color / 2, color / 3, a]; 256];
+                        let mut actual: Vec<[u8; 4]> =
+                            (0..=255).map(|v| [v, 255 - v, v / 2, 37]).collect();
+                        let mut expected = actual.clone();
+                        for (i, (pixel, texel)) in expected.iter_mut().zip(&source).enumerate() {
+                            let keep = 1.0 - f32::from(texel[3]) / 4096.0;
+                            for c in 0..3 {
+                                let blended = f32::from(texel[c]) / 256.0
+                                    + f32::from(pixel[c]) * keep
+                                    + dither(first + i, y);
+                                pixel[c] = (blended + 0.5).clamp(0.0, 255.0) as u8;
+                            }
+                            if texel[3] > 0 {
+                                pixel[3] = 255;
+                            }
+                        }
+                        blend_full_opacity(&mut actual, &source, first, y);
+                        assert_eq!(
+                            actual, expected,
+                            "alpha {a}, color {color}, phase {first},{y}"
+                        );
+                    }
+                }
+            }
         }
     }
 

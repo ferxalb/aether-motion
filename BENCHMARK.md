@@ -319,3 +319,48 @@ Final filter verification after reverting the shadow experiment: frame 30 was
 visually inspected. Complete native MP4 exports (60 frames, 1080p, 30 fps, one
 worker) were byte-identical: baseline 6.430 s; updated 5.823 s. These are single
 export runs and do not establish a repeatable speedup.
+
+## Exact full-opacity cached gradient blending at 30 and 60 fps
+
+At full element opacity, cached gradient blending now uses integer arithmetic.
+Cached colors are multiples of 1/256, alpha is a multiple of 1/4096, and Bayer
+dither is a multiple of 1/32. Every term and sum of the original float blend
+is therefore exactly representable; the integer path preserves rounding and
+clamping. Animated element opacity below one retains the original float path.
+Translucent gradient stops are supported by the integer path. No extra buffer,
+CPU-specific instructions, reduced resolution, or encoder changes are used.
+
+Release, 1080p, one thread, 20 frames starting at one second, three alternating
+runs per row (seconds). All drawing measurements include the initial direct
+draw and tile construction for the measured interval.
+
+| Scene | FPS | Baseline runs | Updated runs | Median reduction |
+| --- | ---: | --- | --- | ---: |
+| [`animated-glows.html`](benchmarks/animated-glows.html) | 30 | 0.779 / 0.763 / 0.766 | 0.510 / 0.500 / 0.514 | 33.4% |
+| Same | 60 | 0.776 / 0.768 / 0.758 | 0.512 / 0.501 / 0.502 | 34.6% |
+| `premium-promo.html` | 30 | 0.758 / 0.747 / 0.746 | 0.655 / 0.652 / 0.646 | 12.7% |
+| Same | 60 | 0.706 / 0.705 / 0.704 | 0.605 / 0.596 / 0.596 | 15.5% |
+
+The 30 fps interval is frames 30–49; the 60 fps interval is frames 60–79.
+They start at the same time but cover different durations. The glow fixture
+moves by integer output pixels at both frame rates to isolate blending from
+cache-key changes. A preliminary variant moving by half a pixel per frame
+at 60 fps measured baseline 0.791 s at 30 fps and 1.361 s at 60 fps;
+it was replaced before the optimization comparison because changing rasterized
+widths exercises tile-cache budget behavior as well as blending.
+
+The exact integer-versus-float blend test passed across all destination byte
+values, all 16 Bayer phases, representative color and alpha extremes, and
+transparent texels with nonopaque destination alpha. The existing cached-versus-
+direct test also passed (its historical tolerance remains unchanged).
+`exports_full_hd_and_uhd_with_exact_cadence` passed: 30/60 fps at 1080p/4K,
+checking sample count, per-sample timestamp and duration, track size, and total
+duration. These cadence tests do not benchmark 4K glow performance.
+
+The glow composition check passed and its 60 fps midpoint was visually inspected.
+Complete native MP4 exports of the two-second glow scene, one worker, were
+byte-identical to baseline at each frame rate (60 frames at 30 fps; 120 at 60 fps).
+Single export timings: 30 fps baseline 2.412 s, updated 1.575 s; 60 fps baseline
+4.357 s, updated 2.688 s. These single export pairs do not establish repeatable
+end-to-end speedups. Drawing results are scoped to the measured intervals;
+older PCs and sustained realtime performance were not measured.
