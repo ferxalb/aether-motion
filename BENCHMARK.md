@@ -198,3 +198,26 @@ An earlier batch overlapping test compilation measured baseline
 excluded from the comparison. Frame 40 PNGs are byte-identical.
 No encoder settings, resolution, blur algorithms, or effects were changed.
 Older PCs and total MP4 export time were not measured.
+
+## Exact empty-span skipping for rounded borders
+
+Border drawing now also skips the central rectangle guaranteed to lie fully
+inside the rounded hole on curved rows. Potentially visible pixels retain the
+original signed-distance and blending calculations. No cache or additional
+pixel buffer is allocated.
+
+Release build, one thread, 1920x1080, 30 fps, frames 15–34 of
+[`rounded-border.html`](benchmarks/rounded-border.html), three alternating runs:
+baseline 0.164 / 0.169 / 0.176 s; updated 0.097 / 0.111 / 0.101 s.
+Median drawing time decreased 40% (0.169 to 0.101 s) in this large-radius
+border workload. This is not a general MP4 speedup claim.
+
+PNGs at frames 0, 20, 30, and 59 were byte-identical to the baseline. The
+targeted `skipped_hole_matches_full_distance_scan` release test passed,
+comparing full buffers with an exhaustive reference scan over four radii and
+three widths, fractional geometry, and an offscreen edge. Composition checking
+passed, and frame 20 was visually inspected. A 60-frame 1080p/30 fps native MP4
+export with one worker completed in 1.013 s (one run, without a baseline MP4
+timing; this export overlapped test compilation and is not a performance comparison).
+No resolution, smoothing, effect strength, or encoder settings changed.
+No older-PC measurements were made.
