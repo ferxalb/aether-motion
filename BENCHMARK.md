@@ -164,3 +164,37 @@ What this says:
 - Two attempts that did not help and were reverted: keying the gradient tile by the element's own size, and a branch-free four-pixel blend loop. Neither changed the 1080p time, and the first broke the tile-versus-direct test by 2 levels. The glow cost therefore is not hash thrashing or branching in the blend loop.
 
 Usage: `aether-hyperframes bench <file.html> --size 1080p --frame 150 --count 15` draws 15 frames starting at frame 150 and prints the elapsed time, so a measurement costs about one second of CPU instead of a full render.
+
+## Rejected exact grain lookup experiment
+
+A 65,536-entry signed-noise lookup table was tested in place of the per-pixel
+constant division. Three alternating release runs of `premium-promo.html`,
+1080p, 30 fps, frames 150–169, one thread: baseline 0.958 / 0.942 / 0.955 s;
+lookup 1.039 / 1.037 / 1.025 s. Median elapsed time increased by 8.6%.
+Frame 150 PNGs were byte-identical. The experiment was reverted: preserving
+quality alone is insufficient when the change makes rendering slower.
+No measurements on older PCs were made.
+
+## Exact lookup blending for rounded panel interiors
+
+Rounded translucent fills now resolve constant-color RGB blending into three
+256-byte tables, as square fills already do. Antialiased edges still use the
+original coverage calculation; small fills retain the direct path. The tables
+are local to a draw and require 768 bytes without a persistent cache.
+
+Release, 1920x1080, 30 fps, one thread, frames 15–34 of
+[`rounded-panel.html`](benchmarks/rounded-panel.html), three alternating runs:
+baseline 0.190 / 0.208 / 0.196 s; updated 0.104 / 0.087 / 0.085 s.
+Median reduction: 56% (0.196 to 0.087 s) for this large-panel workload.
+Frame 20 PNGs are byte-identical. The targeted unit test compares all RGB
+input levels across three opacities against the original interior formula,
+including alpha output, and passes.
+
+`glass.html`, 1080p, frames 40–59, three alternating runs after compilation:
+baseline 0.806 / 0.787 / 0.844 s; updated 0.787 / 0.879 / 0.827 s.
+The difference is within measurement noise; no general scene speedup is claimed.
+An earlier batch overlapping test compilation measured baseline
+0.853 / 1.229 / 0.937 s and updated 1.642 / 1.033 / 0.948 s, so it was
+excluded from the comparison. Frame 40 PNGs are byte-identical.
+No encoder settings, resolution, blur algorithms, or effects were changed.
+Older PCs and total MP4 export time were not measured.

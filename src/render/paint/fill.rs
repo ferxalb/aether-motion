@@ -201,6 +201,19 @@ impl Surface {
         let edges = edges.map(|edge| edge as f32);
         let width = self.width;
         let height = self.height;
+        let a = alpha * color.a as f32 / 255.0;
+        // Rounded interiors have constant source color and opacity, just like square fills.
+        // Keep the antialiased edge on its original coverage-aware path.
+        let table = (a > 0.0
+            && a < 1.0
+            && (bounds.x1 - bounds.x0) * (bounds.y1 - bounds.y0) >= 1024)
+            .then(|| {
+                [color.r, color.g, color.b].map(|source| {
+                    std::array::from_fn::<_, 256, _>(|dest| {
+                        (source as f32 * a + dest as f32 * (1.0 - a)).round() as u8
+                    })
+                })
+            });
         for y in bounds.y0..bounds.y1 {
             let (left, right) = Self::rounded_span(edges, radius, y);
             let inner_left = (left.ceil() as usize).clamp(bounds.x0, bounds.x1);
@@ -228,15 +241,63 @@ impl Surface {
                 x1: inner_right,
                 y1: y + 1,
             };
-            let a = alpha * color.a as f32 / 255.0;
             for row in self.rows(row) {
                 let pixels = row.as_chunks_mut::<4>().0;
                 if a >= 1.0 {
                     pixels.fill([color.r, color.g, color.b, 255]);
+                } else if let Some(table) = &table {
+                    for pixel in pixels {
+                        pixel[0] = table[0][pixel[0] as usize];
+                        pixel[1] = table[1][pixel[1] as usize];
+                        pixel[2] = table[2][pixel[2] as usize];
+                        pixel[3] = 255;
+                    }
                 } else {
                     for pixel in pixels {
                         Self::blend_pixel(pixel, color, a);
                     }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rounded_lookup_preserves_interior_blending_and_alpha() {
+        let color = Color {
+            r: 17,
+            g: 139,
+            b: 241,
+            a: 173,
+        };
+        for alpha in [0.01, 0.37, 1.0] {
+            let mut surface = Surface::filled(260, 8, 1.0, Color::BLACK);
+            for (i, p) in surface.pixels.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+                *p = [i as u8, (i / 3) as u8, (255 - i % 256) as u8, 31];
+            }
+            let before = surface.pixels.clone();
+            surface.fill_rounded(
+                PixelRect {
+                    x0: 0,
+                    y0: 0,
+                    x1: 260,
+                    y1: 8,
+                },
+                [0, 0, 260, 8],
+                2.0,
+                color,
+                alpha,
+            );
+            for y in 0..8 {
+                for x in 2..258 {
+                    let offset = (y * 260 + x) * 4;
+                    let mut expected = before[offset..offset + 4].to_vec();
+                    Surface::blend_pixel(&mut expected, color, alpha * color.a as f32 / 255.0);
+                    assert_eq!(&surface.pixels[offset..offset + 4], expected);
                 }
             }
         }
