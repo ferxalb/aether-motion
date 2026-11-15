@@ -101,6 +101,9 @@ impl<'a> Renderer<'a> {
                 self.surface
                     .fill_gradient(rect, [from, to], horizontal, alpha, radius);
             }
+            Some(Background::Gradient(ref gradient)) => {
+                self.surface.fill_gradient_general(rect, gradient, alpha, radius);
+            }
             None => {}
         }
         let border = element.style.border_width * cumulative;

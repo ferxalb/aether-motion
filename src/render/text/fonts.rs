@@ -1,13 +1,13 @@
 //! System font index and per-family cache, independent of any renderer state.
 
 use anyhow::{anyhow, Result};
-use fontdb::{Database, Family, Query};
+use fontdb::{Database, Family, Query, Weight};
 use fontdue::{Font, FontSettings};
 use std::collections::HashMap;
 
-/// System font index plus the parsed fonts requested so far, keyed by the CSS family list.
+/// System font index plus the parsed fonts requested so far, keyed by the CSS family list and weight.
 pub(in crate::render) struct FontStore {
-    fonts: HashMap<String, Font>,
+    fonts: HashMap<(String, u16), Font>,
     db: Database,
 }
 
@@ -35,8 +35,9 @@ impl FontStore {
     }
 
     /// Resolves the first available family of a CSS list, falling back to `sans-serif`.
-    pub(in crate::render) fn get(&mut self, family: &str) -> Result<&Font> {
-        if !self.fonts.contains_key(family) {
+    pub(in crate::render) fn get(&mut self, family: &str, weight: u16) -> Result<&Font> {
+        let key = (family.to_string(), weight);
+        if !self.fonts.contains_key(&key) {
             let id = family.split(',').find_map(|item| {
                 let item = item.trim().trim_matches(['\'', '"']);
                 let requested = match item.to_ascii_lowercase().as_str() {
@@ -48,6 +49,7 @@ impl FontStore {
                 let list = [requested];
                 self.db.query(&Query {
                     families: &list,
+                    weight: Weight(weight),
                     ..Default::default()
                 })
             });
@@ -56,6 +58,7 @@ impl FontStore {
                 .or_else(|| {
                     self.db.query(&Query {
                         families: &fallback,
+                        weight: Weight(weight),
                         ..Default::default()
                     })
                 })
@@ -75,8 +78,8 @@ impl FontStore {
                 })
                 .ok_or_else(|| anyhow!("could not read font"))?
                 .map_err(|error| anyhow!("invalid font: {error}"))?;
-            self.fonts.insert(family.to_string(), font);
+            self.fonts.insert(key.clone(), font);
         }
-        Ok(&self.fonts[family])
+        Ok(&self.fonts[&key])
     }
 }

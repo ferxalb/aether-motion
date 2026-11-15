@@ -1,4 +1,4 @@
-//! Text properties: color, font size and family, and alignment.
+//! Text properties: color, font size, family and weight, and alignment.
 
 use crate::model::{Length, LineHeight, Style, WhiteSpace};
 use crate::parse::values::color::parse_color;
@@ -15,6 +15,16 @@ pub(super) fn apply(key: &str, value: &str, style: &mut Style) -> Result<bool> {
                 bail!("font-size: only px is supported");
             };
             style.font_size = Some(n);
+        }
+        "font-weight" => {
+            style.font_weight = Some(match value {
+                "normal" => 400,
+                "bold" => 700,
+                _ => match value.parse::<u16>() {
+                    Ok(n) if (1..=1000).contains(&n) => n,
+                    _ => bail!("unsupported font-weight: {value}; use normal, bold, or 1-1000"),
+                },
+            });
         }
         "font-family" => style.font_family = Some(value.to_string()),
         "text-align" => {

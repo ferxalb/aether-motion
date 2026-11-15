@@ -57,7 +57,7 @@ impl<'a> Renderer<'a> {
             Content::Text(text) => text.as_str(),
             _ => "",
         };
-        let font = self.fonts.get(props.family)?;
+        let font = self.fonts.get(props.family, props.weight)?;
         let advance = |ch: char| font.metrics(ch, props.size).advance_width;
         // One 1/64 px of slack keeps a block that exactly fills its box from re-wrapping.
         let slack_limit = quantized.map(|q| (q + 1) as f32 / 64.0);

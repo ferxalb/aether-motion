@@ -79,7 +79,7 @@ impl<'a> Renderer<'a> {
                 && parent_style.and_then(|p| p.style.justify_content.as_deref()) == Some("center"));
         let center_y = parent_flex
             && parent_style.and_then(|p| p.style.align_items.as_deref()) == Some("center");
-        let font = self.fonts.get(props.family)?;
+        let font = self.fonts.get(props.family, props.weight)?;
         let mut glyphs = Vec::new();
         let mut lines = Vec::with_capacity(block.lines.len());
         for line in &block.lines {

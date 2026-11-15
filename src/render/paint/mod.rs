@@ -2,6 +2,7 @@
 
 mod border;
 mod fill;
+mod gradient;
 mod images;
 mod rotate;
 mod shadow;

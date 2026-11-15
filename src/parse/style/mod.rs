@@ -52,7 +52,7 @@ pub(in crate::parse) fn style_for(
             }
             "margin" if value == "0" || value == "0px" => {}
             "box-sizing" if value == "border-box" => {}
-            "overflow" if value == "hidden" => {}
+            "overflow" if value == "visible" => {}
             "visibility"
                 if value == "hidden"
                     && attr(node, "class")

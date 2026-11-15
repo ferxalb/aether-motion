@@ -16,7 +16,10 @@ pub(super) fn apply(key: &str, value: &str, style: &mut Style) -> Result<bool> {
         "background-color" => {
             let color = parse_color(value)?;
             // The supported gradients are opaque and cover the background color.
-            if !matches!(style.background, Some(Background::Linear { .. })) {
+            if !matches!(
+                style.background,
+                Some(Background::Linear { .. } | Background::Gradient(_))
+            ) {
                 style.background = Some(Background::Solid(color));
             }
         }

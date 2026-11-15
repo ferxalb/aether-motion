@@ -46,7 +46,7 @@ impl Length {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum Background {
     Solid(Color),
     Linear {
@@ -54,6 +54,43 @@ pub enum Background {
         to: Color,
         horizontal: bool,
     },
+    /// Any other gradient: angles, corners, several stops, translucency, or radial.
+    Gradient(Gradient),
+}
+
+/// Color stop at `pos` (0..=1 along the gradient line or radius).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Stop {
+    pub pos: f32,
+    pub color: Color,
+}
+
+/// Direction of a `linear-gradient`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum LinearDirection {
+    /// CSS angle in degrees: 0 points up and angles grow clockwise.
+    Angle(f32),
+    /// `to <corner>`; `(x, y)` is `(1|-1, 1|-1)` with +1 meaning right / down.
+    Corner(i8, i8),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum GradientKind {
+    Linear(LinearDirection),
+    Radial {
+        circle: bool,
+        /// Center as a fraction of the box.
+        center: (f32, f32),
+        /// `false`: `farthest-corner` (default); `true`: `farthest-side`.
+        farthest_side: bool,
+    },
+}
+
+/// A gradient with sorted stops. Colors may be translucent and interpolate premultiplied.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Gradient {
+    pub kind: GradientKind,
+    pub stops: Vec<Stop>,
 }
 
 /// Single outer `box-shadow` (no inset).
@@ -93,6 +130,8 @@ pub struct Style {
     pub color: Option<Color>,
     pub font_size: Option<f32>,
     pub font_family: Option<String>,
+    /// Inherited numeric `font-weight` (1..=1000); `None` means 400.
+    pub font_weight: Option<u16>,
     pub opacity: Option<f32>,
     pub text_align: Option<String>,
     /// Inherited text wrapping controls; see [`LineHeight`] and [`WhiteSpace`].
