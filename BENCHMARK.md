@@ -143,3 +143,24 @@ Quality, full-size blur versus reduced, on a stress scene (1920x1080 composition
 | 20 | 960x540 | 0 | 0 | 0% | identical (not reduced) |
 
 Speed: the same scene animated (60 frames at 1920x1080, one run each, `nice 10`) took 5.2–5.4 s before and 1.94–1.99 s now; the same scene without the glass card takes 1.28 s, so the blur went from about 67 ms to about 11 ms per frame (about 6x). Unit tests bound the reduced blur to 3 levels on a 235-level step edge and verify the box widths reproduce the requested strength within 3%.
+
+## Per-frame profile at 1080p (one thread)
+
+Native MP4 export of [`premium-promo.html`](examples/premium-promo.html) at `--size 1080p`, 30 fps, 450 frames, `--threads 1`, single run: 24.7 s wall time, 24.06 s user CPU, 267 MB peak RSS (about 53 ms of CPU per frame, or 1.6 CPU-seconds per second of video). One thread uses one core; the default `--threads` (a quarter of the cores) spreads the same CPU time over more cores.
+
+Attribution per frame, from `bench --frame START --count 15` on the same file with one effect removed (one run each; differences under about 10% are noise). This was measured before the 2x/4x backdrop blur reduction was applied to these frames' build, so the blur row is an upper bound:
+
+| Frames | Full | Without vignette and grain | Without glows | Without backdrop blur | Without box shadows |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 60–74 | 43 ms | 36 ms | 21 ms | 42 ms | 42 ms |
+| 150–164 | 55 ms | 46 ms | 34 ms | 44 ms | 51 ms |
+| 250–264 | 61 ms | 52 ms | 41 ms | 51 ms | 49 ms |
+
+What this says:
+
+- The two full-frame radial glows are the largest single cost (about 20 ms per frame, 35–50%), even with the tile cache. Alone, one cached glow (1400x1200 composition px) costs about 5.6 ms per frame at 1080p, so two cost about 11 ms; the rest of that difference is the full-frame area they mark as painted, which the next frame must clear.
+- Vignette and grain cost about 7–9 ms per frame.
+- The backdrop blur cost about 11 ms per frame while cards were visible.
+- Two attempts that did not help and were reverted: keying the gradient tile by the element's own size, and a branch-free four-pixel blend loop. Neither changed the 1080p time, and the first broke the tile-versus-direct test by 2 levels. The glow cost therefore is not hash thrashing or branching in the blend loop.
+
+Usage: `aether-hyperframes bench <file.html> --size 1080p --frame 150 --count 15` draws 15 frames starting at frame 150 and prints the elapsed time, so a measurement costs about one second of CPU instead of a full render.

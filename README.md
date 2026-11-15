@@ -84,7 +84,7 @@ For agents, `aether-hyperframes mcp` exposes the contract through `aether_guide`
 cargo run --release -- bench examples/title-card.html --fps 24 --scale 0.5
 ```
 
-`bench` measures in-memory drawing, **without MP4 encoding**. The output shows elapsed time and the number of rasterized and reused frames. To measure the full pipeline, use `render` to produce an MP4. To compare engines, render the same supported composition with identical resolution, FPS, and encoding options on the same machine. Record total time, peak memory, and output size; do not extrapolate results from one machine to another.
+`bench` measures in-memory drawing, **without MP4 encoding**. Add `--frame START --count N` to draw only N frames from START, which measures a heavy section of a long composition in about a second instead of rendering all of it. The output shows elapsed time and the number of rasterized and reused frames. To measure the full pipeline, use `render` to produce an MP4. To compare engines, render the same supported composition with identical resolution, FPS, and encoding options on the same machine. Record total time, peak memory, and output size; do not extrapolate results from one machine to another.
 
 [Initial measurements](BENCHMARK.md).
 

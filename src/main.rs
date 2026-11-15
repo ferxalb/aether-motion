@@ -17,7 +17,7 @@ fn usage() -> &'static str {
 Usage:\n\
   aether-hyperframes inspect <composition.html>\n\
   aether-hyperframes render <composition.html> --output <video.mp4|frame.png> [--fps 30] [--scale 1 | --size 1080p|4k] [--threads N (default: cores/4, 1 to 4)] [--priority low|normal (default: low)] [--encoder native|ffmpeg] [--frame N]\n\
-  aether-hyperframes bench <composition.html> [--fps 30] [--scale 1 | --size 1080p|4k]\n\
+  aether-hyperframes bench <composition.html> [--fps 30] [--scale 1 | --size 1080p|4k] [--frame START --count N]\n\
   aether-hyperframes check <composition.html>   (JSON; exits with 1 on failure)\n\
   aether-hyperframes block [list | <name> [--set key=value]...]   (print a ready-made block or theme as HTML)\n\
   aether-hyperframes mcp                        (MCP server over stdio for agents)\n\
@@ -37,6 +37,8 @@ struct Options {
     encoder: String,
     low_priority: bool,
     frame: Option<usize>,
+    /// `bench` only: how many frames to draw from `frame` (default: all of them).
+    count: Option<usize>,
 }
 
 fn options() -> Result<Option<Options>> {
@@ -67,6 +69,7 @@ fn options() -> Result<Option<Options>> {
         encoder: "native".to_string(),
         low_priority: true,
         frame: None,
+        count: None,
     };
     while let Some(arg) = args.next() {
         let value = args
@@ -87,6 +90,7 @@ fn options() -> Result<Option<Options>> {
                 }
             }
             "--frame" => opts.frame = Some(value.parse().context("invalid --frame")?),
+            "--count" => opts.count = Some(value.parse().context("invalid --count")?),
             _ => bail!("unknown option: {arg}"),
         }
     }
@@ -248,7 +252,12 @@ fn main() -> Result<()> {
     let frames = renderer.frame_count(opts.fps);
     let start = Instant::now();
     if opts.command == "bench" {
-        for i in 0..frames {
+        let first = opts.frame.unwrap_or(0);
+        let last = opts.count.map_or(frames, |n| (first + n).min(frames));
+        if first >= frames {
+            bail!("--frame is outside the composition ({frames} frames)");
+        }
+        for i in first..last {
             renderer.render_frame(i, opts.fps)?;
         }
     } else {
