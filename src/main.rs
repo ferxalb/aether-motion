@@ -1,6 +1,6 @@
 use aether_hyperframes::encode::encode_native;
 use aether_hyperframes::parse::parse_file;
-use aether_hyperframes::render::Renderer;
+use aether_hyperframes::render::{OutputSize, Renderer};
 use anyhow::{anyhow, bail, Context, Result};
 use image::ColorType;
 use std::env;
@@ -14,8 +14,8 @@ fn usage() -> &'static str {
     "aether-hyperframes 0.1\n\
 Uso:\n\
   aether-hyperframes inspect <composicion.html>\n\
-  aether-hyperframes render <composicion.html> --output <video.mp4|frame.png> [--fps 30] [--scale 1] [--threads 2] [--encoder native|ffmpeg] [--frame N]\n\
-  aether-hyperframes bench <composicion.html> [--fps 30] [--scale 1]\n\
+  aether-hyperframes render <composicion.html> --output <video.mp4|frame.png> [--fps 30] [--scale 1 | --size 1080p|4k] [--threads 2] [--encoder native|ffmpeg] [--frame N]\n\
+  aether-hyperframes bench <composicion.html> [--fps 30] [--scale 1 | --size 1080p|4k]\n\
   aether-hyperframes check <composicion.html>   (JSON; sale con 1 si falla)\n\
   aether-hyperframes mcp                        (servidor MCP por stdio, para agentes)\n\
 El backend nativo acepta un subconjunto explícito de HTML/CSS de HyperFrames.\n\
@@ -28,7 +28,8 @@ struct Options {
     input: PathBuf,
     output: Option<PathBuf>,
     fps: u32,
-    scale: f32,
+    scale: Option<f32>,
+    size: Option<OutputSize>,
     threads: u32,
     encoder: String,
     frame: Option<usize>,
@@ -56,7 +57,8 @@ fn options() -> Result<Option<Options>> {
         input,
         output: None,
         fps: 30,
-        scale: 1.0,
+        scale: None,
+        size: None,
         threads: 2,
         encoder: "native".to_string(),
         frame: None,
@@ -66,12 +68,16 @@ fn options() -> Result<Option<Options>> {
         match arg.as_str() {
             "--output" => opts.output = Some(value.into()),
             "--fps" => opts.fps = value.parse().context("--fps inválido")?,
-            "--scale" => opts.scale = value.parse().context("--scale inválido")?,
+            "--scale" => opts.scale = Some(value.parse().context("--scale inválido")?),
+            "--size" => opts.size = Some(value.parse()?),
             "--threads" => opts.threads = value.parse().context("--threads inválido")?,
             "--encoder" => opts.encoder = value,
             "--frame" => opts.frame = Some(value.parse().context("--frame inválido")?),
             _ => bail!("opción desconocida: {arg}"),
         }
+    }
+    if opts.size.is_some() && opts.scale.is_some() {
+        bail!("elige --size o --scale");
     }
     if opts.fps == 0 || opts.fps > 240 {
         bail!("--fps debe estar entre 1 y 240");
@@ -177,7 +183,9 @@ fn main() -> Result<()> {
     match raw.next().as_deref() {
         Some("mcp") => return aether_hyperframes::agent::serve(),
         Some("check") => {
-            let file = raw.next().ok_or_else(|| anyhow!("falta <composicion.html>"))?;
+            let file = raw
+                .next()
+                .ok_or_else(|| anyhow!("falta <composicion.html>"))?;
             let report = aether_hyperframes::agent::check(Path::new(&file));
             println!("{}", serde_json::to_string_pretty(&report)?);
             std::process::exit(if report["ok"] == true { 0 } else { 1 });
@@ -210,7 +218,10 @@ fn main() -> Result<()> {
         }
         return Ok(());
     }
-    let mut renderer = Renderer::new(&composition, opts.scale)?;
+    let mut renderer = match opts.size {
+        Some(size) => Renderer::with_output_size(&composition, size)?,
+        None => Renderer::new(&composition, opts.scale.unwrap_or(1.0))?,
+    };
     let (w, h) = renderer.dimensions();
     let frames = renderer.frame_count(opts.fps);
     let start = Instant::now();

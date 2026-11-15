@@ -15,7 +15,7 @@ cargo run --release -- render examples/title-card.html --output /tmp/title.mp4 -
 cargo run --release -- render examples/title-card.html --output /tmp/title-ffmpeg.mp4 --encoder ffmpeg
 ```
 
-`--scale 0.5` reduce ancho y alto a la mitad, de modo que cada fotograma contiene una cuarta parte de los píxeles. `--threads` limita los hilos de codificación. Ambos codificadores producen H.264/yuv420p; el modo FFmpeg usa `veryfast` y CRF 25. El renderizador mantiene un solo fotograma RGBA y hasta 64 MiB de imágenes ya escaladas; las escenas visualmente idénticas reutilizan el fotograma anterior.
+`--scale 0.5` reduce ancho y alto a la mitad, de modo que cada fotograma contiene una cuarta parte de los píxeles. En exportaciones nativas de al menos 1080p, `--threads 2` o más permite solapar dibujo y conversión de color con la codificación mediante una cola de un fotograma. Ambos codificadores producen H.264/yuv420p; el modo FFmpeg usa `veryfast` y CRF 25. El renderizador mantiene un solo fotograma RGBA, hasta 64 MiB de imágenes escaladas y hasta 32 MiB de máscaras de texto. Cuando el estado visible coincide con el fotograma anterior, reutiliza el RGBA y la conversión YUV del codificador nativo.
 
 ## Entradas compatibles
 
@@ -26,10 +26,35 @@ cargo run --release -- render examples/title-card.html --output /tmp/title-ffmpe
 | `data-track-index`, clips con `<div>`, texto e imágenes locales PNG/JPEG/WebP | Sí |
 | Selectores CSS de tipo, clase, ID y descendientes; estilo inline | Sí |
 | `left`, `top`, `width`, `height` en px o %, colores hex/nombres básicos, opacidad, fuente, centrado flex, `object-fit` | Sí |
+| `border-radius` y `linear-gradient(...)` | Radio de fondo en px y gradientes verticales u horizontales de dos colores opacos |
 | `data-hf-fade-in`, `data-hf-fade-out` | Extensión nativa; segundos, transición lineal |
+| `data-hf-keyframes` | Extensión nativa; posición y opacidad interpoladas con cuatro curvas |
 | GSAP, `<script>`, `<video>`, `<audio>`, `<svg>`, canvas, efectos complejos, composición externa, CSS general | Aún no; error explícito |
 
 Las fuentes se buscan en el sistema. El texto admite una línea y no implementa todo el modelado tipográfico del navegador. Solo se aceptan imágenes locales. Para una composición real, ejecuta primero `inspect`; si una función no está cubierta, el programa explica la primera incompatibilidad.
+
+## Exportar a 1080p y 4K
+
+```bash
+aether-hyperframes render examples/motion.html --size 1080p --fps 60 --output /tmp/motion-1080p.mp4
+aether-hyperframes render examples/motion.html --size 4k --fps 30 --output /tmp/motion-4k.mp4
+```
+
+Los presets producen 1920×1080 y 3840×2160 a partir de composiciones 16:9. Ambos admiten 30 y 60 fps. Para otras proporciones usa `--scale` o define las dimensiones de salida en el HTML. El MP4 nativo admite hasta 60 fps y dimensiones pares hasta 3840×2160 o 2160×3840. La cadencia del archivo es constante. El tiempo de exportación depende de la escena y del equipo.
+
+En MCP, los mismos presets están disponibles mediante `size`. Usa `size` o `scale` en cada llamada.
+
+## Crear y revisar animaciones
+
+[La composición de ejemplo](examples/motion.html) combina entrada y salida con movimiento, capas y tiempos relativos. Los fotogramas clave usan segundos locales al clip. El atributo admite `x`, `y`, `opacity` y `easing`. Consulta el contrato completo en [AGENTS.md](AGENTS.md).
+
+```bash
+aether-hyperframes check examples/motion.html
+aether-hyperframes render examples/motion.html --output /tmp/motion.png --fps 30 --frame 12
+aether-hyperframes render examples/motion.html --output /tmp/motion.mp4 --fps 30
+```
+
+Para agentes, `aether-hyperframes mcp` expone el contrato en `aether_guide`. `aether_check` devuelve tiempos resueltos y tiempos locales de los fotogramas clave en `animations`, con un error y una corrección sugerida cuando falla. `aether_snapshot` devuelve un PNG con el estado en el segundo solicitado.
 
 ## Medir en tu equipo
 
@@ -48,4 +73,3 @@ El código usa APIs portables de Rust y el repositorio incluye una matriz de CI 
 1. Añadir más propiedades CSS y casos de layout a partir de composiciones reales, con fixtures visuales.
 2. Medir el pipeline completo de MP4 en Windows y Linux, además de macOS, y perfilar CPU y memoria por etapa.
 3. Evaluar la calidad y el tamaño de OpenH264 frente a FFmpeg en escenas reales.
-4. Ofrecer un backend de compatibilidad para HTML/JS general cuando el perfil nativo no alcance.

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <style>
+    .panel {
+      left: 72px;
+      top: 96px;
+      width: 496px;
+      height: 168px;
+      background: linear-gradient(to right, #1d3855, #274a6d);
+      border-radius: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    h1 { font-size: 40px; color: #f4f8ff; }
+    .accent { left: 72px; top: 286px; width: 496px; height: 6px; border-radius: 3px; background: #50e0b5; }
+  </style>
+</head>
+<body>
+  <main data-composition-id="motion" data-width="640" data-height="360"
+        data-duration="3" style="background: #101b2d">
+    <div id="panel" class="clip panel" data-start="0" data-duration="3" data-track-index="0"
+         data-hf-keyframes='[
+           {"at":0,"x":-62,"y":20,"opacity":0},
+           {"at":0.65,"x":0,"y":0,"opacity":1,"easing":"ease-out"},
+           {"at":2.35},
+           {"at":3,"x":62,"y":-20,"opacity":0,"easing":"ease-in"}
+         ]'>
+      <h1>Aether en movimiento</h1>
+    </div>
+    <div id="accent" class="clip accent" data-start="panel-2.8" data-duration="2.6" data-track-index="1"
+         data-hf-keyframes='[
+           {"at":0,"x":-120,"opacity":0},
+           {"at":0.65,"x":0,"opacity":1,"easing":"ease-out"},
+           {"at":1.95},
+           {"at":2.6,"x":120,"opacity":0,"easing":"ease-in"}
+         ]'></div>
+  </main>
+</body>
+</html>

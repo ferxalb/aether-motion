@@ -39,13 +39,24 @@ impl Length {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum Background {
+    Solid(Color),
+    Linear {
+        from: Color,
+        to: Color,
+        horizontal: bool,
+    },
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Style {
     pub left: Option<Length>,
     pub top: Option<Length>,
     pub width: Option<Length>,
     pub height: Option<Length>,
-    pub background: Option<Color>,
+    pub background: Option<Background>,
+    pub border_radius: f32,
     pub color: Option<Color>,
     pub font_size: Option<f32>,
     pub font_family: Option<String>,
@@ -66,6 +77,24 @@ pub enum Content {
     Image(PathBuf),
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Easing {
+    #[default]
+    Linear,
+    EaseIn,
+    EaseOut,
+    EaseInOut,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Keyframe {
+    pub at: f64,
+    pub x: f32,
+    pub y: f32,
+    pub opacity: f32,
+    pub easing: Easing,
+}
+
 #[derive(Clone, Debug)]
 pub struct Element {
     pub tag: String,
@@ -79,6 +108,7 @@ pub struct Element {
     pub fade_in: f64,
     pub fade_out: f64,
     pub track: i32,
+    pub keyframes: Vec<Keyframe>,
 }
 
 #[derive(Debug)]

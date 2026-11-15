@@ -1,8 +1,10 @@
-use crate::model::{Color, Composition, Content, Element, Length, Style};
+use crate::model::{
+    Background, Color, Composition, Content, Easing, Element, Keyframe, Length, Style,
+};
 use anyhow::{anyhow, bail, Context, Result};
 use kuchiki::traits::*;
 use kuchiki::NodeRef;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::Path;
 
@@ -244,6 +246,34 @@ pub fn parse_color(raw: &str) -> Result<Color> {
     Ok(color)
 }
 
+fn parse_background(raw: &str) -> Result<Background> {
+    if let Some(body) = raw
+        .strip_prefix("linear-gradient(")
+        .and_then(|s| s.strip_suffix(')'))
+    {
+        let parts: Vec<_> = body.split(',').map(str::trim).collect();
+        let (horizontal, from, to) = match parts.as_slice() {
+            ["to bottom", from, to] | [from, to] => (false, from, to),
+            ["to top", from, to] => (false, to, from),
+            ["to right", from, to] => (true, from, to),
+            ["to left", from, to] => (true, to, from),
+            _ => bail!(
+                "linear-gradient: usa una dirección horizontal o vertical y dos colores opacos"
+            ),
+        };
+        let (from, to) = (parse_color(from)?, parse_color(to)?);
+        if from.a != 255 || to.a != 255 {
+            bail!("linear-gradient: se necesitan dos colores opacos");
+        }
+        return Ok(Background::Linear {
+            from,
+            to,
+            horizontal,
+        });
+    }
+    Ok(Background::Solid(parse_color(raw)?))
+}
+
 fn style_for(node: &NodeRef, rules: &[Rule]) -> Result<Style> {
     let mut matches: Vec<_> = rules
         .iter()
@@ -264,7 +294,18 @@ fn style_for(node: &NodeRef, rules: &[Rule]) -> Result<Style> {
             "top" => style.top = Some(parse_length(&value, &key)?),
             "width" => style.width = Some(parse_length(&value, &key)?),
             "height" => style.height = Some(parse_length(&value, &key)?),
-            "background" | "background-color" => style.background = Some(parse_color(&value)?),
+            "background" => style.background = Some(parse_background(&value)?),
+            "background-color" => {
+                let color = parse_color(&value)?;
+                // The supported gradients are opaque and cover the background color.
+                if !matches!(style.background, Some(Background::Linear { .. })) {
+                    style.background = Some(Background::Solid(color));
+                }
+            }
+            "border-radius" => match parse_length(&value, &key)? {
+                Length::Px(n) if n >= 0.0 => style.border_radius = n,
+                _ => bail!("border-radius: solo un radio no negativo en px"),
+            },
             "color" => style.color = Some(parse_color(&value)?),
             "font-size" => {
                 let Length::Px(n) = parse_length(&value, &key)? else {
@@ -343,6 +384,73 @@ fn direct_text(node: &NodeRef) -> String {
         .join(" ")
 }
 
+fn parse_keyframes(raw: &str) -> Result<Vec<Keyframe>> {
+    let frames: Vec<BTreeMap<String, serde_json::Value>> =
+        serde_json::from_str(raw).context("se esperaba un array JSON de objetos")?;
+    if frames.is_empty() {
+        bail!("se necesita al menos un fotograma clave");
+    }
+    let mut previous = Keyframe {
+        at: -1.0,
+        x: 0.0,
+        y: 0.0,
+        opacity: 1.0,
+        easing: Easing::Linear,
+    };
+    let mut keyframes = Vec::with_capacity(frames.len());
+    for (index, frame) in frames.into_iter().enumerate() {
+        let keyframe = (|| -> Result<Keyframe> {
+            for key in frame.keys() {
+                if !matches!(key.as_str(), "at" | "x" | "y" | "opacity" | "easing") {
+                    bail!("campo desconocido: {key}");
+                }
+            }
+            let get_number = |key: &str, fallback: f64| -> Result<f64> {
+                match frame.get(key) {
+                    Some(value) => value
+                        .as_f64()
+                        .ok_or_else(|| anyhow!("{key} requiere un número")),
+                    None => Ok(fallback),
+                }
+            };
+            let at = get_number("at", -1.0)?;
+            if at < 0.0 || at <= previous.at {
+                bail!("at es obligatorio y los tiempos deben ser no negativos y ascendentes");
+            }
+            let x = get_number("x", previous.x as f64)? as f32;
+            let y = get_number("y", previous.y as f64)? as f32;
+            if !x.is_finite() || !y.is_finite() || x.abs() > 1_000_000.0 || y.abs() > 1_000_000.0 {
+                bail!("x e y deben ser desplazamientos de hasta 1.000.000 px");
+            }
+            let opacity = get_number("opacity", previous.opacity as f64)?;
+            if !(0.0..=1.0).contains(&opacity) {
+                bail!("opacity debe estar entre 0 y 1");
+            }
+            let easing = match frame.get("easing") {
+                None => Easing::Linear,
+                Some(value) => match value.as_str() {
+                    Some("linear") => Easing::Linear,
+                    Some("ease-in") => Easing::EaseIn,
+                    Some("ease-out") => Easing::EaseOut,
+                    Some("ease-in-out") => Easing::EaseInOut,
+                    _ => bail!("easing debe ser linear, ease-in, ease-out o ease-in-out"),
+                },
+            };
+            Ok(Keyframe {
+                at,
+                x,
+                y,
+                opacity: opacity as f32,
+                easing,
+            })
+        })()
+        .with_context(|| format!("fotograma clave {}", index + 1))?;
+        keyframes.push(keyframe);
+        previous = keyframe;
+    }
+    Ok(keyframes)
+}
+
 fn walk(
     node: &NodeRef,
     parent: Option<usize>,
@@ -398,6 +506,16 @@ fn walk(
         .map(|s| number(&s, "data-hf-fade-out"))
         .transpose()?
         .unwrap_or(0.0);
+    let keyframes = attr(node, "data-hf-keyframes")
+        .map(|raw| parse_keyframes(&raw))
+        .transpose()
+        .with_context(|| {
+            format!(
+                "data-hf-keyframes en <{tag}> ({})",
+                attr(node, "id").as_deref().unwrap_or("sin id")
+            )
+        })?
+        .unwrap_or_default();
     let track = attr(node, "data-track-index")
         .map(|s| s.parse::<i32>().context("data-track-index inválido"))
         .transpose()?
@@ -430,6 +548,7 @@ fn walk(
             fade_in,
             fade_out,
             track,
+            keyframes,
         },
         start_expr,
         duration,
@@ -613,9 +732,22 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
         if p.element.fade_in + p.element.fade_out > p.element.end - p.element.start + 1e-9 {
             bail!("fade-in + fade-out excede la duración de un clip");
         }
+        if p.element
+            .keyframes
+            .last()
+            .is_some_and(|frame| frame.at > p.element.end - p.element.start + 1e-9)
+        {
+            bail!(
+                "data-hf-keyframes excede la duración de {}",
+                p.element.id.as_deref().unwrap_or("elemento sin id")
+            );
+        }
         elements.push(p.element);
     }
-    let background = elements[0].style.background.unwrap_or(Color::BLACK);
+    let background = match elements[0].style.background {
+        Some(Background::Solid(color)) => color,
+        _ => Color::BLACK,
+    };
     Ok(Composition {
         width,
         height,
