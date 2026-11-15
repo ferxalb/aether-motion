@@ -77,6 +77,6 @@ The code uses portable Rust APIs, and the repository includes a CI matrix for Li
 ## Source layout
 
 - `src/model.rs`: parsed composition, styles, and time-sampled motion tracks.
-- `src/parse.rs`: HTML/CSS parser; unsupported features fail with explicit errors.
+- `src/parse/`: HTML/CSS parser; unsupported features fail with explicit errors. `mod.rs` is the `parse_file` facade; `css/` (stylesheet, selectors, cascade, variables), `values/` (lengths, colors, backgrounds, transforms, shadows), `style/` (property groups: layout, text, visual), `animation/` (CSS animation and `data-hf-keyframes` into motion tracks), `tree.rs` (DOM walk), `timeline.rs` (`data-start`), `html.rs` (node helpers).
 - `src/render/`: software renderer. `mod.rs` holds the public `Renderer` and frame loop; `draw.rs` walks the scene; `layout/` sizes and places flex items; `paint/` holds pixel primitives (fills, borders, shadows, images, rotation); `text/` handles fonts, measurement, and glyph painting; `geometry.rs` and `frame_state.rs` hold small shared types.
 - `src/encode.rs`: native H.264/MP4 encoding. `src/agent.rs`: `check` and the MCP server.

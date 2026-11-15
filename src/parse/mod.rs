@@ -1,0 +1,175 @@
+//! HTML/CSS parser: turns a composition file into the `model` types, rejecting unsupported features explicitly.
+//!
+//! `parse_file` is the facade. Submodules: `html` (node helpers), `css` (stylesheet, selectors, cascade,
+//! variables), `values` (value parsers), `style` (property groups into `Style`), `animation`
+//! (CSS animation and `data-hf-keyframes` into motion tracks), `tree` (DOM walk), `timeline` (`data-start`).
+
+mod animation;
+mod css;
+mod html;
+mod style;
+mod timeline;
+mod tree;
+mod values;
+
+pub use values::color::parse_color;
+
+use crate::model::{Background, Color, Composition, Content};
+use animation::motion::{build_motion, motion_from_keyframes};
+use anyhow::{anyhow, bail, Context, Result};
+use css::cascade::cascade;
+use css::stylesheet::parse_css;
+use css::vars::inherit_vars;
+use css::{Stylesheet, Vars};
+use html::{attr, number};
+use kuchiki::traits::*;
+use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
+use timeline::resolve_start;
+use tree::walk;
+
+pub fn parse_file(path: &Path) -> Result<Composition> {
+    let html =
+        fs::read_to_string(path).with_context(|| format!("could not read {}", path.display()))?;
+    let document = kuchiki::parse_html().one(html);
+    if let Some(unsupported) = document
+        .select("script, video, audio, canvas, svg, iframe")
+        .map_err(|_| anyhow!("error selecting HTML elements"))?
+        .next()
+    {
+        bail!(
+            "<{}> requires a browser/JavaScript and is not supported by the native backend",
+            unsupported.name.local
+        );
+    }
+    let metadata = document
+        .select_first("[data-composition-id][data-width][data-height]")
+        .map_err(|_| anyhow!("missing data-composition-id, data-width, or data-height"))?;
+    let width: u32 = attr(metadata.as_node(), "data-width")
+        .unwrap()
+        .parse()
+        .context("invalid data-width")?;
+    let height: u32 = attr(metadata.as_node(), "data-height")
+        .unwrap()
+        .parse()
+        .context("invalid data-height")?;
+    if width == 0 || height == 0 || width > 8192 || height > 8192 {
+        bail!("dimensions are outside 1..8192");
+    }
+    let mut sheet = Stylesheet::default();
+    for node in document
+        .select("style")
+        .map_err(|_| anyhow!("error selecting CSS"))?
+    {
+        parse_css(&node.text_contents(), &mut sheet)?;
+    }
+    // Custom properties declared on `:root` (the <html> element) inherit into the composition.
+    let mut root_vars = Vars::new();
+    if let Ok(html) = document.select_first("html") {
+        let properties = cascade(html.as_node(), &sheet.rules)?;
+        root_vars = inherit_vars(&properties, &root_vars);
+    }
+    let root = if metadata
+        .as_node()
+        .as_element()
+        .is_some_and(|e| e.name.local.as_ref() == "meta")
+    {
+        document
+            .select_first("body")
+            .map_err(|_| anyhow!("missing <body>"))?
+            .as_node()
+            .clone()
+    } else {
+        metadata.as_node().clone()
+    };
+    let base = path.parent().unwrap_or_else(|| Path::new("."));
+    let mut pending = Vec::new();
+    walk(&root, None, base, &sheet, &root_vars, &mut pending)?;
+    if pending.is_empty() {
+        bail!("empty composition");
+    }
+    let mut ids = HashMap::new();
+    for (idx, item) in pending.iter().enumerate() {
+        if let Some(id) = &item.element.id {
+            if ids.insert(id.clone(), idx).is_some() {
+                bail!("duplicate id: {id}");
+            }
+        }
+    }
+    let mut memo = vec![None; pending.len()];
+    let mut visiting = vec![false; pending.len()];
+    for idx in 0..pending.len() {
+        resolve_start(idx, &pending, &ids, &mut memo, &mut visiting)?;
+    }
+    let explicit_duration = attr(metadata.as_node(), "data-duration")
+        .map(|s| number(&s, "data-duration"))
+        .transpose()?;
+    let inferred_duration = pending
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, p)| {
+            p.duration
+                .or_else(|| {
+                    if p.start_expr.is_some() && matches!(p.element.content, Content::Image(_)) {
+                        Some(3.0)
+                    } else {
+                        None
+                    }
+                })
+                .map(|d| memo[idx].unwrap() + d)
+        })
+        .fold(0.0_f64, f64::max);
+    let duration = explicit_duration.unwrap_or(inferred_duration);
+    if duration <= 0.0 {
+        bail!("unknown duration: add data-duration to the root or clips");
+    }
+    let mut elements = Vec::with_capacity(pending.len());
+    for (idx, mut p) in pending.into_iter().enumerate() {
+        p.element.start = memo[idx].unwrap();
+        p.element.end = if let Some(d) = p.duration {
+            p.element.start + d
+        } else if p.start_expr.is_some() && matches!(p.element.content, Content::Image(_)) {
+            p.element.start + 3.0
+        } else {
+            duration
+        };
+        if p.element.end > duration + 1e-9 {
+            bail!(
+                "clip {} exceeds composition duration",
+                p.element.id.as_deref().unwrap_or("no id")
+            );
+        }
+        if p.element.fade_in + p.element.fade_out > p.element.end - p.element.start + 1e-9 {
+            bail!("fade-in + fade-out exceeds the clip duration");
+        }
+        let clip_len = p.element.end - p.element.start;
+        let label = p.element.id.as_deref().unwrap_or("element with no id");
+        let rest = p.element.motion.base;
+        if let Some(spec) = &p.animation {
+            p.element.motion = build_motion(spec, rest, clip_len)
+                .with_context(|| format!("CSS animation on {label}"))?;
+        } else if !p.keyframes.is_empty() {
+            if p.keyframes
+                .last()
+                .is_some_and(|frame| frame.at > clip_len + 1e-9)
+            {
+                bail!("data-hf-keyframes exceeds the duration of {label}");
+            }
+            p.element.motion = motion_from_keyframes(rest, &p.keyframes);
+        }
+        elements.push(p.element);
+    }
+    let background = match elements[0].style.background {
+        Some(Background::Solid(color)) => color,
+        _ => Color::BLACK,
+    };
+    Ok(Composition {
+        width,
+        height,
+        duration,
+        background,
+        elements,
+        ids,
+    })
+}
