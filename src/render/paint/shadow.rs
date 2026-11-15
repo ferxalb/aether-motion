@@ -3,9 +3,9 @@
 use crate::model::{Color, Shadow};
 use crate::render::geometry::{clip_pixels, Rect};
 use crate::render::paint::shape::{erfc, rounded_distance};
-use crate::render::Renderer;
+use crate::render::paint::surface::Surface;
 
-impl<'a> Renderer<'a> {
+impl Surface {
     /// Soft outer shadow: Gaussian falloff from the distance to the shadow's rounded rectangle.
     pub(in crate::render) fn draw_shadow(
         &mut self,

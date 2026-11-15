@@ -3,6 +3,7 @@
 use crate::model::{Color, Content};
 use crate::render::geometry::{clip_pixels, PixelRect, Rect};
 use crate::render::layout::in_flow;
+use crate::render::paint::Surface;
 use crate::render::text::block::TextBlock;
 use crate::render::text::props::TextProps;
 use crate::render::text::shadow::{BlockLayout, ShadowMask};
@@ -169,12 +170,12 @@ impl<'a> Renderer<'a> {
             } else {
                 0.0
             };
-        let mut painted = self.painted;
+        let mut painted = self.surface.painted;
         if let Some(shadow) = &run.shadow {
             let origin = ((rect.x * scale).round(), top.round());
             shadow.paint(
-                &mut self.pixels,
-                (self.width, self.height),
+                &mut self.surface.pixels,
+                (self.surface.width, self.surface.height),
                 &mut painted,
                 origin,
                 alpha,
@@ -185,15 +186,15 @@ impl<'a> Renderer<'a> {
                 rect.x * scale + pen_offset(run.center_x, run.right, rect.w * scale, line.advance);
             let baseline = top + baseline_offset(index, run.line_height, run.size);
             paint_line(
-                &mut self.pixels,
-                (self.width, self.height),
+                &mut self.surface.pixels,
+                (self.surface.width, self.surface.height),
                 &mut painted,
                 &run.glyphs[line.first..line.last],
                 (pen, baseline),
                 (run.color, alpha),
             );
         }
-        self.painted = painted;
+        self.surface.painted = painted;
         Ok(())
     }
 }
@@ -228,7 +229,7 @@ fn paint_line(
                     + (x as i64 - i64::from(gx)) as usize;
                 let coverage = glyph.coverage[offset] as f32 / 255.0;
                 if coverage > 0.0 {
-                    Renderer::blend_at(
+                    Surface::blend_at(
                         pixels,
                         width,
                         height,

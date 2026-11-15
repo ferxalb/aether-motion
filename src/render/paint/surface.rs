@@ -1,10 +1,46 @@
-//! Pixel surface access and alpha blending helpers.
+//! The pixel surface everything is painted on: RGBA bytes, the area touched since the last clear,
+//! and alpha blending. Rotated subtrees paint on their own temporary `Surface`.
 
 use crate::model::Color;
 use crate::render::geometry::PixelRect;
-use crate::render::Renderer;
 
-impl<'a> Renderer<'a> {
+/// An RGBA pixel buffer plus the bookkeeping painting needs.
+pub(in crate::render) struct Surface {
+    pub(in crate::render) pixels: Vec<u8>,
+    pub(in crate::render) width: u32,
+    pub(in crate::render) height: u32,
+    /// Pixels painted since the last clear, so the next frame only resets what changed.
+    pub(in crate::render) painted: Option<PixelRect>,
+    /// Color the surface started with; layers use black or white.
+    pub(in crate::render) backdrop: Color,
+    /// Output pixels per layout unit.
+    pub(in crate::render) scale: f32,
+}
+
+impl Surface {
+    /// A zeroed surface; the caller fills it before the first frame.
+    pub(in crate::render) fn blank(width: u32, height: u32, scale: f32, backdrop: Color) -> Self {
+        Self {
+            pixels: vec![0; width as usize * height as usize * 4],
+            width,
+            height,
+            painted: None,
+            backdrop,
+            scale,
+        }
+    }
+
+    /// A surface filled with an opaque `backdrop`.
+    pub(in crate::render) fn filled(width: u32, height: u32, scale: f32, backdrop: Color) -> Self {
+        let mut surface = Self::blank(width, height, scale, backdrop);
+        surface
+            .pixels
+            .as_chunks_mut::<4>()
+            .0
+            .fill([backdrop.r, backdrop.g, backdrop.b, 255]);
+        surface
+    }
+
     pub(in crate::render) fn rows(&mut self, rect: PixelRect) -> impl Iterator<Item = &mut [u8]> {
         let stride = self.width as usize * 4;
         self.pixels[rect.y0 * stride..rect.y1 * stride]

@@ -1,4 +1,4 @@
-//! Pixel painting primitives for the renderer, one submodule per visual feature.
+//! Pixel painting for the renderer: the `Surface` buffer and one submodule per visual feature.
 
 mod border;
 mod fill;
@@ -9,3 +9,4 @@ mod shape;
 mod surface;
 
 pub(super) use images::{CachedImage, ImageKey};
+pub(super) use surface::Surface;

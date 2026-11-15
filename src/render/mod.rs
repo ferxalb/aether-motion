@@ -1,6 +1,6 @@
 //! Software renderer: turns a parsed composition into RGBA frames, one pure function of time.
 //!
-//! Submodules: `draw` (scene traversal), `layout` (flex sizing and placement), `paint` (pixel primitives),
+//! Submodules: `draw` (scene traversal), `layout` (flex sizing and placement), `paint` (the `Surface` and pixel primitives),
 //! `text` (fonts, measurement, glyph painting), `geometry` and `frame_state` (shared small types).
 
 mod draw;
@@ -10,12 +10,12 @@ mod layout;
 mod paint;
 mod text;
 
-use crate::model::{Color, Composition, Content, Element};
+use crate::model::{Composition, Content, Element};
 use anyhow::{anyhow, Context, Result};
 use fontdb::Database;
 use frame_state::FrameState;
-use geometry::{PixelRect, Rect};
-use paint::{CachedImage, ImageKey};
+use geometry::Rect;
+use paint::{CachedImage, ImageKey, Surface};
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::sync::Arc;
@@ -47,13 +47,8 @@ impl std::str::FromStr for OutputSize {
 
 pub struct Renderer<'a> {
     composition: &'a Composition,
-    width: u32,
-    height: u32,
     scale: f32,
-    /// Color the current surface started with; layers use black or white.
-    backdrop: Color,
-    pixels: Vec<u8>,
-    painted: Option<PixelRect>,
+    surface: Surface,
     initialized: bool,
     previous: Vec<FrameState>,
     current: Vec<FrameState>,
@@ -116,8 +111,8 @@ impl<'a> Renderer<'a> {
         Self::with_dimensions(
             self.composition,
             self.scale,
-            self.width,
-            self.height,
+            self.surface.width,
+            self.surface.height,
             Some(self.fonts.index()),
         )
     }
@@ -164,12 +159,8 @@ impl<'a> Renderer<'a> {
             .collect();
         Ok(Self {
             composition,
-            width,
-            height,
             scale,
-            backdrop: composition.background,
-            pixels: vec![0; size],
-            painted: None,
+            surface: Surface::blank(width, height, scale, composition.background),
             initialized: false,
             previous: Vec::with_capacity(composition.elements.len()),
             current: Vec::with_capacity(composition.elements.len()),
@@ -186,7 +177,7 @@ impl<'a> Renderer<'a> {
     }
 
     pub fn dimensions(&self) -> (u32, u32) {
-        (self.width, self.height)
+        (self.surface.width, self.surface.height)
     }
 
     pub(crate) fn add_stats(&mut self, rasterized: usize, reused: usize) {
@@ -234,7 +225,7 @@ impl<'a> Renderer<'a> {
             return Err(anyhow!("frame is outside the composition duration"));
         }
         self.render_time(frame as f64 / fps as f64)?;
-        Ok((&self.pixels, self.stats.rasterized))
+        Ok((&self.surface.pixels, self.stats.rasterized))
     }
 
     pub fn render_at(&mut self, time: f64) -> Result<&[u8]> {
@@ -262,7 +253,7 @@ impl<'a> Renderer<'a> {
         }
         if self.previous == self.current {
             self.stats.reused += 1;
-            return Ok(&self.pixels);
+            return Ok(&self.surface.pixels);
         }
         self.previous.clear();
         self.reset_background();
@@ -275,18 +266,18 @@ impl<'a> Renderer<'a> {
         self.draw_node(0, root, 1.0, None)?;
         std::mem::swap(&mut self.previous, &mut self.current);
         self.stats.rasterized += 1;
-        Ok(&self.pixels)
+        Ok(&self.surface.pixels)
     }
 
     pub(in crate::render) fn reset_background(&mut self) {
         let color = self.composition.background;
         let rgba = [color.r, color.g, color.b, 255];
         if !self.initialized {
-            self.pixels.as_chunks_mut::<4>().0.fill(rgba);
+            self.surface.pixels.as_chunks_mut::<4>().0.fill(rgba);
             self.initialized = true;
         }
-        if let Some(rect) = self.painted.take() {
-            for row in self.rows(rect) {
+        if let Some(rect) = self.surface.painted.take() {
+            for row in self.surface.rows(rect) {
                 row.as_chunks_mut::<4>().0.fill(rgba);
             }
         }

@@ -3,6 +3,7 @@
 use crate::model::Color;
 use crate::render::check_image;
 use crate::render::geometry::{clip_pixels, Rect};
+use crate::render::paint::Surface;
 use crate::render::Renderer;
 use anyhow::{anyhow, Context, Result};
 use image::{imageops, Rgba, RgbaImage};
@@ -97,7 +98,7 @@ impl<'a> Renderer<'a> {
         let x0 = (rect.x * self.scale).round() as i32;
         let y0 = (rect.y * self.scale).round() as i32;
         let Some(bounds) = clip_pixels(
-            (self.width, self.height),
+            (self.surface.width, self.surface.height),
             x0,
             y0,
             x0.saturating_add(w as i32),
@@ -105,14 +106,14 @@ impl<'a> Renderer<'a> {
         ) else {
             return Ok(());
         };
-        self.mark_painted(bounds);
+        self.surface.mark_painted(bounds);
         let image = &self.images[&key];
-        let stride = self.width as usize * 4;
+        let stride = self.surface.width as usize * 4;
         let source_stride = w as usize * 4;
         let source_x = (bounds.x0 as i64 - i64::from(x0)) as usize * 4;
         let source_y = (bounds.y0 as i64 - i64::from(y0)) as usize;
         let row_len = (bounds.x1 - bounds.x0) * 4;
-        for (i, row) in self.pixels[bounds.y0 * stride..bounds.y1 * stride]
+        for (i, row) in self.surface.pixels[bounds.y0 * stride..bounds.y1 * stride]
             .chunks_exact_mut(stride)
             .enumerate()
         {
@@ -130,7 +131,7 @@ impl<'a> Renderer<'a> {
                 {
                     if a != 0 {
                         let color = Color { r, g, b, a };
-                        Self::blend_pixel(dest, color, alpha * f32::from(a) / 255.0);
+                        Surface::blend_pixel(dest, color, alpha * f32::from(a) / 255.0);
                     }
                 }
             }

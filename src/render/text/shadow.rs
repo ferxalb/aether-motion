@@ -6,8 +6,8 @@
 
 use crate::model::{Color, Shadow};
 use crate::render::geometry::{clip_pixels, PixelRect};
+use crate::render::paint::Surface;
 use crate::render::text::raster::{baseline_offset, pen_offset, Glyph, RunLine};
-use crate::render::Renderer;
 use anyhow::{anyhow, Result};
 
 /// Largest mask, in pixels; larger ones need a smaller blur or `--scale`.
@@ -175,7 +175,7 @@ impl ShadowMask {
             let row = &mut pixels[target..target + span * 4];
             for (&value, pixel) in coverage.iter().zip(row.as_chunks_mut::<4>().0) {
                 if value > 0 {
-                    Renderer::blend_pixel(pixel, self.color, (factor * f32::from(value)).min(1.0));
+                    Surface::blend_pixel(pixel, self.color, (factor * f32::from(value)).min(1.0));
                 }
             }
         }

@@ -2,6 +2,7 @@
 
 use crate::model::{Color, Content};
 use crate::render::geometry::{clip_pixels, Rect};
+use crate::render::paint::Surface;
 use crate::render::Renderer;
 use anyhow::{anyhow, Result};
 
@@ -44,19 +45,14 @@ impl<'a> Renderer<'a> {
             ..rect
         };
         // Drawing on black and on white recovers color and alpha without alpha-aware blending.
-        let saved = (self.width, self.height, self.painted, self.backdrop);
-        (self.width, self.height) = (lw as u32, lh as u32);
         let mut layers: Vec<Vec<u8>> = Vec::with_capacity(2);
         let mut outcome = Ok(());
         for backdrop in [Color::BLACK, Color::WHITE] {
-            let mut surface = [backdrop.r, backdrop.g, backdrop.b, 255].repeat(lw * lh);
-            std::mem::swap(&mut self.pixels, &mut surface);
-            (self.painted, self.backdrop) = (None, backdrop);
+            let layer = Surface::filled(lw as u32, lh as u32, k, backdrop);
+            let outer = std::mem::replace(&mut self.surface, layer);
             outcome = outcome.and_then(|()| self.draw_body(idx, shifted, cumulative));
-            std::mem::swap(&mut self.pixels, &mut surface);
-            layers.push(surface);
+            layers.push(std::mem::replace(&mut self.surface, outer).pixels);
         }
-        (self.width, self.height, self.painted, self.backdrop) = saved;
         outcome?;
         // Premultiplied color from the black pass; alpha from how much white shows through.
         let premultiplied: Vec<[u8; 4]> = layers[0]
@@ -85,7 +81,7 @@ impl<'a> Renderer<'a> {
         let high =
             |f: fn(&(f32, f32)) -> f32| corners.iter().map(f).fold(f32::NEG_INFINITY, f32::max);
         let Some(bounds) = clip_pixels(
-            (self.width, self.height),
+            (self.surface.width, self.surface.height),
             low(|c| c.0).floor() as i32,
             low(|c| c.1).floor() as i32,
             high(|c| c.0).ceil() as i32,
@@ -93,14 +89,14 @@ impl<'a> Renderer<'a> {
         ) else {
             return Ok(());
         };
-        self.mark_painted(bounds);
+        self.surface.mark_painted(bounds);
         let texel = |x: i32, y: i32| -> [f32; 4] {
             if x < 0 || y < 0 || x >= lw as i32 || y >= lh as i32 {
                 return [0.0; 4];
             }
             premultiplied[y as usize * lw + x as usize].map(f32::from)
         };
-        let stride = self.width as usize;
+        let stride = self.surface.width as usize;
         // Layer coordinates are linear in x on each row: sx = ax + x*cos, sy = ay - x*sin.
         let (limit_x, limit_y) = (lw as f32, lh as f32);
         let span = |origin: f32, slope: f32, limit: f32| -> (f32, f32) {
@@ -147,7 +143,7 @@ impl<'a> Renderer<'a> {
                 }
                 let keep = 1.0 - sample[3] / 255.0;
                 let offset = (y * stride + x) * 4;
-                let dest = &mut self.pixels[offset..offset + 4];
+                let dest = &mut self.surface.pixels[offset..offset + 4];
                 for (channel, value) in dest.iter_mut().zip(sample).take(3) {
                     *channel = (value + f32::from(*channel) * keep).round().min(255.0) as u8;
                 }

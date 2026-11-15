@@ -2,9 +2,9 @@
 
 use crate::model::Color;
 use crate::render::geometry::{clip_pixels, PixelRect, Rect};
-use crate::render::Renderer;
+use crate::render::paint::surface::Surface;
 
-impl<'a> Renderer<'a> {
+impl Surface {
     pub(in crate::render) fn fill(&mut self, rect: Rect, color: Color, alpha: f32, radius: f32) {
         let (edges, radius) = self.fill_edges(rect, radius);
         let [x0, y0, x1, y1] = edges;

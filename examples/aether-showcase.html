@@ -187,26 +187,50 @@
       color: #8fa2bb; font-size: 15px; font-family: sans-serif;
     }
     .final-title {
-      left: 82px; top: 130px; width: 980px; height: 74px;
-      color: var(--white); font-size: 57px; font-family: sans-serif;
+      left: 82px; top: 142px; max-width: 650px;
+      color: var(--white); font-size: 60px; line-height: 1.1; font-family: sans-serif;
+      text-shadow: 0 6px 18px rgba(82, 225, 188, 0.3);
     }
     .final-copy {
-      left: 87px; top: 222px; width: 820px; height: 38px;
-      color: #a9b8cc; font-size: 24px; font-family: sans-serif;
+      left: 87px; top: 314px; max-width: 620px;
+      color: #a9b8cc; font-size: 23px; line-height: 1.45; font-family: sans-serif;
+      text-shadow: 0 2px 8px rgba(82, 225, 188, 0.18);
     }
     .final-bar {
-      left: 86px; top: 300px; width: 318px; height: 6px; border-radius: 3px;
+      left: 86px; top: 492px; width: 318px; height: 6px; border-radius: 3px;
       background: linear-gradient(to right, #44d7b3, #7897ff);
     }
     .final-caption {
-      left: 87px; top: 339px; width: 500px; height: 26px;
-      color: #61dfbe; font-size: 16px; font-family: sans-serif;
+      left: 87px; top: 529px; width: 540px; height: 26px;
+      color: #61dfbe; font-size: 15px; font-family: sans-serif;
+    }
+    .final-card {
+      left: 824px; top: 138px; width: 374px; height: 398px; border-radius: 24px;
+      background: linear-gradient(to right, #14263d, #101a2a);
+      border: 1px solid #2b3d52; box-shadow: 0 24px 48px 0 rgba(0, 0, 0, 0.32);
+      display: flex; flex-direction: column; justify-content: center; align-items: flex-start;
+      gap: 18px; padding: 30px;
+    }
+    .final-label {
+      color: #61dfbe; font-size: 14px; font-family: sans-serif;
+    }
+    .final-card-title {
+      max-width: 240px; color: var(--white); font-size: 27px; line-height: 1.2;
+      font-family: sans-serif; text-shadow: 0 3px 12px rgba(82, 225, 188, 0.35);
+    }
+    .final-card-copy {
+      max-width: 260px; color: #a9b8cc; font-size: 18px; line-height: 1.45;
+      font-family: sans-serif;
+    }
+    .final-card-accent {
+      width: 94px; height: 6px; border-radius: 3px;
+      background: linear-gradient(to right, #44d7b3, #7897ff);
     }
   </style>
 </head>
 <body>
   <main data-composition-id="aether-showcase" data-width="1280" data-height="720"
-        data-duration="12" style="background: var(--background)">
+        data-duration="13" style="background: var(--background)">
     <div class="clip hero-dot" data-track-index="0" data-start="0" data-duration="3.8"
          data-hf-keyframes='[{"at":0,"opacity":0,"x":24},{"at":0.8,"opacity":1,"x":0,"easing":"ease-out"},{"at":3.1},{"at":3.8,"opacity":0,"x":24,"easing":"ease-in"}]'></div>
     <div class="clip brand-mark" data-track-index="0" data-start="0" data-duration="3.8"
@@ -267,35 +291,42 @@
     <div class="clip feature-accent accent-motion" data-track-index="0" data-start="4.1" data-duration="3.05"></div>
     <div class="clip feature-accent accent-finish" data-track-index="0" data-start="4.25" data-duration="2.9"></div>
 
-    <div class="clip section-kicker" data-track-index="0" data-start="6.9" data-duration="3.0"
+    <div class="clip section-kicker" data-track-index="0" data-start="7.2" data-duration="3.0"
          data-hf-keyframes='[{"at":0,"opacity":0},{"at":0.5,"opacity":1,"easing":"ease-out"},{"at":2.4},{"at":3.0,"opacity":0,"easing":"ease-in"}]'>THE RENDERING PROMISE</div>
-    <div class="clip time-title" data-track-index="0" data-start="6.9" data-duration="2.7"
+    <div class="clip time-title" data-track-index="0" data-start="7.2" data-duration="2.7"
          data-hf-keyframes='[{"at":0,"opacity":0,"y":24},{"at":0.6,"opacity":1,"y":0,"easing":"ease-out"},{"at":2.1},{"at":2.7,"opacity":0,"y":-18,"easing":"ease-in"}]'>A frame is a promise.</div>
-    <div class="clip time-copy" data-track-index="0" data-start="7.05" data-duration="2.55"
+    <div class="clip time-copy" data-track-index="0" data-start="7.35" data-duration="2.55"
          data-hf-keyframes='[{"at":0,"opacity":0,"y":14},{"at":0.6,"opacity":1,"y":0,"easing":"ease-out"},{"at":1.95},{"at":2.55,"opacity":0,"y":-10,"easing":"ease-in"}]'>Same time, same inputs, same image.</div>
-    <div class="clip time-card" data-track-index="0" data-start="7.15" data-duration="2.45"
+    <div class="clip time-card" data-track-index="0" data-start="7.45" data-duration="2.45"
          data-hf-keyframes='[{"at":0,"opacity":0,"x":24},{"at":0.7,"opacity":1,"x":0,"easing":"ease-out"},{"at":1.85},{"at":2.45,"opacity":0,"x":18,"easing":"ease-in"}]'>
-      <div class="clip time-card-label" data-track-index="0" data-start="7.15" data-duration="2.45">SAMPLE OUTPUT</div>
-      <div class="clip time-card-value" data-track-index="0" data-start="7.15" data-duration="2.45">1920 × 1080</div>
+      <div class="clip time-card-label" data-track-index="0" data-start="7.45" data-duration="2.45">SAMPLE OUTPUT</div>
+      <div class="clip time-card-value" data-track-index="0" data-start="7.45" data-duration="2.45">1920 × 1080</div>
     </div>
-    <div class="clip timeline-base" data-track-index="0" data-start="7.15" data-duration="2.55"
+    <div class="clip timeline-base" data-track-index="0" data-start="7.45" data-duration="2.55"
          data-hf-keyframes='[{"at":0,"opacity":0},{"at":0.6,"opacity":1,"easing":"ease-out"},{"at":2.55}]'></div>
-    <div class="clip timeline-fill" data-track-index="0" data-start="7.2" data-duration="2.5"
+    <div class="clip timeline-fill" data-track-index="0" data-start="7.5" data-duration="2.5"
          data-hf-keyframes='[{"at":0,"opacity":0,"x":-30},{"at":0.65,"opacity":1,"x":0,"easing":"ease-out"},{"at":2.5}]'></div>
-    <div class="clip timeline-dot" data-track-index="0" data-start="7.2" data-duration="2.5"
+    <div class="clip timeline-dot" data-track-index="0" data-start="7.5" data-duration="2.5"
          data-hf-keyframes='[{"at":0,"x":0,"opacity":0},{"at":0.6,"x":0,"opacity":1,"easing":"ease-out"},{"at":2.5,"x":1100,"opacity":1,"easing":"linear"}]'></div>
-    <div class="clip time-mark mark-start" data-track-index="0" data-start="7.3" data-duration="2.4">00:00</div>
-    <div class="clip time-mark mark-middle" data-track-index="0" data-start="7.3" data-duration="2.4">00:05</div>
-    <div class="clip time-mark mark-end" data-track-index="0" data-start="7.3" data-duration="2.4">00:10</div>
-    <div class="clip time-footer" data-track-index="0" data-start="7.35" data-duration="2.35">TIME  →  PIXELS  →  VIDEO</div>
-    <div class="clip final-title" data-track-index="0" data-start="9.9" data-duration="2.1"
-         data-hf-keyframes='[{"at":0,"opacity":0,"y":18},{"at":0.5,"opacity":1,"y":0,"easing":"ease-out"},{"at":2.1}]'>Create, then let it move.</div>
-    <div class="clip final-copy" data-track-index="0" data-start="9.95" data-duration="2.05"
-         data-hf-keyframes='[{"at":0,"opacity":0,"y":10},{"at":0.5,"opacity":1,"y":0,"easing":"ease-out"},{"at":2.05}]'>Aether — deterministic motion, frame by frame.</div>
-    <div class="clip final-bar" data-track-index="0" data-start="10.0" data-duration="2.0"
-         data-hf-keyframes='[{"at":0,"opacity":0,"x":-30},{"at":0.5,"opacity":1,"x":0,"easing":"ease-out"},{"at":2.0}]'></div>
-    <div class="clip final-caption" data-track-index="0" data-start="10.0" data-duration="2.0"
-         data-hf-keyframes='[{"at":0,"opacity":0},{"at":0.5,"opacity":1,"easing":"ease-out"},{"at":2.0}]'>COMPOSE  /  RENDER  /  REPEAT</div>
+    <div class="clip time-mark mark-start" data-track-index="0" data-start="7.6" data-duration="2.4">00:00</div>
+    <div class="clip time-mark mark-middle" data-track-index="0" data-start="7.6" data-duration="2.4">00:05</div>
+    <div class="clip time-mark mark-end" data-track-index="0" data-start="7.6" data-duration="2.4">00:10</div>
+    <div class="clip time-footer" data-track-index="0" data-start="7.65" data-duration="2.35">TIME  →  PIXELS  →  VIDEO</div>
+    <div class="clip final-title" data-track-index="0" data-start="10.2" data-duration="2.8"
+         data-hf-keyframes='[{"at":0,"opacity":0,"y":18},{"at":0.55,"opacity":1,"y":0,"easing":"ease-out"},{"at":2.8}]'>Typography that finds its measure.</div>
+    <div class="clip final-copy" data-track-index="0" data-start="10.25" data-duration="2.75"
+         data-hf-keyframes='[{"at":0,"opacity":0,"y":10},{"at":0.55,"opacity":1,"y":0,"easing":"ease-out"},{"at":2.75}]'>Longer copy wraps at spaces and follows its own line height, keeping every frame easy to read.</div>
+    <div class="clip final-bar" data-track-index="0" data-start="10.3" data-duration="2.7"
+         data-hf-keyframes='[{"at":0,"opacity":0,"x":-30},{"at":0.5,"opacity":1,"x":0,"easing":"ease-out"},{"at":2.7}]'></div>
+    <div class="clip final-caption" data-track-index="0" data-start="10.3" data-duration="2.7"
+         data-hf-keyframes='[{"at":0,"opacity":0},{"at":0.5,"opacity":1,"easing":"ease-out"},{"at":2.7}]'>MAX-WIDTH  /  LINE-HEIGHT  /  TEXT-SHADOW</div>
+    <div class="clip final-card" data-track-index="0" data-start="10.2" data-duration="2.8"
+         data-hf-keyframes='[{"at":0,"opacity":0,"x":28},{"at":0.65,"opacity":1,"x":0,"easing":"ease-out"},{"at":2.8}]'>
+      <div class="clip final-label" data-track-index="0" data-start="10.2" data-duration="2.8">TEXT / FLOW</div>
+      <div class="clip final-card-title" data-track-index="0" data-start="10.2" data-duration="2.8">Readable by design</div>
+      <div class="clip final-card-copy" data-track-index="0" data-start="10.2" data-duration="2.8">Words wrap into a balanced block with a steady rhythm.</div>
+      <div class="clip final-card-accent" data-track-index="0" data-start="10.2" data-duration="2.8"></div>
+    </div>
   </main>
 </body>
 </html>

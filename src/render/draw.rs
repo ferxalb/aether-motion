@@ -83,13 +83,14 @@ impl<'a> Renderer<'a> {
             return Ok(());
         }
         if let Some(shadow) = element.style.shadow {
-            self.draw_shadow(rect, radius, shadow, alpha, cumulative);
+            self.surface
+                .draw_shadow(rect, radius, shadow, alpha, cumulative);
         }
         match element.style.background {
             Some(Background::Solid(color)) => {
                 let base = self.composition.background;
                 if idx != 0 || (color.r, color.g, color.b) != (base.r, base.g, base.b) {
-                    self.fill(rect, color, alpha, radius);
+                    self.surface.fill(rect, color, alpha, radius);
                 }
             }
             Some(Background::Linear {
@@ -97,14 +98,15 @@ impl<'a> Renderer<'a> {
                 to,
                 horizontal,
             }) => {
-                self.fill_gradient(rect, [from, to], horizontal, alpha, radius);
+                self.surface
+                    .fill_gradient(rect, [from, to], horizontal, alpha, radius);
             }
             None => {}
         }
         let border = element.style.border_width * cumulative;
         if border > 0.0 {
             let color = element.style.border_color.unwrap_or(Color::WHITE);
-            self.draw_border(rect, radius, border, color, alpha);
+            self.surface.draw_border(rect, radius, border, color, alpha);
         }
         let [top, right, bottom, left] = element
             .style

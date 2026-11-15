@@ -3,9 +3,9 @@
 use crate::model::Color;
 use crate::render::geometry::{clip_pixels, Rect};
 use crate::render::paint::shape::rounded_distance;
-use crate::render::Renderer;
+use crate::render::paint::surface::Surface;
 
-impl<'a> Renderer<'a> {
+impl Surface {
     /// Solid ring between the rounded box and the same box inset by `width`.
     pub(in crate::render) fn draw_border(
         &mut self,
