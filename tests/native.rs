@@ -517,6 +517,7 @@ fn flex_and_shadow_errors_are_explicit() {
         (".a { flex-direction: row-reverse }", "flex-direction"),
         (".a { padding: -1px }", "non-negative"),
         (".a { gap: 10% }", "non-negative px"),
+        (".a { border: 1px dashed red }", "unsupported CSS color"),
         (".a { justify-content: baseline }", "justify-content"),
     ];
     for (i, (css, expected)) in cases.iter().enumerate() {
@@ -528,4 +529,76 @@ fn flex_and_shadow_errors_are_explicit() {
         let error = format!("{:#}", parse_file(&path).unwrap_err());
         assert!(error.contains(expected), "{css}: {error}");
     }
+}
+
+#[test]
+fn border_is_drawn_inside_the_box_and_insets_flex_children() {
+    let mut at = sized_render(
+        "border",
+        (24, 14),
+        ".box { left: 2px; top: 2px; width: 10px; height: 10px; background: #00f; border: 2px solid #f00 }
+         .row { left: 14px; top: 2px; width: 8px; height: 10px; display: flex; border: 2px solid #f00 }
+         .kid { width: 2px; height: 2px; background: #0f0 }",
+        r#"<div class="clip box" data-start="0" data-duration="1"></div>
+           <div class="clip row" data-start="0" data-duration="1">
+             <div class="clip kid" data-start="0" data-duration="1"></div></div>"#,
+    );
+    assert_eq!(at(2, 2), RED);
+    assert_eq!(at(3, 7), RED);
+    assert_eq!(at(4, 4), [0, 0, 255], "background shows inside the border");
+    assert_eq!(at(11, 11), RED);
+    assert_eq!(at(12, 11), BLACK, "border-box: nothing outside the box");
+    assert_eq!(at(14, 2), RED);
+    assert_eq!(at(16, 4), GREEN, "flex child starts inside the border");
+    assert_eq!(at(15, 4), RED);
+}
+
+#[test]
+fn rotate_turns_the_box_around_its_center_and_carries_children() {
+    // A 4x2 box centered at (8, 8) rotated 90 degrees covers x 7..9, y 6..10.
+    for transform in [
+        "rotate(90deg)",
+        "rotate(0.25turn)",
+        "translate(0, 0) rotate(90deg)",
+    ] {
+        let mut at = sized_render(
+            "rotate",
+            (16, 16),
+            &format!(
+                ".box {{ left: 6px; top: 7px; width: 4px; height: 2px; background: #f00;
+                        transform: {transform} }}
+                 .kid {{ left: 0; top: 0; width: 2px; height: 2px; background: #0f0 }}"
+            ),
+            r#"<div class="clip box" data-start="0" data-duration="1">
+                 <div class="clip kid" data-start="0" data-duration="1"></div></div>"#,
+        );
+        // The child (top-left square of the box) rotates with it to the top-right of the result.
+        assert_eq!(at(8, 6), GREEN, "{transform}");
+        assert_eq!(at(7, 6), GREEN, "{transform}");
+        assert_eq!(at(7, 9), RED, "{transform}");
+        assert_eq!(at(8, 9), RED, "{transform}");
+        assert_eq!(at(6, 8), BLACK, "{transform}");
+        assert_eq!(at(9, 8), BLACK, "{transform}");
+        assert_eq!(at(7, 5), BLACK, "{transform}");
+    }
+}
+
+#[test]
+fn rotate_animates_and_stays_deterministic() {
+    let css = "@keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(90deg) } }
+        .box { left: 6px; top: 7px; width: 4px; height: 2px; background: #f00;
+               animation: spin 1s linear both }";
+    let path = css_composition(
+        "spin",
+        css,
+        r#"<div class="clip box" data-start="0" data-duration="2"></div>"#,
+    );
+    let composition = parse_file(&path).unwrap();
+    let mut r = Renderer::new(&composition, 1.0).unwrap();
+    assert_eq!(red_at(&mut r, 0.0, 6, 7), 255, "starts unrotated");
+    assert_eq!(red_at(&mut r, 0.0, 7, 6), 0);
+    let mid = r.render_at(0.5).unwrap().to_vec();
+    assert_ne!(mid, r.render_at(0.0).unwrap().to_vec());
+    assert_eq!(red_at(&mut r, 1.5, 7, 6), 255, "forwards holds 90 degrees");
+    assert_eq!(r.render_at(0.5).unwrap(), mid, "same time, same bytes");
 }

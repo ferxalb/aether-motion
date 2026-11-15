@@ -88,7 +88,7 @@ impl Default for AnimationDecl {
 struct CssFrame {
     offset: f64,
     /// `transform` as (translate x, translate y, scale).
-    transform: Option<(f32, f32, f32)>,
+    transform: Option<(f32, f32, f32, f32)>,
     opacity: Option<f32>,
     easing: Option<Easing>,
 }
@@ -614,11 +614,11 @@ fn substitute(value: &str, vars: &Vars, depth: usize) -> Result<String> {
     Ok(out)
 }
 
-/// `transform` as (translate x, translate y, uniform scale), composed left to right.
-fn parse_transform(raw: &str) -> Result<(f32, f32, f32)> {
+/// `transform` as (translate x, translate y, uniform scale, rotation in degrees), composed left to right.
+fn parse_transform(raw: &str) -> Result<(f32, f32, f32, f32)> {
     let raw = raw.trim();
     if raw == "none" {
-        return Ok((0.0, 0.0, 1.0));
+        return Ok((0.0, 0.0, 1.0, 0.0));
     }
     let px = |arg: &str| -> Result<f32> {
         match parse_length(arg, "transform")? {
@@ -635,7 +635,28 @@ fn parse_transform(raw: &str) -> Result<(f32, f32, f32)> {
         }
         Ok(n)
     };
-    let (mut tx, mut ty, mut scale) = (0.0_f32, 0.0_f32, 1.0_f32);
+    let angle = |arg: &str| -> Result<f32> {
+        let (number, per_unit) = if let Some(n) = arg.strip_suffix("deg") {
+            (n, 1.0)
+        } else if let Some(n) = arg.strip_suffix("turn") {
+            (n, 360.0)
+        } else if let Some(n) = arg.strip_suffix("rad") {
+            (n, 180.0 / std::f32::consts::PI)
+        } else if arg == "0" {
+            ("0", 1.0)
+        } else {
+            bail!("transform: angles need deg, rad or turn: {arg}");
+        };
+        let n: f32 = number
+            .trim()
+            .parse()
+            .with_context(|| format!("transform: invalid angle: {arg}"))?;
+        if !n.is_finite() {
+            bail!("transform: angle is not finite");
+        }
+        Ok(n * per_unit)
+    };
+    let (mut tx, mut ty, mut scale, mut rotate) = (0.0_f32, 0.0_f32, 1.0_f32, 0.0_f32);
     let mut rest = raw;
     while !rest.trim().is_empty() {
         let text = rest.trim_start();
@@ -646,24 +667,27 @@ fn parse_transform(raw: &str) -> Result<(f32, f32, f32)> {
             .ok_or_else(|| anyhow!("invalid transform: {raw}"))?;
         let name = text[..open].trim().to_ascii_lowercase();
         let args: Vec<_> = text[open + 1..close].split(',').map(str::trim).collect();
-        // Composing `C ∘ F`: a translation written after a scale is scaled as well.
+        // Composing `C ∘ F`: a translation written after a scale or rotation is scaled and rotated too.
+        let (sin, cos) = rotate.to_radians().sin_cos();
+        let mut shift = |x: f32, y: f32| {
+            tx += scale * (x * cos - y * sin);
+            ty += scale * (x * sin + y * cos);
+        };
         match (name.as_str(), args.as_slice()) {
-            ("translate", [x]) | ("translatex", [x]) => tx += scale * px(x)?,
-            ("translatey", [y]) => ty += scale * px(y)?,
-            ("translate", [x, y]) => {
-                tx += scale * px(x)?;
-                ty += scale * px(y)?;
-            }
+            ("translate", [x]) | ("translatex", [x]) => shift(px(x)?, 0.0),
+            ("translatey", [y]) => shift(0.0, px(y)?),
+            ("translate", [x, y]) => shift(px(x)?, px(y)?),
             ("scale", [k]) => scale *= factor(k)?,
             ("scale", [a, b]) if factor(a)? == factor(b)? => scale *= factor(a)?,
             ("scale", [_, _]) => bail!("transform: non-uniform scale is unsupported"),
+            ("rotate", [a]) => rotate += angle(a)?,
             _ => bail!(
-                "unsupported transform: {name}(...); use translate, translateX, translateY or scale"
+                "unsupported transform: {name}(...); use translate, translateX, translateY, scale or rotate"
             ),
         }
         rest = &text[close + 1..];
     }
-    Ok((tx, ty, scale))
+    Ok((tx, ty, scale, rotate))
 }
 
 /// Non-negative px length (`0` allowed) for spacing properties.
@@ -1060,6 +1084,7 @@ fn build_motion(spec: &AnimationSpec, base: Pose, clip_len: f64) -> Result<Motio
         x: channel(&|f| f.transform.map(|t| t.0), base.x)?,
         y: channel(&|f| f.transform.map(|t| t.1), base.y)?,
         scale: channel(&|f| f.transform.map(|t| t.2), base.scale)?,
+        rotate: channel(&|f| f.transform.map(|t| t.3), base.rotate)?,
         opacity: channel(&|f| f.opacity, base.opacity)?,
         hold_before: decl.backwards,
         hold_after: decl.forwards,
@@ -1085,6 +1110,7 @@ fn motion_from_keyframes(base: Pose, frames: &[Keyframe]) -> Motion {
         x: track(&|k| base.x + k.x),
         y: track(&|k| base.y + k.y),
         scale: Track::default(),
+        rotate: Track::default(),
         opacity: track(&|k| base.opacity * k.opacity),
         hold_before: true,
         hold_after: true,
@@ -1219,6 +1245,26 @@ fn style_for(node: &NodeRef, sheet: &Stylesheet, parent_vars: &Vars) -> Result<R
                 style.flex_basis_zero = key == "flex";
             }
             "box-shadow" => style.shadow = parse_shadow(&value)?,
+            "border" => {
+                (style.border_width, style.border_color) = (0.0, None);
+                for token in split_top(&value, ' ') {
+                    match token {
+                        "solid" => {}
+                        "none" => style.border_width = 0.0,
+                        _ if token.starts_with(|c: char| c.is_ascii_digit() || c == '.') => {
+                            style.border_width = spacing_px(token, &key)?
+                        }
+                        _ => style.border_color = Some(parse_color(token)?),
+                    }
+                }
+            }
+            "border-width" => style.border_width = spacing_px(&value, &key)?,
+            "border-color" => style.border_color = Some(parse_color(&value)?),
+            "border-style" if matches!(value.as_str(), "solid" | "none") => {
+                if value == "none" {
+                    style.border_width = 0.0;
+                }
+            }
             "object-fit" => {
                 if !matches!(value.as_str(), "fill" | "contain" | "cover") {
                     bail!("unsupported object-fit: {value}");
@@ -1233,7 +1279,8 @@ fn style_for(node: &NodeRef, sheet: &Stylesheet, parent_vars: &Vars) -> Result<R
                 style.position = Some(value);
             }
             "transform" => {
-                let (tx, ty, scale) = parse_transform(&value)?;
+                let (tx, ty, scale, rotate) = parse_transform(&value)?;
+                style.rotate = rotate;
                 style.translate = (tx, ty);
                 style.scale = Some(scale);
             }
@@ -1441,6 +1488,7 @@ fn walk(
         x: style.translate.0,
         y: style.translate.1,
         scale: style.scale.unwrap_or(1.0),
+        rotate: style.rotate,
         opacity: style.opacity.unwrap_or(1.0),
     };
     out.push(Pending {

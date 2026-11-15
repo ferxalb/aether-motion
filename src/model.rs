@@ -86,7 +86,12 @@ pub struct Style {
     /// Static `transform`: translate in px and uniform scale around the element center.
     pub translate: (f32, f32),
     pub scale: Option<f32>,
+    /// Static `transform: rotate()` in degrees, clockwise, around the element center.
+    pub rotate: f32,
     pub shadow: Option<Shadow>,
+    /// Solid border drawn inside the box (border-box sizing); `None` color means white.
+    pub border_width: f32,
+    pub border_color: Option<Color>,
     /// `flex-direction: column` (row otherwise).
     pub column: bool,
     pub gap: f32,
@@ -224,6 +229,7 @@ pub struct Pose {
     pub x: f32,
     pub y: f32,
     pub scale: f32,
+    pub rotate: f32,
     pub opacity: f32,
 }
 
@@ -233,6 +239,7 @@ impl Default for Pose {
             x: 0.0,
             y: 0.0,
             scale: 1.0,
+            rotate: 0.0,
             opacity: 1.0,
         }
     }
@@ -275,6 +282,7 @@ pub struct Motion {
     pub x: Track,
     pub y: Track,
     pub scale: Track,
+    pub rotate: Track,
     pub opacity: Track,
     /// Hold the first value before the first point (`animation-fill-mode: backwards`).
     pub hold_before: bool,
@@ -289,19 +297,20 @@ impl Motion {
             x: self.x.eval(elapsed, b.x, hb, ha),
             y: self.y.eval(elapsed, b.y, hb, ha),
             scale: self.scale.eval(elapsed, b.scale, hb, ha),
+            rotate: self.rotate.eval(elapsed, b.rotate, hb, ha),
             opacity: self.opacity.eval(elapsed, b.opacity, hb, ha),
         }
     }
 
     pub fn is_static(&self) -> bool {
-        [&self.x, &self.y, &self.scale, &self.opacity]
+        [&self.x, &self.y, &self.scale, &self.rotate, &self.opacity]
             .iter()
             .all(|track| track.0.is_empty())
     }
 
     /// Sorted, distinct point times across all channels.
     pub fn times(&self) -> Vec<f64> {
-        let mut times: Vec<f64> = [&self.x, &self.y, &self.scale, &self.opacity]
+        let mut times: Vec<f64> = [&self.x, &self.y, &self.scale, &self.rotate, &self.opacity]
             .iter()
             .flat_map(|track| track.0.iter().map(|point| point.at))
             .collect();

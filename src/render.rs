@@ -67,6 +67,7 @@ struct FrameState {
     x: f32,
     y: f32,
     scale: f32,
+    rotate: f32,
 }
 
 impl FrameState {
@@ -80,6 +81,7 @@ impl FrameState {
             x: pose.x,
             y: pose.y,
             scale: pose.scale,
+            rotate: pose.rotate,
         }
     }
 }
@@ -154,6 +156,8 @@ pub struct Renderer<'a> {
     width: u32,
     height: u32,
     scale: f32,
+    /// Color the current surface started with; layers use black or white.
+    backdrop: Color,
     pixels: Vec<u8>,
     painted: Option<PixelRect>,
     initialized: bool,
@@ -269,6 +273,7 @@ impl<'a> Renderer<'a> {
             width,
             height,
             scale,
+            backdrop: composition.background,
             pixels: vec![0; size],
             painted: None,
             initialized: false,
@@ -469,6 +474,16 @@ impl<'a> Renderer<'a> {
             rect.y = cy - rect.h / 2.0;
             cumulative *= state.scale;
         }
+        if idx != 0 && state.rotate != 0.0 {
+            return self.draw_rotated(idx, rect, cumulative, state.rotate);
+        }
+        self.draw_body(idx, rect, cumulative)
+    }
+
+    /// Draws one element and its subtree into `rect` with no rotation.
+    fn draw_body(&mut self, idx: usize, rect: Rect, cumulative: f32) -> Result<()> {
+        let alpha = self.current[idx].alpha;
+        let element = &self.composition.elements[idx];
         let radius = element.style.border_radius * cumulative;
         if rect.w <= 0.0 || rect.h <= 0.0 {
             return Ok(());
@@ -492,7 +507,15 @@ impl<'a> Renderer<'a> {
             }
             None => {}
         }
-        let [top, right, bottom, left] = element.style.padding.map(|p| p * cumulative);
+        let border = element.style.border_width * cumulative;
+        if border > 0.0 {
+            let color = element.style.border_color.unwrap_or(Color::WHITE);
+            self.draw_border(rect, radius, border, color, alpha);
+        }
+        let [top, right, bottom, left] = element
+            .style
+            .padding
+            .map(|padding| padding * cumulative + border);
         let content = Rect {
             x: rect.x + left,
             y: rect.y + top,
@@ -518,6 +541,152 @@ impl<'a> Renderer<'a> {
             let child = self.children[idx][i];
             let slot = layout.iter().find(|(c, _)| *c == child).map(|(_, r)| *r);
             self.draw_node(child, rect, cumulative, slot)?;
+        }
+        Ok(())
+    }
+
+    /// Renders the subtree on its own surface and composites it rotated around the box center.
+    /// Descendants are clipped to the box plus its shadow reach.
+    fn draw_rotated(
+        &mut self,
+        idx: usize,
+        rect: Rect,
+        cumulative: f32,
+        degrees: f32,
+    ) -> Result<()> {
+        let k = self.scale;
+        let reach = self.composition.elements[idx]
+            .style
+            .shadow
+            .map_or(0.0, |s| {
+                (s.x.abs().max(s.y.abs()) + s.spread.max(0.0) + s.blur * 1.5) * cumulative * k
+            })
+            + 2.0;
+        let x0 = (rect.x * k - reach).floor() as i32;
+        let y0 = (rect.y * k - reach).floor() as i32;
+        let x1 = ((rect.x + rect.w) * k + reach).ceil() as i32;
+        let y1 = ((rect.y + rect.h) * k + reach).ceil() as i32;
+        let (lw, lh) = ((x1 - x0) as usize, (y1 - y0) as usize);
+        if lw.saturating_mul(lh).saturating_mul(4) > 128 * 1024 * 1024 {
+            return Err(anyhow!(
+                "rotated element needs a layer over 128 MiB; use --scale"
+            ));
+        }
+        let shifted = Rect {
+            x: rect.x - x0 as f32 / k,
+            y: rect.y - y0 as f32 / k,
+            ..rect
+        };
+        // Drawing on black and on white recovers color and alpha without alpha-aware blending.
+        let saved = (self.width, self.height, self.painted, self.backdrop);
+        (self.width, self.height) = (lw as u32, lh as u32);
+        let mut layers: Vec<Vec<u8>> = Vec::with_capacity(2);
+        let mut outcome = Ok(());
+        for backdrop in [Color::BLACK, Color::WHITE] {
+            let mut surface = [backdrop.r, backdrop.g, backdrop.b, 255].repeat(lw * lh);
+            std::mem::swap(&mut self.pixels, &mut surface);
+            (self.painted, self.backdrop) = (None, backdrop);
+            outcome = outcome.and_then(|()| self.draw_body(idx, shifted, cumulative));
+            std::mem::swap(&mut self.pixels, &mut surface);
+            layers.push(surface);
+        }
+        (self.width, self.height, self.painted, self.backdrop) = saved;
+        outcome?;
+        // Premultiplied color from the black pass; alpha from how much white shows through.
+        let premultiplied: Vec<[u8; 4]> = layers[0]
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(layers[1].as_chunks::<4>().0)
+            .map(|(b, w)| {
+                let gap = (0..3)
+                    .map(|c| i32::from(w[c]) - i32::from(b[c]))
+                    .sum::<i32>()
+                    / 3;
+                [b[0], b[1], b[2], (255 - gap).clamp(0, 255) as u8]
+            })
+            .collect();
+        let (sin, cos) = degrees.to_radians().sin_cos();
+        let center = ((rect.x + rect.w / 2.0) * k, (rect.y + rect.h / 2.0) * k);
+        let corners = [(x0, y0), (x1, y0), (x0, y1), (x1, y1)].map(|(x, y)| {
+            let (dx, dy) = (x as f32 - center.0, y as f32 - center.1);
+            (
+                center.0 + dx * cos - dy * sin,
+                center.1 + dx * sin + dy * cos,
+            )
+        });
+        let low = |f: fn(&(f32, f32)) -> f32| corners.iter().map(f).fold(f32::INFINITY, f32::min);
+        let high =
+            |f: fn(&(f32, f32)) -> f32| corners.iter().map(f).fold(f32::NEG_INFINITY, f32::max);
+        let Some(bounds) = Self::clip_pixels(
+            (self.width, self.height),
+            low(|c| c.0).floor() as i32,
+            low(|c| c.1).floor() as i32,
+            high(|c| c.0).ceil() as i32,
+            high(|c| c.1).ceil() as i32,
+        ) else {
+            return Ok(());
+        };
+        self.mark_painted(bounds);
+        let texel = |x: i32, y: i32| -> [f32; 4] {
+            if x < 0 || y < 0 || x >= lw as i32 || y >= lh as i32 {
+                return [0.0; 4];
+            }
+            premultiplied[y as usize * lw + x as usize].map(f32::from)
+        };
+        let stride = self.width as usize;
+        // Layer coordinates are linear in x on each row: sx = ax + x*cos, sy = ay - x*sin.
+        let (limit_x, limit_y) = (lw as f32, lh as f32);
+        let span = |origin: f32, slope: f32, limit: f32| -> (f32, f32) {
+            if slope.abs() < 1e-6 {
+                return if origin > -1.0 && origin < limit {
+                    (f32::NEG_INFINITY, f32::INFINITY)
+                } else {
+                    (f32::INFINITY, f32::NEG_INFINITY)
+                };
+            }
+            let (a, b) = ((-1.0 - origin) / slope, (limit - origin) / slope);
+            (a.min(b), a.max(b))
+        };
+        for y in bounds.y0..bounds.y1 {
+            let dy = y as f32 + 0.5 - center.1;
+            let ax = center.0 + (0.5 - center.0) * cos + dy * sin - x0 as f32 - 0.5;
+            let ay = center.1 - (0.5 - center.0) * sin + dy * cos - y0 as f32 - 0.5;
+            let ((x_lo, x_hi), (y_lo, y_hi)) = (span(ax, cos, limit_x), span(ay, -sin, limit_y));
+            let first = (x_lo.max(y_lo).max(bounds.x0 as f32 - 1.0).floor() as i64 - 1)
+                .max(bounds.x0 as i64) as usize;
+            let last = ((x_hi.min(y_hi).min(bounds.x1 as f32).ceil() as i64) + 1)
+                .min(bounds.x1 as i64)
+                .max(0) as usize;
+            for x in first..last {
+                let sx = ax + x as f32 * cos;
+                let sy = ay - x as f32 * sin;
+                let (ix, iy) = (sx.floor(), sy.floor());
+                let (fx, fy) = (sx - ix, sy - iy);
+                let (ix, iy) = (ix as i32, iy as i32);
+                let taps = [
+                    (texel(ix, iy), (1.0 - fx) * (1.0 - fy)),
+                    (texel(ix + 1, iy), fx * (1.0 - fy)),
+                    (texel(ix, iy + 1), (1.0 - fx) * fy),
+                    (texel(ix + 1, iy + 1), fx * fy),
+                ];
+                let mut sample = [0.0_f32; 4];
+                for (tap, weight) in taps {
+                    for (total, value) in sample.iter_mut().zip(tap) {
+                        *total += value * weight;
+                    }
+                }
+                if sample[3] < 0.5 {
+                    continue;
+                }
+                let keep = 1.0 - sample[3] / 255.0;
+                let offset = (y * stride + x) * 4;
+                let dest = &mut self.pixels[offset..offset + 4];
+                for (channel, value) in dest.iter_mut().zip(sample).take(3) {
+                    *channel = (value + f32::from(*channel) * keep).round().min(255.0) as u8;
+                }
+                dest[3] = 255;
+            }
         }
         Ok(())
     }
@@ -672,6 +841,62 @@ impl<'a> Renderer<'a> {
         Ok(placed)
     }
 
+    /// Solid ring between the rounded box and the same box inset by `width`.
+    fn draw_border(&mut self, rect: Rect, radius: f32, width: f32, color: Color, alpha: f32) {
+        let k = self.scale;
+        let outer = [
+            rect.x * k,
+            rect.y * k,
+            (rect.x + rect.w) * k,
+            (rect.y + rect.h) * k,
+        ];
+        let width = (width * k).min((outer[2] - outer[0]).min(outer[3] - outer[1]) / 2.0);
+        let inner = [
+            outer[0] + width,
+            outer[1] + width,
+            outer[2] - width,
+            outer[3] - width,
+        ];
+        let (outer_radius, inner_radius) = (radius * k, (radius * k - width).max(0.0));
+        let Some(bounds) = Self::clip_pixels(
+            (self.width, self.height),
+            outer[0].floor() as i32,
+            outer[1].floor() as i32,
+            outer[2].ceil() as i32,
+            outer[3].ceil() as i32,
+        ) else {
+            return;
+        };
+        self.mark_painted(bounds);
+        let strength = alpha * f32::from(color.a) / 255.0;
+        let blend_color = Color { a: 255, ..color };
+        let (center_y, half_y) = ((inner[1] + inner[3]) / 2.0, (inner[3] - inner[1]) / 2.0);
+        // On straight rows everything well inside the inner box is untouched.
+        let inside_from = (inner[0] + 0.5).ceil() as usize;
+        let inside_to = (inner[2] - 1.5).floor().max(0.0) as usize;
+        let stride = self.width as usize;
+        for y in bounds.y0..bounds.y1 {
+            let py = y as f32 + 0.5;
+            let straight = (py - center_y).abs() <= half_y - inner_radius - 1.0;
+            let mut x = bounds.x0;
+            while x < bounds.x1 {
+                if straight && x >= inside_from && x <= inside_to {
+                    x = inside_to + 1;
+                    continue;
+                }
+                let px = x as f32 + 0.5;
+                let outside = (0.5 - rounded_distance(px, py, outer, outer_radius)).clamp(0.0, 1.0);
+                let hole = (0.5 - rounded_distance(px, py, inner, inner_radius)).clamp(0.0, 1.0);
+                let a = strength * outside * (1.0 - hole);
+                if a > 0.002 {
+                    let offset = (y * stride + x) * 4;
+                    Self::blend_pixel(&mut self.pixels[offset..offset + 4], blend_color, a);
+                }
+                x += 1;
+            }
+        }
+    }
+
     /// Soft outer shadow: Gaussian falloff from the distance to the shadow's rounded rectangle.
     fn draw_shadow(&mut self, rect: Rect, radius: f32, shadow: Shadow, alpha: f32, zoom: f32) {
         let k = self.scale;
@@ -824,7 +1049,7 @@ impl<'a> Renderer<'a> {
             self.fill_rounded(bounds, edges, radius, color, alpha);
             return;
         }
-        let base = self.composition.background;
+        let base = self.backdrop;
         let rows = self.rows(bounds);
         if a >= 1.0 || uniform_background {
             let pixel = if a >= 1.0 {
@@ -912,7 +1137,7 @@ impl<'a> Renderer<'a> {
         } else {
             Vec::new()
         };
-        let base = self.composition.background;
+        let base = self.backdrop;
         // On the first layer every uncovered pixel starts with the same color.
         let blended_columns = (horizontal && uniform_background && alpha < 1.0).then(|| {
             columns
