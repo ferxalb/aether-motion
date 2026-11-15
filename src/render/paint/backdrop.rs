@@ -31,6 +31,48 @@ fn box_line(line: &mut [f32], tmp: &mut Vec<f32>, radius: usize) {
     line.copy_from_slice(tmp);
 }
 
+/// One vertical box blur of radius `radius` from `src` into `dst` (both `width` x `height`).
+///
+/// A running sum per column slides down the rows, so memory is read row by row (cache friendly)
+/// and the cost does not depend on the radius. `sums` is scratch space of `width` values.
+fn blur_vertical(
+    src: &[f32],
+    dst: &mut [f32],
+    width: usize,
+    height: usize,
+    radius: usize,
+    sums: &mut Vec<f32>,
+) {
+    if width == 0 || height == 0 || radius == 0 {
+        dst.copy_from_slice(src);
+        return;
+    }
+    let r = radius as isize;
+    let last = height as isize - 1;
+    let window = (2 * radius + 1) as f32;
+    let row = |y: isize| {
+        let y = y.clamp(0, last) as usize;
+        &src[y * width..(y + 1) * width]
+    };
+    sums.clear();
+    sums.resize(width, 0.0);
+    for k in -r..=r {
+        for (sum, value) in sums.iter_mut().zip(row(k)) {
+            *sum += value;
+        }
+    }
+    for y in 0..height as isize {
+        let out = &mut dst[y as usize * width..(y as usize + 1) * width];
+        for (target, sum) in out.iter_mut().zip(sums.iter()) {
+            *target = sum / window;
+        }
+        let (add, sub) = (row(y + r + 1), row(y - r));
+        for ((sum, a), s) in sums.iter_mut().zip(add).zip(sub) {
+            *sum += a - s;
+        }
+    }
+}
+
 /// Three horizontal then three vertical box blurs over a `width` x `height` plane.
 fn blur_plane(plane: &mut [f32], width: usize, height: usize, radius: usize) {
     let mut tmp = Vec::with_capacity(width.max(height));
@@ -39,17 +81,11 @@ fn blur_plane(plane: &mut [f32], width: usize, height: usize, radius: usize) {
             box_line(row, &mut tmp, radius);
         }
     }
-    let mut column = vec![0.0_f32; height];
-    for x in 0..width {
-        for (y, value) in column.iter_mut().enumerate() {
-            *value = plane[y * width + x];
-        }
-        for _ in 0..3 {
-            box_line(&mut column, &mut tmp, radius);
-        }
-        for (y, value) in column.iter().enumerate() {
-            plane[y * width + x] = *value;
-        }
+    let mut scratch = vec![0.0_f32; plane.len()];
+    let mut sums = Vec::new();
+    for _ in 0..3 {
+        blur_vertical(plane, &mut scratch, width, height, radius, &mut sums);
+        plane.copy_from_slice(&scratch);
     }
 }
 
@@ -116,6 +152,7 @@ impl Surface {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::Color;
 
     #[test]
     fn radius_follows_sigma() {
@@ -135,5 +172,143 @@ mod tests {
         assert!((line[1] - 100.0 / 3.0).abs() < 1e-3);
         assert!((line[2] - 100.0 / 3.0).abs() < 1e-3);
         assert_eq!(line[0], 0.0);
+    }
+
+    fn naive_vertical(src: &[f32], width: usize, height: usize, radius: usize) -> Vec<f32> {
+        let mut out = vec![0.0; src.len()];
+        for y in 0..height {
+            for x in 0..width {
+                let total: f32 = (-(radius as isize)..=radius as isize)
+                    .map(|k| {
+                        let row = (y as isize + k).clamp(0, height as isize - 1) as usize;
+                        src[row * width + x]
+                    })
+                    .sum();
+                out[y * width + x] = total / (2 * radius + 1) as f32;
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn the_sliding_vertical_pass_matches_a_naive_box_blur() {
+        let (w, h) = (7, 11);
+        let src: Vec<f32> = (0..w * h).map(|i| ((i * 37) % 101) as f32).collect();
+        for radius in [1, 2, 5, 20] {
+            let mut dst = vec![0.0; src.len()];
+            blur_vertical(&src, &mut dst, w, h, radius, &mut Vec::new());
+            let expected = naive_vertical(&src, w, h, radius);
+            for (got, want) in dst.iter().zip(&expected) {
+                assert!(
+                    (got - want).abs() < 1e-2,
+                    "radius {radius}: {got} vs {want}"
+                );
+            }
+        }
+    }
+
+    fn white_left_half() -> Surface {
+        let mut surface = Surface::filled(40, 20, 1.0, Color::BLACK);
+        let left = Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 20.0,
+            h: 20.0,
+        };
+        surface.fill(left, Color::WHITE, 1.0, 0.0);
+        surface
+    }
+
+    fn red(surface: &Surface, x: u32, y: u32) -> u8 {
+        surface.pixels[((y * surface.width + x) * 4) as usize]
+    }
+
+    #[test]
+    fn blur_softens_an_edge_inside_the_box_and_leaves_the_rest_alone() {
+        let mut surface = white_left_half();
+        let region = Rect {
+            x: 10.0,
+            y: 0.0,
+            w: 20.0,
+            h: 20.0,
+        };
+        surface.backdrop_blur(region, 0.0, 3.0, 1.0);
+        // Either side of the edge at x = 20 moves towards the middle.
+        assert!(
+            (1..255).contains(&red(&surface, 19, 10)),
+            "{}",
+            red(&surface, 19, 10)
+        );
+        assert!(
+            (1..255).contains(&red(&surface, 20, 10)),
+            "{}",
+            red(&surface, 20, 10)
+        );
+        assert!(red(&surface, 19, 10) > red(&surface, 20, 10));
+        // Outside the box nothing changes.
+        assert_eq!(red(&surface, 5, 10), 255);
+        assert_eq!(red(&surface, 35, 10), 0);
+        // Flat areas inside the box stay flat, and the alpha channel stays opaque.
+        assert_eq!(red(&surface, 10, 10), 255);
+        assert_eq!(
+            surface.pixels[((10 * surface.width + 20) * 4 + 3) as usize],
+            255
+        );
+    }
+
+    #[test]
+    fn blur_is_a_no_op_without_alpha_or_radius() {
+        let original = white_left_half().pixels;
+        let region = Rect {
+            x: 10.0,
+            y: 0.0,
+            w: 20.0,
+            h: 20.0,
+        };
+        let mut hidden = white_left_half();
+        hidden.backdrop_blur(region, 0.0, 3.0, 0.0);
+        assert_eq!(hidden.pixels, original);
+        let mut sharp = white_left_half();
+        sharp.backdrop_blur(region, 0.0, 0.0, 1.0);
+        assert_eq!(sharp.pixels, original);
+    }
+
+    #[test]
+    fn partial_alpha_mixes_the_blur_with_the_original() {
+        let region = Rect {
+            x: 10.0,
+            y: 0.0,
+            w: 20.0,
+            h: 20.0,
+        };
+        let mut full = white_left_half();
+        full.backdrop_blur(region, 0.0, 3.0, 1.0);
+        let mut half = white_left_half();
+        half.backdrop_blur(region, 0.0, 3.0, 0.5);
+        let (f, h) = (i32::from(red(&full, 19, 10)), i32::from(red(&half, 19, 10)));
+        assert!(h > f && h < 255, "{f} < {h} < 255");
+    }
+
+    #[test]
+    fn rounded_corners_are_left_unblurred() {
+        let mut surface = Surface::filled(40, 40, 1.0, Color::BLACK);
+        let stripe = Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 40.0,
+            h: 5.0,
+        };
+        surface.fill(stripe, Color::WHITE, 1.0, 0.0);
+        let before = red(&surface, 10, 0);
+        // A 30 px box with 15 px radius is a circle: its corner pixel is outside the shape.
+        let region = Rect {
+            x: 10.0,
+            y: 0.0,
+            w: 30.0,
+            h: 30.0,
+        };
+        surface.backdrop_blur(region, 15.0, 4.0, 1.0);
+        assert_eq!(red(&surface, 10, 0), before);
+        assert!(red(&surface, 25, 4) < 255);
     }
 }

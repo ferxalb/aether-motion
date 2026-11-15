@@ -1,7 +1,9 @@
 //! Frame-wide finishing applied after everything is drawn: vignette and film grain.
 //!
 //! Both are pure functions of pixel position (and, for grain, of the frame time), so output stays
-//! deterministic and independent of render order.
+//! deterministic and independent of render order. The vignette is a per-pixel brightness table built
+//! once per surface size and strength, so a frame costs one integer multiply per channel; the grain is
+//! an integer hash per pixel. All arithmetic is fixed point (1/256 steps).
 
 use crate::render::geometry::PixelRect;
 use crate::render::paint::Surface;
@@ -23,6 +25,39 @@ fn vignette_factor(strength: f32, d: f32) -> f32 {
     1.0 - strength * t * t * (3.0 - 2.0 * t)
 }
 
+/// Per-pixel vignette brightness in 1/256 steps (256 = unchanged) for one surface size and strength.
+pub(in crate::render) struct FinishLut {
+    width: u32,
+    height: u32,
+    strength_bits: u32,
+    factors: Vec<u16>,
+}
+
+impl FinishLut {
+    fn build(width: u32, height: u32, strength: f32) -> Self {
+        let (w, h) = (width as usize, height as usize);
+        let mut factors = Vec::with_capacity(w * h);
+        for y in 0..h {
+            let ny = (y as f32 + 0.5) / h as f32 * 2.0 - 1.0;
+            for x in 0..w {
+                let nx = (x as f32 + 0.5) / w as f32 * 2.0 - 1.0;
+                let d = (nx * nx + ny * ny).sqrt() / std::f32::consts::SQRT_2;
+                factors.push((vignette_factor(strength, d) * 256.0).round() as u16);
+            }
+        }
+        Self {
+            width,
+            height,
+            strength_bits: strength.to_bits(),
+            factors,
+        }
+    }
+
+    fn matches(&self, width: u32, height: u32, strength: f32) -> bool {
+        self.width == width && self.height == height && self.strength_bits == strength.to_bits()
+    }
+}
+
 impl Surface {
     /// Darkens the corners by `vignette` (0..=1) and adds monochrome noise of amplitude `grain` (0..=1),
     /// reseeded by `seed` each frame. Marks the whole surface as painted so the next frame resets it.
@@ -31,28 +66,33 @@ impl Surface {
             return;
         }
         let (width, height) = (self.width as usize, self.height as usize);
-        for y in 0..height {
-            let ny = (y as f32 + 0.5) / height as f32 * 2.0 - 1.0;
-            for x in 0..width {
-                let nx = (x as f32 + 0.5) / width as f32 * 2.0 - 1.0;
-                let factor = if vignette > 0.0 {
-                    vignette_factor(
-                        vignette,
-                        (nx * nx + ny * ny).sqrt() / std::f32::consts::SQRT_2,
-                    )
+        if vignette > 0.0
+            && !self
+                .finish_lut
+                .as_ref()
+                .is_some_and(|lut| lut.matches(self.width, self.height, vignette))
+        {
+            self.finish_lut = Some(FinishLut::build(self.width, self.height, vignette));
+        }
+        let factors = if vignette > 0.0 {
+            self.finish_lut.as_ref().map(|lut| lut.factors.as_slice())
+        } else {
+            None
+        };
+        // Noise amplitude in 1/256 of a level; the largest product below stays within i32.
+        let amplitude = (grain * 64.0 * 256.0) as i32;
+        for (y, row) in self.pixels.chunks_exact_mut(width * 4).enumerate() {
+            for (x, pixel) in row.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+                let factor = factors.map_or(256, |table| i32::from(table[y * width + x]));
+                let noise = if amplitude > 0 {
+                    let bits = ((hash(x as u32, y as u32, seed) >> 8) & 0xFFFF) as i32;
+                    ((bits * 2 - 65535) * amplitude) / 65535
                 } else {
-                    1.0
+                    0
                 };
-                let noise = if grain > 0.0 {
-                    let bits = (hash(x as u32, y as u32, seed) >> 8) & 0xFFFF;
-                    (bits as f32 / 65535.0 * 2.0 - 1.0) * grain * 64.0
-                } else {
-                    0.0
-                };
-                let offset = (y * width + x) * 4;
-                for c in 0..3 {
-                    let value = f32::from(self.pixels[offset + c]) * factor + noise;
-                    self.pixels[offset + c] = value.round().clamp(0.0, 255.0) as u8;
+                for channel in &mut pixel[..3] {
+                    let value = (i32::from(*channel) * factor + noise + 128) >> 8;
+                    *channel = value.clamp(0, 255) as u8;
                 }
             }
         }
@@ -68,6 +108,26 @@ impl Surface {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::Color;
+
+    fn gray(width: u32, height: u32, level: u8) -> Surface {
+        Surface::filled(
+            width,
+            height,
+            1.0,
+            Color {
+                r: level,
+                g: level,
+                b: level,
+                a: 255,
+            },
+        )
+    }
+
+    fn pixel(surface: &Surface, x: u32, y: u32) -> [u8; 4] {
+        let offset = ((y * surface.width + x) * 4) as usize;
+        surface.pixels[offset..offset + 4].try_into().unwrap()
+    }
 
     #[test]
     fn vignette_only_darkens_towards_the_corners() {
@@ -82,5 +142,104 @@ mod tests {
         assert_eq!(hash(3, 4, 5), hash(3, 4, 5));
         assert_ne!(hash(3, 4, 5), hash(3, 4, 6));
         assert_ne!(hash(3, 4, 5), hash(4, 3, 5));
+    }
+
+    #[test]
+    fn lut_is_neutral_at_the_center_and_darkest_in_the_corners() {
+        let lut = FinishLut::build(64, 36, 0.5);
+        assert_eq!(lut.factors.len(), 64 * 36);
+        assert_eq!(lut.factors[18 * 64 + 32], 256);
+        let corner = lut.factors[0];
+        assert!((126..=134).contains(&corner), "corner factor {corner}");
+        assert!(lut.factors.iter().all(|&f| f <= 256));
+    }
+
+    #[test]
+    fn vignette_darkens_corners_and_keeps_the_center() {
+        let mut surface = gray(64, 36, 200);
+        surface.apply_finish(0.5, 0.0, 0);
+        assert_eq!(pixel(&surface, 32, 18)[0], 200);
+        let corner = pixel(&surface, 0, 0);
+        assert!((98..=102).contains(&corner[0]), "corner {}", corner[0]);
+        assert_eq!(corner[3], 255);
+        let edge = pixel(&surface, 0, 18)[0];
+        assert!(corner[0] < edge && edge <= 200);
+    }
+
+    #[test]
+    fn nothing_changes_without_vignette_or_grain() {
+        let mut surface = gray(16, 9, 90);
+        surface.apply_finish(0.0, 0.0, 3);
+        assert!(surface
+            .pixels
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .all(|p| *p == [90, 90, 90, 255]));
+        assert!(surface.painted.is_none());
+    }
+
+    #[test]
+    fn grain_is_deterministic_bounded_and_reseeded() {
+        let mut a = gray(48, 27, 128);
+        let mut b = gray(48, 27, 128);
+        let mut c = gray(48, 27, 128);
+        a.apply_finish(0.0, 0.1, 7);
+        b.apply_finish(0.0, 0.1, 7);
+        c.apply_finish(0.0, 0.1, 8);
+        assert_eq!(a.pixels, b.pixels);
+        assert_ne!(a.pixels, c.pixels);
+        // 0.1 of 64 levels is 6.4; rounding may add one more.
+        let widest = a
+            .pixels
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|p| (i32::from(p[0]) - 128).abs())
+            .max()
+            .unwrap();
+        assert!((1..=7).contains(&widest), "widest deviation {widest}");
+        // Monochrome: all three channels move together.
+        assert!(a
+            .pixels
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .all(|p| p[0] == p[1] && p[1] == p[2]));
+    }
+
+    #[test]
+    fn grain_is_roughly_zero_mean() {
+        let mut surface = gray(64, 64, 128);
+        surface.apply_finish(0.0, 0.2, 11);
+        let total: i64 = surface
+            .pixels
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|p| i64::from(p[0]) - 128)
+            .sum();
+        let mean = total as f64 / (64.0 * 64.0);
+        assert!(mean.abs() < 0.5, "mean {mean}");
+    }
+
+    #[test]
+    fn the_table_is_rebuilt_when_the_strength_changes_and_the_whole_frame_is_marked() {
+        let mut surface = gray(32, 18, 255);
+        surface.apply_finish(0.5, 0.0, 0);
+        assert_eq!(
+            surface.finish_lut.as_ref().unwrap().strength_bits,
+            0.5f32.to_bits()
+        );
+        surface.apply_finish(0.25, 0.0, 0);
+        assert_eq!(
+            surface.finish_lut.as_ref().unwrap().strength_bits,
+            0.25f32.to_bits()
+        );
+        let painted = surface.painted.unwrap();
+        assert_eq!(
+            (painted.x0, painted.y0, painted.x1, painted.y1),
+            (0, 0, 32, 18)
+        );
     }
 }

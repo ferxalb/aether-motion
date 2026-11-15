@@ -71,3 +71,21 @@ What the differences suggest, on this single configuration:
 - The backdrop blur costs about 6 ms per frame in the promo (one to three glass cards visible) and about 10 ms in `glass.html` (a 40 px blur on a large card).
 - These numbers measure continuously animated scenes with many elements, unlike the mostly static `title-card.html`; do not compare them with the earlier tables. No optimization has been made for these effects yet; profile before changing them.
 - Peak memory stays under 80 MB at this size. Native MP4 export time was not measured here.
+
+### After optimizing the vignette/grain pass and the backdrop blur
+
+Same method, files, and settings as above (release, 960×540, 30 fps, median of five).
+
+- The vignette is now a per-pixel brightness table built once per surface size and strength and cached on the surface; each frame applies it, and the grain, with integer arithmetic (no square root or float rounding per pixel).
+- The blur's vertical pass now slides a running sum down the rows instead of gathering each column, so memory is read row by row.
+
+| Composition | Before | After | Change |
+| --- | ---: | ---: | ---: |
+| `premium-promo.html` | 32.7 ms/frame | 22.3 ms/frame | −32% |
+| `premium-promo.html`, without vignette and grain | 22.7 ms/frame | 20.8 ms/frame | −8% |
+| `premium-promo.html`, without `backdrop-filter` | 26.8 ms/frame | 18.9 ms/frame | −30% |
+| `glass.html` | 34.2 ms/frame | 22.5 ms/frame | −34% |
+| `glass.html`, without vignette and grain | 24.3 ms/frame | 21.0 ms/frame | −14% |
+| `glass.html`, without `backdrop-filter` | 23.6 ms/frame | 15.6 ms/frame | −34% |
+
+Estimated cost of each effect now: vignette plus grain about 1.5 ms per frame (was about 10 ms); the 40 px blur in `glass.html` about 7 ms per frame (was about 10 ms). Peak memory is unchanged within a few MB (the vignette table adds 2 bytes per pixel). Rows that do not isolate an effect also moved by a few percent between runs, so treat differences under about 10% as noise. The vignette output can differ by one level per channel from the previous float version because of fixed-point rounding.
