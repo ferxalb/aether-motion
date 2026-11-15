@@ -49,3 +49,25 @@ About a 2.7× improvement at both sizes. The tradeoff is memory: each thread hol
 - Compositions of 1 s or less are not segmented and keep the previous pipeline.
 - By default, `--threads` uses the available cores, up to a maximum of 4.
 - No comparison with other engines was made, and no measurement was taken on an older computer.
+
+## Premium effects (camera, glass, grain, wipes)
+
+Release build, drawing only (`bench`), 960×540 output (`--scale 0.5` of a 1920×1080 composition), 30 fps, single process. Median of five runs per row, using the CLI's internal time. Variants were made by deleting one effect from the same file, so the difference between two rows estimates that effect's cost. All frames change (continuous animation), so no frame is reused.
+
+| Composition | Frames | Time | Per frame | Peak RSS |
+| --- | ---: | ---: | ---: | ---: |
+| [`premium-promo.html`](examples/premium-promo.html) (15 s, ~190 elements) | 450 | 14.71 s | 32.7 ms | 79,220,736 bytes |
+| same, without `data-hf-vignette` and `data-hf-grain` | 450 | 10.23 s | 22.7 ms | 79,069,184 bytes |
+| same, without `backdrop-filter` | 450 | 12.04 s | 26.8 ms | 75,251,712 bytes |
+| [`glass.html`](examples/glass.html) (4 s) | 120 | 4.11 s | 34.2 ms | 21,221,376 bytes |
+| same, without vignette and grain | 120 | 2.92 s | 24.3 ms | 21,434,368 bytes |
+| same, without `backdrop-filter` | 120 | 2.83 s | 23.6 ms | 19,447,808 bytes |
+| [`reveal.html`](examples/reveal.html) (4 s) | 120 | 0.21 s | 1.7 ms | 19,628,032 bytes |
+| [`title-card.html`](examples/title-card.html) (4 s, baseline) | 120 | 0.02 s | 0.2 ms | 17,637,376 bytes |
+
+What the differences suggest, on this single configuration:
+
+- The frame-wide vignette and grain pass costs about 10 ms per 960×540 frame in both compositions. It touches every pixel every frame and disables the identical-frame shortcut, so it is the most expensive effect per pixel.
+- The backdrop blur costs about 6 ms per frame in the promo (one to three glass cards visible) and about 10 ms in `glass.html` (a 40 px blur on a large card).
+- These numbers measure continuously animated scenes with many elements, unlike the mostly static `title-card.html`; do not compare them with the earlier tables. No optimization has been made for these effects yet; profile before changing them.
+- Peak memory stays under 80 MB at this size. Native MP4 export time was not measured here.
