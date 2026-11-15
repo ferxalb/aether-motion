@@ -4,7 +4,7 @@ use crate::model::{Background, Length, Style};
 use crate::parse::values::background::parse_background;
 use crate::parse::values::color::parse_color;
 use crate::parse::values::length::{parse_length, spacing_px};
-use crate::parse::values::shadow::parse_shadow;
+use crate::parse::values::shadow::parse_box_shadows;
 use crate::parse::values::tokens::split_top;
 use crate::parse::values::transform::parse_transform;
 use anyhow::{anyhow, bail, Context, Result};
@@ -51,7 +51,7 @@ pub(super) fn apply(key: &str, value: &str, style: &mut Style) -> Result<bool> {
             }
             style.opacity = Some(n);
         }
-        "box-shadow" => style.shadow = parse_shadow(value, key)?,
+        "box-shadow" => style.shadows = parse_box_shadows(value)?,
         "backdrop-filter" | "-webkit-backdrop-filter" => {
             style.backdrop_blur = parse_backdrop_blur(value, key)?
         }

@@ -18,8 +18,9 @@ impl<'a> Renderer<'a> {
     ) -> Result<()> {
         let k = self.scale;
         let element = &self.composition.elements[idx];
-        let box_reach = element.style.shadow.map_or(0.0, |s| {
-            (s.x.abs().max(s.y.abs()) + s.spread.max(0.0) + s.blur * 1.5) * cumulative * k
+        let box_reach = element.style.shadows.iter().fold(0.0_f32, |reach, s| {
+            reach
+                .max((s.x.abs().max(s.y.abs()) + s.spread.max(0.0) + s.blur * 1.5) * cumulative * k)
         });
         // The element's own `text-shadow` can also fall outside its box.
         let text_reach = match element.content {

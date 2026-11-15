@@ -152,7 +152,8 @@ pub struct Style {
     pub scale: Option<f32>,
     /// Static `transform: rotate()` in degrees, clockwise, around the element center.
     pub rotate: f32,
-    pub shadow: Option<Shadow>,
+    /// `box-shadow` layers in CSS order (the first is painted on top); empty means none.
+    pub shadows: Vec<Shadow>,
     /// `backdrop-filter: blur(<px>)` radius (standard deviation) in composition px; 0 means none.
     pub backdrop_blur: f32,
     /// Solid border drawn inside the box (border-box sizing); `None` color means white.

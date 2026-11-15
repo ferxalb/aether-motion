@@ -5,4 +5,4 @@
 - `backdrop-filter` supports only `blur()`, and inside `overflow: hidden` or rotated elements it blurs that element's layer, not the whole scene.
 - Scene transitions cover crossfade, push, cover, and zoom. Wipes and shader transitions are unsupported.
 - `data-hf-split` handles one line of plain text (up to 400 pieces) and places letters without kerning.
-- Only one `box-shadow` per element, with no `inset`.
+- `box-shadow` takes up to 8 outer shadows; `inset` is unsupported.

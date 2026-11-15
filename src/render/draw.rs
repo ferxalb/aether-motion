@@ -86,7 +86,8 @@ impl<'a> Renderer<'a> {
         if rect.w <= 0.0 || rect.h <= 0.0 {
             return Ok(());
         }
-        if let Some(shadow) = element.style.shadow {
+        // The first shadow of the list sits on top, so paint from the last one backwards.
+        for &shadow in element.style.shadows.iter().rev() {
             self.surface
                 .draw_shadow(rect, radius, shadow, alpha, cumulative);
         }
