@@ -1,6 +1,6 @@
 //! Resolution of inherited text properties (family, size, color, alignment, wrapping).
 
-use crate::model::{Color, Composition, LineHeight, WhiteSpace};
+use crate::model::{Color, Composition, LineHeight, Shadow, WhiteSpace};
 use crate::render::Renderer;
 
 /// Text properties after inheritance; sizes are composition px, before any scale.
@@ -12,6 +12,7 @@ pub(in crate::render) struct TextProps<'a> {
     /// Distance between baselines.
     pub(in crate::render) line_height: f32,
     pub(in crate::render) nowrap: bool,
+    pub(in crate::render) shadow: Option<Shadow>,
 }
 
 impl<'a> Renderer<'a> {
@@ -19,7 +20,7 @@ impl<'a> Renderer<'a> {
     pub(in crate::render) fn text_props(&self, idx: usize) -> TextProps<'a> {
         let composition: &'a Composition = self.composition;
         let (mut family, mut font_size, mut color, mut align) = (None, None, None, None);
-        let (mut line_height, mut white_space) = (None, None);
+        let (mut line_height, mut white_space, mut shadow) = (None, None, None);
         let mut current = Some(idx);
         while let Some(i) = current {
             let node = &composition.elements[i];
@@ -29,6 +30,7 @@ impl<'a> Renderer<'a> {
             align = align.or(node.style.text_align.as_deref());
             line_height = line_height.or(node.style.line_height);
             white_space = white_space.or(node.style.white_space);
+            shadow = shadow.or(node.style.text_shadow);
             current = node.parent;
         }
         let size = font_size.unwrap_or(match composition.elements[idx].tag.as_str() {
@@ -47,6 +49,7 @@ impl<'a> Renderer<'a> {
                 LineHeight::Px(px) => px,
             },
             nowrap: white_space == Some(WhiteSpace::Nowrap),
+            shadow: shadow.flatten(),
         }
     }
 }

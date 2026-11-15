@@ -58,7 +58,7 @@ pub struct Renderer<'a> {
     previous: Vec<FrameState>,
     current: Vec<FrameState>,
     children: Vec<Vec<usize>>,
-    text_runs: HashMap<(usize, u32, i64), TextRun>,
+    text_runs: HashMap<(usize, u32, i64, i32), TextRun>,
     text_blocks: HashMap<(usize, i64), Arc<TextBlock>>,
     text_cache_bytes: usize,
     images: HashMap<ImageKey<'a>, CachedImage>,

@@ -3,7 +3,7 @@
 //! Sizes are in layout units (composition px times the accumulated parent scale `ps`). Text sizing
 //! follows CSS shrink-to-fit: the content width capped by the room offered and by `max-width`.
 
-use crate::model::{Composition, Content};
+use crate::model::{Composition, Content, Length};
 use crate::render::Renderer;
 use anyhow::Result;
 
@@ -36,7 +36,11 @@ impl<'a> Renderer<'a> {
         let composition: &'a Composition = self.composition;
         let element = &composition.elements[idx];
         let style = &element.style;
-        let max_width = style.max_width.map(|n| n.resolve_scaled(avail.0, ps));
+        // A percentage `max-width` needs a definite parent width; without one it is ignored.
+        let max_width = style.max_width.and_then(|n| match n {
+            Length::Px(_) => Some(n.resolve_scaled(0.0, ps)),
+            Length::Percent(_) => room.width.map(|width| n.resolve_scaled(width, ps)),
+        });
         let cap = |width: f32| max_width.map_or(width, |max| width.min(max));
         let width = style.width.map(|n| cap(n.resolve_scaled(avail.0, ps)));
         let height = style.height.map(|n| n.resolve_scaled(avail.1, ps));

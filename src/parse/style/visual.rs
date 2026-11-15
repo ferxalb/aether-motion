@@ -31,7 +31,7 @@ pub(super) fn apply(key: &str, value: &str, style: &mut Style) -> Result<bool> {
             }
             style.opacity = Some(n);
         }
-        "box-shadow" => style.shadow = parse_shadow(value)?,
+        "box-shadow" => style.shadow = parse_shadow(value, key)?,
         "border" => {
             (style.border_width, style.border_color) = (0.0, None);
             for token in split_top(value, ' ') {

@@ -37,7 +37,8 @@ impl<'a> Renderer<'a> {
             return Ok(None);
         }
         let (mut main, mut cross) = (0.0_f32, 0.0_f32);
-        let avail = (inner_room.unwrap_or(0.0), 0.0);
+        // Percentage sizes are cyclic here and contribute nothing, as in CSS shrink-to-fit sizing.
+        let avail = (0.0, 0.0);
         let room = Room {
             width: inner_room,
             fill: false,

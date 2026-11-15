@@ -19,6 +19,8 @@ fn fix_hint(message: &str) -> &'static str {
         "define --name on :root or an ancestor, or add a fallback: var(--name, value)"
     } else if message.contains("animation") || message.contains("@keyframes") {
         "define @keyframes name { from {..} 50% {..} to {..} } using only transform (translate/scale), opacity and animation-timing-function, then use animation: name 1s ease-out [delay] [count] [direction] [fill-mode]"
+    } else if message.contains("text-shadow") {
+        "use one shadow: text-shadow: offset-x offset-y [blur] color (no spread, inset, or lists)"
     } else if message.contains("line-height")
         || message.contains("white-space")
         || message.contains("max-width")

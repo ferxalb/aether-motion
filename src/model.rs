@@ -96,6 +96,8 @@ pub struct Style {
     pub opacity: Option<f32>,
     pub text_align: Option<String>,
     /// Inherited text wrapping controls; see [`LineHeight`] and [`WhiteSpace`].
+    /// Inherited `text-shadow`: outer `None` means unset (inherit), inner `None` is `none`.
+    pub text_shadow: Option<Option<Shadow>>,
     pub line_height: Option<LineHeight>,
     pub white_space: Option<WhiteSpace>,
     pub display: Option<String>,

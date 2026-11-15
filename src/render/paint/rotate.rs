@@ -1,6 +1,6 @@
 //! Rotated subtrees: render on an offscreen layer, then composite around the box center.
 
-use crate::model::Color;
+use crate::model::{Color, Content};
 use crate::render::geometry::{clip_pixels, Rect};
 use crate::render::Renderer;
 use anyhow::{anyhow, Result};
@@ -16,13 +16,18 @@ impl<'a> Renderer<'a> {
         degrees: f32,
     ) -> Result<()> {
         let k = self.scale;
-        let reach = self.composition.elements[idx]
-            .style
-            .shadow
-            .map_or(0.0, |s| {
-                (s.x.abs().max(s.y.abs()) + s.spread.max(0.0) + s.blur * 1.5) * cumulative * k
-            })
-            + 2.0;
+        let element = &self.composition.elements[idx];
+        let box_reach = element.style.shadow.map_or(0.0, |s| {
+            (s.x.abs().max(s.y.abs()) + s.spread.max(0.0) + s.blur * 1.5) * cumulative * k
+        });
+        // The element's own `text-shadow` can also fall outside its box.
+        let text_reach = match element.content {
+            Content::Text(_) => self.text_props(idx).shadow.map_or(0.0, |s| {
+                (s.x.abs().max(s.y.abs()) + s.blur * 1.5) * cumulative * k
+            }),
+            _ => 0.0,
+        };
+        let reach = box_reach.max(text_reach) + 2.0;
         let x0 = (rect.x * k - reach).floor() as i32;
         let y0 = (rect.y * k - reach).floor() as i32;
         let x1 = ((rect.x + rect.w) * k + reach).ceil() as i32;
