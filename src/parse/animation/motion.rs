@@ -86,6 +86,8 @@ pub(in crate::parse) fn build_motion(
         scale: channel(&|f| f.transform.map(|t| t.2), base.scale)?,
         rotate: channel(&|f| f.transform.map(|t| t.3), base.rotate)?,
         opacity: channel(&|f| f.opacity, base.opacity)?,
+        reveal: Track::default(),
+        wipe: None,
         hold_before: decl.backwards,
         hold_after: decl.forwards,
     })
@@ -112,6 +114,8 @@ pub(in crate::parse) fn motion_from_keyframes(base: Pose, frames: &[Keyframe]) -
         scale: Track::default(),
         rotate: Track::default(),
         opacity: track(&|k| base.opacity * k.opacity),
+        reveal: Track::default(),
+        wipe: None,
         hold_before: true,
         hold_after: true,
     }

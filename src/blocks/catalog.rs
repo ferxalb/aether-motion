@@ -31,6 +31,11 @@ pub(super) const ENTRIES: &[Entry] = &[
         template: include_str!("../../blocks/stat-card.html"),
     },
     Entry {
+        name: "counter-card",
+        kind: Kind::Block,
+        template: include_str!("../../blocks/counter-card.html"),
+    },
+    Entry {
         name: "cta",
         kind: Kind::Block,
         template: include_str!("../../blocks/cta.html"),

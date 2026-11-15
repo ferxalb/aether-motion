@@ -32,7 +32,9 @@ cargo run --release -- render examples/title-card.html --output /tmp/title-ffmpe
 | `data-hf-fade-in`, `data-hf-fade-out` | Native extension; seconds, linear transition |
 | `data-hf-keyframes` | Native extension; interpolated position and opacity with quadratic, expo, cubic, quart, back, and `cubic-bezier` easings |
 | `data-hf-split` | Native extension; kinetic text with per-word or per-letter staggered entrances |
-| `data-hf-transition` | Native extension; crossfade, push, cover, and zoom transitions between overlapping scene clips |
+| `data-hf-reveal` | Native extension; uncover an element from one edge (wipes, growing bars, mask reveals) |
+| `data-hf-counter` | Native extension; animated numbers with prefix, suffix, decimals, and thousands separators |
+| `data-hf-transition` | Native extension; crossfade, push, cover, wipe, and zoom transitions between overlapping scene clips |
 | `backdrop-filter: blur()` | Glass cards: blurs the already painted backdrop behind a translucent element |
 | `data-hf-vignette`, `data-hf-grain` | Native extension on the root; frame-wide corner darkening and deterministic film grain |
 | `data-hf-camera` | Native extension; zoom in/out and pan with a focus point over a container's whole subtree |
@@ -50,7 +52,7 @@ aether-hyperframes block theme-midnight
 aether-hyperframes block hero-title --set title="Premium by default" --set id=intro
 ```
 
-Blocks are 1920x1080 fragments (`hero-title`, `feature-card`, `stat-card`, `cta`, `glow`) styled with custom properties such as `--text`, `--accent`, and `--panel`; a theme (`theme-midnight`, `theme-sunrise`, `theme-paper`) sets them all. Give each block a unique `id`, and wrap scene-sized blocks in a clip that sets `data-start` and `data-duration`. [examples/premium-promo.html](examples/premium-promo.html) is a 15 s promo built from them, with camera moves, kinetic type, scene transitions, glass, vignette, and grain.
+Blocks are 1920x1080 fragments (`hero-title`, `feature-card`, `stat-card`, `counter-card`, `cta`, `glow`) styled with custom properties such as `--text`, `--accent`, and `--panel`; a theme (`theme-midnight`, `theme-sunrise`, `theme-paper`) sets them all. Give each block a unique `id`, and wrap scene-sized blocks in a clip that sets `data-start` and `data-duration`. [examples/premium-promo.html](examples/premium-promo.html) is a 15 s promo built from them, with camera moves, kinetic type, scene transitions, glass, vignette, and grain.
 
 ## Export at 1080p and 4K
 

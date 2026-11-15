@@ -2,9 +2,10 @@
 //!
 //! `parse_file` is the facade. Submodules: `html` (node helpers), `css` (stylesheet, selectors, cascade,
 //! variables), `values` (value parsers), `style` (property groups into `Style`), `animation`
-//! (CSS animation, `data-hf-keyframes`, and `data-hf-camera` into motion tracks), `split` (`data-hf-split` kinetic text), `transition` (`data-hf-transition` scene transitions), `tree` (DOM walk), `timeline` (`data-start`).
+//! (CSS animation, `data-hf-keyframes`, and `data-hf-camera` into motion tracks), `split` (`data-hf-split` kinetic text), `counter` (`data-hf-counter` animated numbers; `data-hf-reveal` lives in `animation/reveal.rs`), `transition` (`data-hf-transition` scene transitions), `tree` (DOM walk), `timeline` (`data-start`).
 
 mod animation;
+mod counter;
 mod css;
 mod html;
 mod split;
@@ -178,10 +179,25 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
             if idx == 0 {
                 bail!("data-hf-camera cannot be on the root; add a container inside it");
             }
-            if p.camera.last().is_some_and(|frame| frame.at > clip_len + 1e-9) {
+            if p.camera
+                .last()
+                .is_some_and(|frame| frame.at > clip_len + 1e-9)
+            {
                 bail!("data-hf-camera exceeds the duration of {label}");
             }
             p.element.motion = motion_from_camera(rest, &p.camera);
+        }
+        if let Some(spec) = p.reveal.take() {
+            if idx == 0 {
+                bail!("data-hf-reveal cannot be on the root; add a container inside it");
+            }
+            if spec.end() > clip_len + 1e-9 {
+                bail!("data-hf-reveal exceeds the duration of {label}");
+            }
+            if p.element.style.rotate != 0.0 || !p.element.motion.rotate.0.is_empty() {
+                bail!("data-hf-reveal cannot be combined with rotate on {label}");
+            }
+            spec.apply(&mut p.element.motion);
         }
         if let Some(spec) = p.transition.take() {
             transitions.push((idx, spec));

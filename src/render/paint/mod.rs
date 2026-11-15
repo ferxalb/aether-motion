@@ -7,6 +7,7 @@ mod fill;
 mod finish;
 mod gradient;
 mod images;
+mod reveal;
 mod rotate;
 mod shadow;
 mod shape;

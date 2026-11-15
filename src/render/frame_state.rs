@@ -9,6 +9,7 @@ pub(in crate::render) struct FrameState {
     pub(in crate::render) y: f32,
     pub(in crate::render) scale: f32,
     pub(in crate::render) rotate: f32,
+    pub(in crate::render) reveal: f32,
 }
 
 impl FrameState {
@@ -23,6 +24,7 @@ impl FrameState {
             y: pose.y,
             scale: pose.scale,
             rotate: pose.rotate,
+            reveal: pose.reveal,
         }
     }
 }

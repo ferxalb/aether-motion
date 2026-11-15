@@ -13,12 +13,16 @@ use std::path::Path;
 pub const GUIDE: &str = include_str!("../AGENTS.md");
 
 fn fix_hint(message: &str) -> &'static str {
-    if message.contains("backdrop-filter") {
+    if message.contains("data-hf-reveal") {
+        "use data-hf-reveal=from-left|from-right|from-top|from-bottom on a non-root element, with optional data-hf-reveal-at, -duration, and -easing; not with rotate"
+    } else if message.contains("data-hf-counter") {
+        "use data-hf-counter=<end value> on an empty element, with optional data-hf-counter-from, -duration (0.05 to 10), -delay, -decimals (0 to 6), -prefix, -suffix, -separator, and -easing"
+    } else if message.contains("backdrop-filter") {
         "use backdrop-filter: blur(<px>) or none (at most 200px); no other filter functions are supported"
     } else if message.contains("data-hf-vignette") || message.contains("data-hf-grain") {
         "set data-hf-vignette and data-hf-grain on the composition root to a number between 0 and 1"
     } else if message.contains("data-hf-transition") || message.contains("transition ") {
-        "on the incoming clip use data-hf-transition=crossfade|push-left|cover-left|zoom-in|zoom-out and data-hf-transition-from=<outgoing id>; start it inside the outgoing clip (data-start=\"a-0.6\"), give the outgoing clip a data-duration, and draw it above on a higher data-track-index"
+        "on the incoming clip use data-hf-transition=crossfade|push-left|cover-left|wipe-left|zoom-in|zoom-out and data-hf-transition-from=<outgoing id>; start it inside the outgoing clip (data-start=\"a-0.6\"), give the outgoing clip a data-duration, and draw it above on a higher data-track-index"
     } else if message.contains("data-hf-split") || message.contains("data-hf-stagger") {
         "use data-hf-split=words|chars on an element with one line of plain text (no <br> or child elements); see AGENTS.md for data-hf-stagger, data-hf-split-from, and the other options"
     } else if message.contains("data-hf-camera") || message.contains("camera keyframe") {

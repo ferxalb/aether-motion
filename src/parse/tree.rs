@@ -2,12 +2,14 @@
 use crate::model::{Content, Element, Keyframe, Motion, Pose};
 use crate::parse::animation::camera::{parse_camera, CameraFrame};
 use crate::parse::animation::keyframes::parse_keyframes;
+use crate::parse::animation::reveal::{parse_reveal, RevealSpec};
 use crate::parse::animation::AnimationSpec;
+use crate::parse::counter::parse_counter;
 use crate::parse::css::{Stylesheet, Vars};
 use crate::parse::html::{attr, direct_text, number};
 use crate::parse::split::parse_split;
-use crate::parse::transition::{parse_transition, TransitionSpec};
 use crate::parse::style::{style_for, Resolved};
+use crate::parse::transition::{parse_transition, TransitionSpec};
 use anyhow::{anyhow, bail, Context, Result};
 use kuchiki::NodeRef;
 use std::path::Path;
@@ -20,6 +22,7 @@ pub(in crate::parse) struct Pending {
     pub(in crate::parse) keyframes: Vec<Keyframe>,
     pub(in crate::parse) camera: Vec<CameraFrame>,
     pub(in crate::parse) transition: Option<TransitionSpec>,
+    pub(in crate::parse) reveal: Option<RevealSpec>,
     pub(in crate::parse) animation: Option<AnimationSpec>,
 }
 
@@ -137,6 +140,12 @@ pub(in crate::parse) fn walk(
             Content::Text(text)
         }
     };
+    let reveal = parse_reveal(node).with_context(|| {
+        format!(
+            "data-hf-reveal on <{tag}> ({})",
+            attr(node, "id").as_deref().unwrap_or("no id")
+        )
+    })?;
     let transition = parse_transition(node).with_context(|| {
         format!(
             "data-hf-transition on <{tag}> ({})",
@@ -167,6 +176,23 @@ pub(in crate::parse) fn walk(
     } else {
         content
     };
+    let counter = parse_counter(node, &tag).with_context(|| {
+        format!(
+            "data-hf-counter on <{tag}> ({})",
+            attr(node, "id").as_deref().unwrap_or("no id")
+        )
+    })?;
+    if let Some(spec) = &counter {
+        if split.is_some() {
+            bail!("data-hf-counter cannot be combined with data-hf-split");
+        }
+        if !matches!(content, Content::Container)
+            || node.children().any(|c| c.as_element().is_some())
+        {
+            bail!("data-hf-counter requires an empty element (no text or child elements)");
+        }
+        spec.apply_container_style(&mut style);
+    }
     let idx = out.len();
     let rest = Pose {
         x: style.translate.0,
@@ -174,6 +200,7 @@ pub(in crate::parse) fn walk(
         scale: style.scale.unwrap_or(1.0),
         rotate: style.rotate,
         opacity: style.opacity.unwrap_or(1.0),
+        reveal: 1.0,
     };
     out.push(Pending {
         element: Element {
@@ -198,10 +225,14 @@ pub(in crate::parse) fn walk(
         keyframes,
         camera,
         transition,
+        reveal,
         animation,
     });
     if let Some(parent_idx) = parent {
         out[parent_idx].element.children.push(idx);
+    }
+    if let Some(spec) = &counter {
+        return spec.expand(idx, out);
     }
     if let (Some(spec), Some(text)) = (&split, &split_text) {
         return spec.expand(text, idx, out);

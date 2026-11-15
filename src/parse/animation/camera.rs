@@ -110,6 +110,8 @@ pub(in crate::parse) fn motion_from_camera(base: Pose, frames: &[CameraFrame]) -
         scale: track(&|f| base.scale * f.zoom),
         rotate: Track::default(),
         opacity: Track::default(),
+        reveal: Track::default(),
+        wipe: None,
         hold_before: true,
         hold_after: true,
     }

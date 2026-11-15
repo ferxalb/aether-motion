@@ -298,6 +298,15 @@ pub struct Composition {
     pub ids: HashMap<String, usize>,
 }
 
+/// Edge a reveal grows from: `Left` uncovers the element starting at its left edge, and so on.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RevealFrom {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
 /// Visual state that time can change.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Pose {
@@ -306,6 +315,8 @@ pub struct Pose {
     pub scale: f32,
     pub rotate: f32,
     pub opacity: f32,
+    /// Fraction of the box that is revealed (1 = all); only meaningful with [`Motion::wipe`].
+    pub reveal: f32,
 }
 
 impl Default for Pose {
@@ -316,6 +327,7 @@ impl Default for Pose {
             scale: 1.0,
             rotate: 0.0,
             opacity: 1.0,
+            reveal: 1.0,
         }
     }
 }
@@ -359,6 +371,10 @@ pub struct Motion {
     pub scale: Track,
     pub rotate: Track,
     pub opacity: Track,
+    /// Revealed fraction of the box over time; always holds its first and last values.
+    pub reveal: Track,
+    /// Edge the reveal grows from; `None` means the element is never clipped by a reveal.
+    pub wipe: Option<RevealFrom>,
     /// Hold the first value before the first point (`animation-fill-mode: backwards`).
     pub hold_before: bool,
     /// Hold the last value after the last point (`animation-fill-mode: forwards`).
@@ -374,21 +390,36 @@ impl Motion {
             scale: self.scale.eval(elapsed, b.scale, hb, ha),
             rotate: self.rotate.eval(elapsed, b.rotate, hb, ha),
             opacity: self.opacity.eval(elapsed, b.opacity, hb, ha),
+            reveal: self.reveal.eval(elapsed, b.reveal, true, true),
         }
     }
 
     pub fn is_static(&self) -> bool {
-        [&self.x, &self.y, &self.scale, &self.rotate, &self.opacity]
-            .iter()
-            .all(|track| track.0.is_empty())
+        [
+            &self.x,
+            &self.y,
+            &self.scale,
+            &self.rotate,
+            &self.opacity,
+            &self.reveal,
+        ]
+        .iter()
+        .all(|track| track.0.is_empty())
     }
 
     /// Sorted, distinct point times across all channels.
     pub fn times(&self) -> Vec<f64> {
-        let mut times: Vec<f64> = [&self.x, &self.y, &self.scale, &self.rotate, &self.opacity]
-            .iter()
-            .flat_map(|track| track.0.iter().map(|point| point.at))
-            .collect();
+        let mut times: Vec<f64> = [
+            &self.x,
+            &self.y,
+            &self.scale,
+            &self.rotate,
+            &self.opacity,
+            &self.reveal,
+        ]
+        .iter()
+        .flat_map(|track| track.0.iter().map(|point| point.at))
+        .collect();
         times.sort_by(f64::total_cmp);
         times.dedup();
         times

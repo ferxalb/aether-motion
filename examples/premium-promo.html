@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <title>Premium promo</title>
-  <!-- Generated from the built-in blocks: theme-midnight, glow, hero-title, feature-card, stat-card, and cta. -->
+  <!-- Generated from the built-in blocks: theme-midnight, glow, hero-title, feature-card, counter-card, and cta. -->
   <!-- Theme: dark navy with mint and blue accents. Add it to the document and give the root background: var(--bg, #070b16). -->
   <style>
     :root {
@@ -122,54 +122,54 @@
        data-hf-transition="zoom-in" data-hf-transition-from="s2">
     <div class="camera" data-hf-camera='[{"at":0,"zoom":1.06},{"at":4.4,"zoom":1}]'>
       <div class="heading" data-hf-split="words" data-hf-stagger="0.1" data-hf-split-easing="ease-out-expo">Built for speed</div>
-      <!-- Statistic card (520x300): a big value that pops in letter by letter, and a label. Set left, top, and delay (seconds). -->
+      <!-- Statistic card (520x300) whose number counts up from `from` to `to` with a suffix such as % or K. Set left, top, and delay (seconds); counter-delay waits that long after the card starts. -->
       <style>
         @keyframes t1-in {
           from { transform: translate(0, 40px); opacity: 0; }
           to { transform: translate(0, 0); opacity: 1; }
         }
         #t1 { position: absolute; left: 140px; top: 390px; width: 520px; height: 300px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; border-radius: 36px; background: var(--panel, #ffffff1a); border: 2px solid var(--line, #ffffff40); backdrop-filter: blur(36px); box-shadow: 0 30px 80px 0 #00000066; animation: t1-in 0.8s ease-out 0.3s 1 both; }
-        .t1-value { font-size: 150px; font-weight: 800; color: var(--accent, #4be0b8); }
+        .t1-value { font-size: 150px; font-weight: 800; color: var(--accent, #4be0b8); text-align: center; }
         .t1-label { font-size: 30px; color: var(--muted, #8fa3c4); text-align: center; }
       </style>
       <div id="t1">
-        <div class="t1-value" data-hf-split="chars" data-hf-split-from="scale" data-hf-stagger="0.07" data-hf-split-easing="ease-out-back">60</div>
+        <div class="t1-value" data-hf-counter="60" data-hf-counter-from="0" data-hf-counter-duration="2" data-hf-counter-delay="0.4" data-hf-counter-decimals="0" data-hf-counter-prefix="" data-hf-counter-suffix=""></div>
         <div class="t1-label">frames per second</div>
       </div>
-      <!-- Statistic card (520x300): a big value that pops in letter by letter, and a label. Set left, top, and delay (seconds). -->
+      <!-- Statistic card (520x300) whose number counts up from `from` to `to` with a suffix such as % or K. Set left, top, and delay (seconds); counter-delay waits that long after the card starts. -->
       <style>
         @keyframes t2-in {
           from { transform: translate(0, 40px); opacity: 0; }
           to { transform: translate(0, 0); opacity: 1; }
         }
         #t2 { position: absolute; left: 700px; top: 390px; width: 520px; height: 300px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; border-radius: 36px; background: var(--panel, #ffffff1a); border: 2px solid var(--line, #ffffff40); backdrop-filter: blur(36px); box-shadow: 0 30px 80px 0 #00000066; animation: t2-in 0.8s ease-out 0.5s 1 both; }
-        .t2-value { font-size: 150px; font-weight: 800; color: var(--accent, #4be0b8); }
+        .t2-value { font-size: 150px; font-weight: 800; color: var(--accent, #4be0b8); text-align: center; }
         .t2-label { font-size: 30px; color: var(--muted, #8fa3c4); text-align: center; }
       </style>
       <div id="t2">
-        <div class="t2-value" data-hf-split="chars" data-hf-split-from="scale" data-hf-stagger="0.07" data-hf-split-easing="ease-out-back">4K</div>
+        <div class="t2-value" data-hf-counter="4" data-hf-counter-from="0" data-hf-counter-duration="2" data-hf-counter-delay="0.4" data-hf-counter-decimals="0" data-hf-counter-prefix="" data-hf-counter-suffix="K"></div>
         <div class="t2-label">native H.264 output</div>
       </div>
-      <!-- Statistic card (520x300): a big value that pops in letter by letter, and a label. Set left, top, and delay (seconds). -->
+      <!-- Statistic card (520x300) whose number counts up from `from` to `to` with a suffix such as % or K. Set left, top, and delay (seconds); counter-delay waits that long after the card starts. -->
       <style>
         @keyframes t3-in {
           from { transform: translate(0, 40px); opacity: 0; }
           to { transform: translate(0, 0); opacity: 1; }
         }
         #t3 { position: absolute; left: 1260px; top: 390px; width: 520px; height: 300px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; border-radius: 36px; background: var(--panel, #ffffff1a); border: 2px solid var(--line, #ffffff40); backdrop-filter: blur(36px); box-shadow: 0 30px 80px 0 #00000066; animation: t3-in 0.8s ease-out 0.7s 1 both; }
-        .t3-value { font-size: 150px; font-weight: 800; color: var(--accent, #4be0b8); }
+        .t3-value { font-size: 150px; font-weight: 800; color: var(--accent, #4be0b8); text-align: center; }
         .t3-label { font-size: 30px; color: var(--muted, #8fa3c4); text-align: center; }
       </style>
       <div id="t3">
-        <div class="t3-value" data-hf-split="chars" data-hf-split-from="scale" data-hf-stagger="0.07" data-hf-split-easing="ease-out-back">0</div>
-        <div class="t3-label">browsers or JavaScript</div>
+        <div class="t3-value" data-hf-counter="100" data-hf-counter-from="0" data-hf-counter-duration="2" data-hf-counter-delay="0.4" data-hf-counter-decimals="0" data-hf-counter-prefix="" data-hf-counter-suffix="%"></div>
+        <div class="t3-label">deterministic output</div>
       </div>
     </div>
   </div>
 
-  <!-- Scene 4: closing call to action, crossfading in. -->
+  <!-- Scene 4: closing call to action, wiped in from the left. -->
   <div id="s4" class="scene" data-start="s3-0.8" data-duration="4" data-track-index="4"
-       data-hf-transition="crossfade" data-hf-transition-from="s3">
+       data-hf-transition="wipe-right" data-hf-transition-from="s3">
     <!-- Closing call to action for a 1920x1080 scene: headline, gradient button, and URL. Wrap it in a clip that sets data-start and data-duration. -->
     <style>
       @keyframes cta-pop {

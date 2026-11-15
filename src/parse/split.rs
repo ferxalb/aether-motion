@@ -71,9 +71,9 @@ pub(in crate::parse) fn parse_split(
         "scale" => Origin::Scale,
         "fade" => Origin::Fade,
         "mask" => Origin::Mask,
-        other => bail!(
-            "data-hf-split-from must be up, down, left, right, scale, fade, or mask: {other}"
-        ),
+        other => {
+            bail!("data-hf-split-from must be up, down, left, right, scale, fade, or mask: {other}")
+        }
     };
     let size = style.font_size.unwrap_or(match tag {
         "h1" => 64.0,
@@ -128,18 +128,7 @@ pub(in crate::parse) fn parse_split(
 impl SplitSpec {
     /// Turns the original element into the flex row that holds the pieces.
     pub(in crate::parse) fn apply_container_style(&self, style: &mut Style) {
-        style.display = Some("flex".to_string());
-        style.column = false;
-        style.gap = self.gap;
-        style.align_items = Some("flex-start".to_string());
-        style.justify_content = Some(
-            match style.text_align.as_deref() {
-                Some("center") => "center",
-                Some("right") => "flex-end",
-                _ => "flex-start",
-            }
-            .to_string(),
-        );
+        row_container_style(style, self.gap);
     }
 
     /// Entrance of piece `index`: starts at `index * stagger` after the clip start and holds before and after.
@@ -218,7 +207,8 @@ impl SplitSpec {
                         align_items: Some("flex-start".to_string()),
                         ..Style::default()
                     };
-                    let holder = self.push(out, parent, Content::Container, group, Motion::default());
+                    let holder =
+                        self.push(out, parent, Content::Container, group, Motion::default());
                     for ch in word.chars() {
                         self.push(
                             out,
@@ -243,32 +233,62 @@ impl SplitSpec {
         style: Style,
         motion: Motion,
     ) -> usize {
-        let idx = out.len();
-        out.push(Pending {
-            element: Element {
-                tag: self.tag.clone(),
-                id: None,
-                parent: Some(parent),
-                children: Vec::new(),
-                content,
-                style,
-                start: 0.0,
-                end: f64::INFINITY,
-                fade_in: 0.0,
-                fade_out: 0.0,
-                track: 0,
-                motion,
-            },
-            start_expr: None,
-            duration: None,
-            keyframes: Vec::new(),
-            camera: Vec::new(),
-            transition: None,
-            animation: None,
-        });
-        out[parent].element.children.push(idx);
-        idx
+        push_piece(out, &self.tag, parent, content, style, motion)
     }
+}
+
+/// Appends a generated child of `parent` that reuses `tag` (so default font sizes still apply) and
+/// inherits its parent's start; returns its index.
+pub(in crate::parse) fn push_piece(
+    out: &mut Vec<Pending>,
+    tag: &str,
+    parent: usize,
+    content: Content,
+    style: Style,
+    motion: Motion,
+) -> usize {
+    let idx = out.len();
+    out.push(Pending {
+        element: Element {
+            tag: tag.to_string(),
+            id: None,
+            parent: Some(parent),
+            children: Vec::new(),
+            content,
+            style,
+            start: 0.0,
+            end: f64::INFINITY,
+            fade_in: 0.0,
+            fade_out: 0.0,
+            track: 0,
+            motion,
+        },
+        start_expr: None,
+        duration: None,
+        keyframes: Vec::new(),
+        camera: Vec::new(),
+        transition: None,
+        reveal: None,
+        animation: None,
+    });
+    out[parent].element.children.push(idx);
+    idx
+}
+
+/// Turns `style` into a flex row whose pieces sit at the start, center, or end following `text-align`.
+pub(in crate::parse) fn row_container_style(style: &mut Style, gap: f32) {
+    style.display = Some("flex".to_string());
+    style.column = false;
+    style.gap = gap;
+    style.align_items = Some("flex-start".to_string());
+    style.justify_content = Some(
+        match style.text_align.as_deref() {
+            Some("center") => "center",
+            Some("right") => "flex-end",
+            _ => "flex-start",
+        }
+        .to_string(),
+    );
 }
 
 #[cfg(test)]

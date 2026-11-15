@@ -67,6 +67,11 @@ impl<'a> Renderer<'a> {
             rect.y = cy - rect.h / 2.0;
             cumulative *= state.scale;
         }
+        if idx != 0 && state.reveal < 1.0 {
+            if let Some(from) = self.composition.elements[idx].motion.wipe {
+                return self.draw_revealed(idx, rect, cumulative, state.reveal, from);
+            }
+        }
         if idx != 0 && state.rotate != 0.0 {
             return self.draw_rotated(idx, rect, cumulative, state.rotate);
         }
@@ -111,7 +116,8 @@ impl<'a> Renderer<'a> {
                     .fill_gradient(rect, [from, to], horizontal, alpha, radius);
             }
             Some(Background::Gradient(ref gradient)) => {
-                self.surface.fill_gradient_general(rect, gradient, alpha, radius);
+                self.surface
+                    .fill_gradient_general(rect, gradient, alpha, radius);
             }
             None => {}
         }

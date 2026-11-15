@@ -7,10 +7,12 @@
 //! `data-track-index`, or the same track and later in the document).
 //!
 //! Kinds: `crossfade`; `push-{left,right,up,down}` (both scenes slide); `cover-{left,right,up,down}`
-//! (the incoming scene slides over a static one); `zoom-in` (outgoing grows, incoming settles from 80%);
+//! (the incoming scene slides over a static one); `wipe-{left,right,up,down}` (an edge travelling in that
+//! direction uncovers the incoming scene); `zoom-in` (outgoing grows, incoming settles from 80%);
 //! `zoom-out` (outgoing shrinks, incoming settles from 120%). A clip can take part in two transitions
 //! (entering and leaving) as long as their windows do not overlap.
-use crate::model::{Easing, Element, Motion, Track, TrackPoint};
+use crate::model::{Easing, Element, Motion, RevealFrom, Track, TrackPoint};
+use crate::parse::animation::reveal::reveal_track;
 use crate::parse::animation::timing::parse_keyframe_easing;
 use crate::parse::html::attr;
 use anyhow::{anyhow, bail, Result};
@@ -32,6 +34,8 @@ enum Kind {
     Crossfade,
     Push(Dir),
     Cover(Dir),
+    /// The incoming scene is uncovered by an edge travelling in the given direction.
+    Wipe(Dir),
     ZoomIn,
     ZoomOut,
 }
@@ -67,10 +71,15 @@ fn parse_kind(raw: &str) -> Result<Kind> {
                 raw.strip_prefix("cover-")
                     .and_then(parse_dir)
                     .map(Kind::Cover)
+            })
+            .or_else(|| {
+                raw.strip_prefix("wipe-")
+                    .and_then(parse_dir)
+                    .map(Kind::Wipe)
             }),
     };
     kind.ok_or_else(|| {
-        anyhow!("unknown data-hf-transition '{raw}'; use crossfade, push-<left|right|up|down>, cover-<left|right|up|down>, zoom-in, or zoom-out")
+        anyhow!("unknown data-hf-transition '{raw}'; use crossfade, push-<left|right|up|down>, cover-<left|right|up|down>, wipe-<left|right|up|down>, zoom-in, or zoom-out")
     })
 }
 
@@ -80,7 +89,9 @@ pub(in crate::parse) fn parse_transition(node: &NodeRef) -> Result<Option<Transi
         if attr(node, "data-hf-transition-from").is_some()
             || attr(node, "data-hf-transition-easing").is_some()
         {
-            bail!("data-hf-transition-from and data-hf-transition-easing require data-hf-transition");
+            bail!(
+                "data-hf-transition-from and data-hf-transition-easing require data-hf-transition"
+            );
         }
         return Ok(None);
     };
@@ -88,7 +99,9 @@ pub(in crate::parse) fn parse_transition(node: &NodeRef) -> Result<Option<Transi
     let from = attr(node, "data-hf-transition-from")
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
-        .ok_or_else(|| anyhow!("data-hf-transition requires data-hf-transition-from=\"<outgoing clip id>\""))?;
+        .ok_or_else(|| {
+            anyhow!("data-hf-transition requires data-hf-transition-from=\"<outgoing clip id>\"")
+        })?;
     let easing = match attr(node, "data-hf-transition-easing") {
         Some(raw) => parse_keyframe_easing(&raw)?,
         None => parse_keyframe_easing("ease-in-out-cubic")?,
@@ -103,6 +116,9 @@ struct Channels {
     y: Track,
     scale: Track,
     opacity: Track,
+    /// Reveal progress and the edge it grows from (incoming wipes only).
+    reveal: Track,
+    wipe: Option<RevealFrom>,
 }
 
 /// Two points: `from` at `at0` and `to` at `at1`, with `easing` shaping the segment.
@@ -139,11 +155,17 @@ fn merge_track(existing: &Track, new: Track) -> Option<Track> {
 }
 
 fn merge_into(motion: &mut Motion, channels: Channels, label: &str) -> Result<()> {
-    let overlap = || anyhow!("transition windows overlap on {label}; lengthen the clip or shorten the overlaps");
+    let overlap = || {
+        anyhow!("transition windows overlap on {label}; lengthen the clip or shorten the overlaps")
+    };
     motion.x = merge_track(&motion.x, channels.x).ok_or_else(overlap)?;
     motion.y = merge_track(&motion.y, channels.y).ok_or_else(overlap)?;
     motion.scale = merge_track(&motion.scale, channels.scale).ok_or_else(overlap)?;
     motion.opacity = merge_track(&motion.opacity, channels.opacity).ok_or_else(overlap)?;
+    motion.reveal = merge_track(&motion.reveal, channels.reveal).ok_or_else(overlap)?;
+    if channels.wipe.is_some() {
+        motion.wipe = channels.wipe;
+    }
     motion.hold_before = true;
     motion.hold_after = true;
     Ok(())
@@ -174,12 +196,20 @@ pub(in crate::parse) fn apply_transitions(
     let (width, height) = (size.0 as f32, size.1 as f32);
     for (b, spec) in transitions {
         let b = *b;
-        let label_b = elements[b].id.clone().unwrap_or_else(|| "element with no id".into());
+        let label_b = elements[b]
+            .id
+            .clone()
+            .unwrap_or_else(|| "element with no id".into());
         let a = *ids.get(&spec.from).ok_or_else(|| {
-            anyhow!("data-hf-transition-from on {label_b} references unknown id: {}", spec.from)
+            anyhow!(
+                "data-hf-transition-from on {label_b} references unknown id: {}",
+                spec.from
+            )
         })?;
         if a == b || a == 0 || b == 0 {
-            bail!("data-hf-transition on {label_b} must connect two different clips inside the root");
+            bail!(
+                "data-hf-transition on {label_b} must connect two different clips inside the root"
+            );
         }
         if animated[a] || animated[b] {
             bail!("transitions cannot be combined with CSS animation, data-hf-keyframes, or data-hf-camera on the same clip ({label_b} / {})", spec.from);
@@ -215,6 +245,19 @@ pub(in crate::parse) fn apply_transitions(
                 inc.opacity = segment(0.0, window, 0.0, b_base.opacity, easing);
             }
             Kind::Cover(dir) => enter(&mut inc, dir),
+            Kind::Wipe(dir) => {
+                if elements[b].style.rotate != 0.0 {
+                    bail!("transition {label_b}: a wipe cannot be combined with rotate");
+                }
+                // An edge travelling left uncovers the incoming scene from its right side.
+                inc.wipe = Some(match dir {
+                    Dir::Left => RevealFrom::Right,
+                    Dir::Right => RevealFrom::Left,
+                    Dir::Up => RevealFrom::Bottom,
+                    Dir::Down => RevealFrom::Top,
+                });
+                inc.reveal = reveal_track(0.0, window, easing);
+            }
             Kind::Push(dir) => {
                 enter(&mut inc, dir);
                 let (dx, dy) = entry_offset(dir, width, height);
@@ -264,6 +307,7 @@ mod tests {
         assert_eq!(parse_kind("crossfade").unwrap(), Kind::Crossfade);
         assert_eq!(parse_kind("push-left").unwrap(), Kind::Push(Dir::Left));
         assert_eq!(parse_kind("cover-down").unwrap(), Kind::Cover(Dir::Down));
+        assert_eq!(parse_kind("wipe-up").unwrap(), Kind::Wipe(Dir::Up));
         assert!(parse_kind("push-sideways").is_err());
         assert!(parse_kind("wipe").is_err());
     }

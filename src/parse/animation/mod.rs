@@ -5,6 +5,7 @@ pub(in crate::parse) mod decl;
 pub(in crate::parse) mod keyframes;
 pub(in crate::parse) mod motion;
 pub(in crate::parse) mod resolve;
+pub(in crate::parse) mod reveal;
 pub(in crate::parse) mod timing;
 
 use crate::model::Easing;
