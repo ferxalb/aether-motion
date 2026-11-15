@@ -1,5 +1,10 @@
 //! Rotated subtrees: render on an offscreen layer, then composite around the box center.
 
+use crate::model::Color;
+use crate::render::geometry::{clip_pixels, Rect};
+use crate::render::Renderer;
+use anyhow::{anyhow, Result};
+
 impl<'a> Renderer<'a> {
     /// Renders the subtree on its own surface and composites it rotated around the box center.
     /// Descendants are clipped to the box plus its shadow reach.
@@ -74,7 +79,7 @@ impl<'a> Renderer<'a> {
         let low = |f: fn(&(f32, f32)) -> f32| corners.iter().map(f).fold(f32::INFINITY, f32::min);
         let high =
             |f: fn(&(f32, f32)) -> f32| corners.iter().map(f).fold(f32::NEG_INFINITY, f32::max);
-        let Some(bounds) = Self::clip_pixels(
+        let Some(bounds) = clip_pixels(
             (self.width, self.height),
             low(|c| c.0).floor() as i32,
             low(|c| c.1).floor() as i32,

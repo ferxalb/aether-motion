@@ -1,5 +1,11 @@
 //! Flex container layout: content-sized dimensions and placement of in-flow children.
 
+use crate::model::Composition;
+use crate::render::geometry::Rect;
+use crate::render::layout::in_flow;
+use crate::render::Renderer;
+use anyhow::Result;
+
 /// A flex item before its main size grows into the free space.
 pub(in crate::render) struct FlexItem {
     idx: usize,
@@ -10,7 +16,11 @@ pub(in crate::render) struct FlexItem {
 
 impl<'a> Renderer<'a> {
     /// Content-sized dimensions of a flex container, padding included.
-    pub(in crate::render) fn flex_intrinsic(&mut self, idx: usize, ps: f32) -> Result<Option<(f32, f32)>> {
+    pub(in crate::render) fn flex_intrinsic(
+        &mut self,
+        idx: usize,
+        ps: f32,
+    ) -> Result<Option<(f32, f32)>> {
         let composition: &'a Composition = self.composition;
         let style = &composition.elements[idx].style;
         let kids: Vec<usize> = composition.elements[idx]
@@ -39,7 +49,12 @@ impl<'a> Renderer<'a> {
     }
 
     /// Places the in-flow children of a flex container inside `content`.
-    pub(in crate::render) fn flex_layout(&mut self, idx: usize, content: Rect, ps: f32) -> Result<Vec<(usize, Rect)>> {
+    pub(in crate::render) fn flex_layout(
+        &mut self,
+        idx: usize,
+        content: Rect,
+        ps: f32,
+    ) -> Result<Vec<(usize, Rect)>> {
         let composition: &'a Composition = self.composition;
         let style = &composition.elements[idx].style;
         let kids: Vec<usize> = composition.elements[idx]

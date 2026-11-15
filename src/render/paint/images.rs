@@ -1,5 +1,13 @@
 //! Decoded image cache and `object-fit` painting for `<img>` content.
 
+use crate::model::Color;
+use crate::render::check_image;
+use crate::render::geometry::{clip_pixels, Rect};
+use crate::render::Renderer;
+use anyhow::{anyhow, Context, Result};
+use image::{imageops, Rgba, RgbaImage};
+use std::path::Path;
+
 pub(in crate::render) struct CachedImage {
     pixels: RgbaImage,
     opaque: bool,
@@ -75,14 +83,20 @@ impl<'a> Renderer<'a> {
         Ok(())
     }
 
-    pub(in crate::render) fn draw_image(&mut self, path: &'a Path, rect: Rect, fit: &'a str, alpha: f32) -> Result<()> {
+    pub(in crate::render) fn draw_image(
+        &mut self,
+        path: &'a Path,
+        rect: Rect,
+        fit: &'a str,
+        alpha: f32,
+    ) -> Result<()> {
         let w = (rect.w * self.scale).round().max(1.0) as u32;
         let h = (rect.h * self.scale).round().max(1.0) as u32;
         let key = (path, w, h, fit);
         self.cache_image(&key)?;
         let x0 = (rect.x * self.scale).round() as i32;
         let y0 = (rect.y * self.scale).round() as i32;
-        let Some(bounds) = Self::clip_pixels(
+        let Some(bounds) = clip_pixels(
             (self.width, self.height),
             x0,
             y0,

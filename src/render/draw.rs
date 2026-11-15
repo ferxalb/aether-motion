@@ -1,5 +1,10 @@
 //! Scene traversal: places each element, applies its pose, and draws its box, content, and children.
 
+use super::geometry::Rect;
+use super::Renderer;
+use crate::model::{Background, Color, Content};
+use anyhow::Result;
+
 impl<'a> Renderer<'a> {
     pub(in crate::render) fn draw_node(
         &mut self,
@@ -62,7 +67,12 @@ impl<'a> Renderer<'a> {
     }
 
     /// Draws one element and its subtree into `rect` with no rotation.
-    pub(in crate::render) fn draw_body(&mut self, idx: usize, rect: Rect, cumulative: f32) -> Result<()> {
+    pub(in crate::render) fn draw_body(
+        &mut self,
+        idx: usize,
+        rect: Rect,
+        cumulative: f32,
+    ) -> Result<()> {
         let alpha = self.current[idx].alpha;
         let element = &self.composition.elements[idx];
         let radius = element.style.border_radius * cumulative;

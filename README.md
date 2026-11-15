@@ -73,3 +73,10 @@ The code uses portable Rust APIs, and the repository includes a CI matrix for Li
 1. Add more CSS properties and layout cases from real compositions, with visual fixtures.
 2. Measure the full MP4 pipeline on Windows and Linux as well as macOS, and profile CPU and memory by stage.
 3. Evaluate OpenH264 quality and output size against FFmpeg on real scenes.
+
+## Source layout
+
+- `src/model.rs`: parsed composition, styles, and time-sampled motion tracks.
+- `src/parse.rs`: HTML/CSS parser; unsupported features fail with explicit errors.
+- `src/render/`: software renderer. `mod.rs` holds the public `Renderer` and frame loop; `draw.rs` walks the scene; `layout/` sizes and places flex items; `paint/` holds pixel primitives (fills, borders, shadows, images, rotation); `text/` handles fonts, measurement, and glyph painting; `geometry.rs` and `frame_state.rs` hold small shared types.
+- `src/encode.rs`: native H.264/MP4 encoding. `src/agent.rs`: `check` and the MCP server.

@@ -1,3 +1,5 @@
+//! Command-line entry point: `inspect`, `render`, `bench`, `check`, and `mcp`.
+
 use aether_hyperframes::encode::encode_native;
 use aether_hyperframes::parse::parse_file;
 use aether_hyperframes::render::{OutputSize, Renderer};

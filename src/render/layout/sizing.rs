@@ -1,5 +1,9 @@
 //! Explicit and intrinsic sizing of a single element inside a layout.
 
+use crate::model::{Composition, Content};
+use crate::render::Renderer;
+use anyhow::Result;
+
 impl<'a> Renderer<'a> {
     /// Explicit or intrinsic size of an element in layout units; `None` means unknown.
     pub(in crate::render) fn item_size(

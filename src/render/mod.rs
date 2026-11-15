@@ -10,6 +10,16 @@ mod layout;
 mod paint;
 mod text;
 
+use crate::model::{Color, Composition, Content, Element};
+use anyhow::{anyhow, Context, Result};
+use fontdb::Database;
+use frame_state::FrameState;
+use geometry::{PixelRect, Rect};
+use paint::{CachedImage, ImageKey};
+use std::collections::{HashMap, VecDeque};
+use std::path::Path;
+use text::{FontStore, TextRun};
+
 #[derive(Default, Debug)]
 pub struct RenderStats {
     pub rasterized: usize,
@@ -52,8 +62,7 @@ pub struct Renderer<'a> {
     images: HashMap<ImageKey<'a>, CachedImage>,
     image_order: VecDeque<ImageKey<'a>>,
     image_cache_bytes: usize,
-    fonts: HashMap<String, Font>,
-    font_db: Database,
+    fonts: FontStore,
     stats: RenderStats,
 }
 
@@ -107,7 +116,7 @@ impl<'a> Renderer<'a> {
             self.scale,
             self.width,
             self.height,
-            Some(self.font_db.clone()),
+            Some(self.fonts.index()),
         )
     }
 
@@ -124,21 +133,21 @@ impl<'a> Renderer<'a> {
         let size = (width as usize)
             .checked_mul(height as usize)
             .and_then(|n| n.checked_mul(4))
-            .ok_or_else(|| anyhow!("dimensiones demasiado grandes"))?;
+            .ok_or_else(|| anyhow!("dimensions are too large"))?;
         if size > 128 * 1024 * 1024 {
             return Err(anyhow!("frame requires more than 128 MiB; use --scale"));
         }
-        let font_db = shared_fonts.unwrap_or_else(|| {
-            let mut db = Database::new();
-            if composition
-                .elements
-                .iter()
-                .any(|e| matches!(e.content, Content::Text(_)))
-            {
-                db.load_system_fonts();
-            }
-            db
-        });
+        let fonts = shared_fonts.map_or_else(
+            || {
+                FontStore::new(
+                    composition
+                        .elements
+                        .iter()
+                        .any(|e| matches!(e.content, Content::Text(_))),
+                )
+            },
+            FontStore::with_index,
+        );
         let children = composition
             .elements
             .iter()
@@ -168,8 +177,7 @@ impl<'a> Renderer<'a> {
             images: HashMap::new(),
             image_order: VecDeque::new(),
             image_cache_bytes: 0,
-            fonts: HashMap::new(),
-            font_db,
+            fonts,
             stats: RenderStats::default(),
         })
     }

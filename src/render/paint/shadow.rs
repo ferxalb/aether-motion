@@ -1,8 +1,20 @@
 //! Soft outer box shadows that follow the rounded box.
 
+use crate::model::{Color, Shadow};
+use crate::render::geometry::{clip_pixels, Rect};
+use crate::render::paint::shape::{erfc, rounded_distance};
+use crate::render::Renderer;
+
 impl<'a> Renderer<'a> {
     /// Soft outer shadow: Gaussian falloff from the distance to the shadow's rounded rectangle.
-    pub(in crate::render) fn draw_shadow(&mut self, rect: Rect, radius: f32, shadow: Shadow, alpha: f32, zoom: f32) {
+    pub(in crate::render) fn draw_shadow(
+        &mut self,
+        rect: Rect,
+        radius: f32,
+        shadow: Shadow,
+        alpha: f32,
+        zoom: f32,
+    ) {
         let k = self.scale;
         let unit = zoom * k;
         let spread = shadow.spread * unit;
@@ -21,7 +33,7 @@ impl<'a> Renderer<'a> {
         ];
         let tail = sigma * 3.0;
         let reach = tail.ceil() + 1.0;
-        let Some(bounds) = Self::clip_pixels(
+        let Some(bounds) = clip_pixels(
             (self.width, self.height),
             (cast[0] - reach).floor() as i32,
             (cast[1] - reach).floor() as i32,

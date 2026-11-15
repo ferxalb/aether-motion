@@ -1,7 +1,12 @@
 //! Distance and error-function helpers shared by border and shadow painting.
 
 /// Signed distance from `(x, y)` to a rounded rectangle; negative inside.
-pub(in crate::render) fn rounded_distance(x: f32, y: f32, [x0, y0, x1, y1]: [f32; 4], radius: f32) -> f32 {
+pub(in crate::render) fn rounded_distance(
+    x: f32,
+    y: f32,
+    [x0, y0, x1, y1]: [f32; 4],
+    radius: f32,
+) -> f32 {
     let (hx, hy) = ((x1 - x0) / 2.0, (y1 - y0) / 2.0);
     let radius = radius.clamp(0.0, hx.min(hy).max(0.0));
     let qx = (x - (x0 + hx)).abs() - (hx - radius);

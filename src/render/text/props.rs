@@ -1,5 +1,8 @@
 //! Resolution of inherited text properties (family, size, color, alignment).
 
+use crate::model::{Color, Composition};
+use crate::render::Renderer;
+
 impl<'a> Renderer<'a> {
     /// Inherited font family, base size (comp px), color and alignment for a text element.
     pub(in crate::render) fn text_props(&self, idx: usize) -> (&'a str, f32, Color, &'a str) {

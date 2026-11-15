@@ -1,3 +1,5 @@
+//! Parsed composition model: styles, content, timing, and time-sampled motion tracks.
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 

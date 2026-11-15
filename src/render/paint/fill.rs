@@ -1,5 +1,9 @@
 //! Solid, rounded, and gradient background fills.
 
+use crate::model::Color;
+use crate::render::geometry::{clip_pixels, PixelRect, Rect};
+use crate::render::Renderer;
+
 impl<'a> Renderer<'a> {
     pub(in crate::render) fn fill(&mut self, rect: Rect, color: Color, alpha: f32, radius: f32) {
         let (edges, radius) = self.fill_edges(rect, radius);
@@ -8,7 +12,7 @@ impl<'a> Renderer<'a> {
         if a <= 0.0 {
             return;
         }
-        let Some(bounds) = Self::clip_pixels((self.width, self.height), x0, y0, x1, y1) else {
+        let Some(bounds) = clip_pixels((self.width, self.height), x0, y0, x1, y1) else {
             return;
         };
         let uniform_background = self.painted.is_none();
@@ -73,7 +77,7 @@ impl<'a> Renderer<'a> {
     ) {
         let (edges, radius) = self.fill_edges(rect, radius);
         let [x0, y0, x1, y1] = edges;
-        let Some(bounds) = Self::clip_pixels((self.width, self.height), x0, y0, x1, y1) else {
+        let Some(bounds) = clip_pixels((self.width, self.height), x0, y0, x1, y1) else {
             return;
         };
         let uniform_background = self.painted.is_none();
@@ -175,7 +179,11 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    pub(in crate::render) fn rounded_span([x0, y0, x1, y1]: [f32; 4], radius: f32, y: usize) -> (f32, f32) {
+    pub(in crate::render) fn rounded_span(
+        [x0, y0, x1, y1]: [f32; 4],
+        radius: f32,
+        y: usize,
+    ) -> (f32, f32) {
         let center = y as f32 + 0.5;
         let dy = (y0 + radius - center).max(center - (y1 - radius)).max(0.0);
         let inset = radius - (radius * radius - dy * dy).max(0.0).sqrt();

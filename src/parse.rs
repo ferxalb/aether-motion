@@ -1,3 +1,5 @@
+//! HTML/CSS parser: turns a composition file into the `model` types, rejecting unsupported features explicitly.
+
 use crate::model::{
     Background, Color, Composition, Content, Easing, Element, Keyframe, Length, Motion, Pose,
     Shadow, Style, Track, TrackPoint,
@@ -1454,7 +1456,7 @@ fn walk(
         .transpose()
         .with_context(|| {
             format!(
-                "data-hf-keyframes en <{tag}> ({})",
+                "data-hf-keyframes on <{tag}> ({})",
                 attr(node, "id").as_deref().unwrap_or("no id")
             )
         })?

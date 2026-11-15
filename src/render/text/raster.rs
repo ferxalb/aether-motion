@@ -1,5 +1,11 @@
 //! Glyph rasterization, run caching, and text painting.
 
+use crate::model::Color;
+use crate::render::geometry::{clip_pixels, Rect};
+use crate::render::layout::in_flow;
+use crate::render::Renderer;
+use anyhow::Result;
+
 pub(in crate::render) struct Glyph {
     metrics: fontdue::Metrics,
     coverage: Vec<u8>,
@@ -16,7 +22,12 @@ pub(in crate::render) struct TextRun {
 }
 
 impl<'a> Renderer<'a> {
-    pub(in crate::render) fn prepare_text(&mut self, text: &str, idx: usize, zoom: f32) -> Result<TextRun> {
+    pub(in crate::render) fn prepare_text(
+        &mut self,
+        text: &str,
+        idx: usize,
+        zoom: f32,
+    ) -> Result<TextRun> {
         let (family, base, color, align) = self.text_props(idx);
         let size = base * self.scale * zoom;
         let element = &self.composition.elements[idx];
@@ -31,7 +42,7 @@ impl<'a> Renderer<'a> {
                 && parent_style.and_then(|p| p.style.justify_content.as_deref()) == Some("center"));
         let center_y = parent_flex
             && parent_style.and_then(|p| p.style.align_items.as_deref()) == Some("center");
-        let font = self.font(family)?;
+        let font = self.fonts.get(family)?;
         let glyphs: Vec<Glyph> = text
             .chars()
             .map(|ch| {
@@ -99,7 +110,7 @@ impl<'a> Renderer<'a> {
             let gx = (pen + metrics.xmin as f32).round() as i32;
             let gy = (baseline - metrics.ymin as f32 - metrics.height as f32).round() as i32;
             pen += metrics.advance_width;
-            let Some(bounds) = Self::clip_pixels(
+            let Some(bounds) = clip_pixels(
                 (self.width, self.height),
                 gx,
                 gy,

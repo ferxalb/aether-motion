@@ -9,5 +9,3 @@ mod shape;
 mod surface;
 
 pub(super) use images::{CachedImage, ImageKey};
-
-

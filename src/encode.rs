@@ -1,3 +1,5 @@
+//! Native H.264/MP4 encoding of rendered frames, including segmented parallel encoding.
+
 use crate::render::Renderer;
 use anyhow::{anyhow, bail, Context, Result};
 use mp4::{AvcConfig, Bytes, Mp4Config, Mp4Sample, Mp4Writer, TrackConfig};

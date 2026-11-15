@@ -1,8 +1,20 @@
 //! Uniform solid borders drawn inside the box.
 
+use crate::model::Color;
+use crate::render::geometry::{clip_pixels, Rect};
+use crate::render::paint::shape::rounded_distance;
+use crate::render::Renderer;
+
 impl<'a> Renderer<'a> {
     /// Solid ring between the rounded box and the same box inset by `width`.
-    pub(in crate::render) fn draw_border(&mut self, rect: Rect, radius: f32, width: f32, color: Color, alpha: f32) {
+    pub(in crate::render) fn draw_border(
+        &mut self,
+        rect: Rect,
+        radius: f32,
+        width: f32,
+        color: Color,
+        alpha: f32,
+    ) {
         let k = self.scale;
         let outer = [
             rect.x * k,
@@ -18,7 +30,7 @@ impl<'a> Renderer<'a> {
             outer[3] - width,
         ];
         let (outer_radius, inner_radius) = (radius * k, (radius * k - width).max(0.0));
-        let Some(bounds) = Self::clip_pixels(
+        let Some(bounds) = clip_pixels(
             (self.width, self.height),
             outer[0].floor() as i32,
             outer[1].floor() as i32,

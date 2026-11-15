@@ -1,5 +1,9 @@
 //! Pixel surface access and alpha blending helpers.
 
+use crate::model::Color;
+use crate::render::geometry::PixelRect;
+use crate::render::Renderer;
+
 impl<'a> Renderer<'a> {
     pub(in crate::render) fn rows(&mut self, rect: PixelRect) -> impl Iterator<Item = &mut [u8]> {
         let stride = self.width as usize * 4;

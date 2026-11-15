@@ -5,6 +5,5 @@ mod measure;
 mod props;
 mod raster;
 
+pub(super) use fonts::FontStore;
 pub(super) use raster::TextRun;
-
-
