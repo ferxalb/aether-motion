@@ -1,4 +1,4 @@
-//! Layout properties: offsets, size, positioning, flex container and item, gap, and padding.
+//! Layout properties: offsets, size, positioning, flex container and item, gap, padding, margin, and overflow.
 
 use crate::model::{Length, Style};
 use crate::parse::values::length::{parse_box, parse_length, spacing_px};
@@ -61,6 +61,19 @@ pub(super) fn apply(key: &str, value: &str, style: &mut Style) -> Result<bool> {
             }
         }
         "gap" => style.gap = spacing_px(value, key)?,
+        "overflow" => {
+            // Values other than hidden and visible need scrolling, which has no meaning in video.
+            style.overflow_hidden = match value {
+                "hidden" => true,
+                "visible" => false,
+                _ => bail!("unsupported overflow: {value}; use hidden or visible"),
+            }
+        }
+        "margin" => style.margin = parse_box(value, key)?,
+        "margin-top" => style.margin[0] = spacing_px(value, key)?,
+        "margin-right" => style.margin[1] = spacing_px(value, key)?,
+        "margin-bottom" => style.margin[2] = spacing_px(value, key)?,
+        "margin-left" => style.margin[3] = spacing_px(value, key)?,
         "padding" => style.padding = parse_box(value, key)?,
         "padding-top" => style.padding[0] = spacing_px(value, key)?,
         "padding-right" => style.padding[1] = spacing_px(value, key)?,

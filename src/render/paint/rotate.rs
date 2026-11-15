@@ -55,19 +55,7 @@ impl<'a> Renderer<'a> {
         }
         outcome?;
         // Premultiplied color from the black pass; alpha from how much white shows through.
-        let premultiplied: Vec<[u8; 4]> = layers[0]
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .zip(layers[1].as_chunks::<4>().0)
-            .map(|(b, w)| {
-                let gap = (0..3)
-                    .map(|c| i32::from(w[c]) - i32::from(b[c]))
-                    .sum::<i32>()
-                    / 3;
-                [b[0], b[1], b[2], (255 - gap).clamp(0, 255) as u8]
-            })
-            .collect();
+        let premultiplied = super::clip::premultiply(&layers[0], &layers[1]);
         let (sin, cos) = degrees.to_radians().sin_cos();
         let center = ((rect.x + rect.w / 2.0) * k, (rect.y + rect.h / 2.0) * k);
         let corners = [(x0, y0), (x1, y0), (x0, y1), (x1, y1)].map(|(x, y)| {

@@ -71,7 +71,7 @@ fn bold_text_is_wider_than_regular_text() {
 fn unsupported_values_fail_loudly() {
     let dir = scratch("errors");
     for (name, css) in [
-        ("overflow", "overflow: hidden"),
+        ("overflow", "overflow: scroll"),
         ("weight", "font-weight: heavy"),
         ("conic", "background: conic-gradient(red, blue)"),
     ] {

@@ -8,6 +8,8 @@ pub(in crate::render) struct TextProps<'a> {
     pub(in crate::render) family: &'a str,
     pub(in crate::render) size: f32,
     pub(in crate::render) weight: u16,
+    /// Extra advance after every glyph, in composition px.
+    pub(in crate::render) letter_spacing: f32,
     pub(in crate::render) color: Color,
     pub(in crate::render) align: &'a str,
     /// Distance between baselines.
@@ -20,7 +22,7 @@ impl<'a> Renderer<'a> {
     /// Inherited font, color, alignment, and wrapping for a text element.
     pub(in crate::render) fn text_props(&self, idx: usize) -> TextProps<'a> {
         let composition: &'a Composition = self.composition;
-        let mut weight = None;
+        let (mut weight, mut spacing) = (None, None);
         let (mut family, mut font_size, mut color, mut align) = (None, None, None, None);
         let (mut line_height, mut white_space, mut shadow) = (None, None, None);
         let mut current = Some(idx);
@@ -29,6 +31,7 @@ impl<'a> Renderer<'a> {
             family = family.or(node.style.font_family.as_deref());
             font_size = font_size.or(node.style.font_size);
             weight = weight.or(node.style.font_weight);
+            spacing = spacing.or(node.style.letter_spacing);
             color = color.or(node.style.color);
             align = align.or(node.style.text_align.as_deref());
             line_height = line_height.or(node.style.line_height);
@@ -46,6 +49,7 @@ impl<'a> Renderer<'a> {
             family: family.unwrap_or("sans-serif"),
             size,
             weight: weight.unwrap_or(400),
+            letter_spacing: spacing.unwrap_or(0.0),
             color: color.unwrap_or(Color::WHITE),
             align: align.unwrap_or("left"),
             line_height: match line_height.unwrap_or(LineHeight::Multiple(1.0)) {

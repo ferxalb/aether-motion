@@ -26,6 +26,15 @@ pub(super) fn apply(key: &str, value: &str, style: &mut Style) -> Result<bool> {
                 },
             });
         }
+        "letter-spacing" => {
+            style.letter_spacing = Some(match value {
+                "normal" => 0.0,
+                _ => match parse_length(value, key)? {
+                    Length::Px(n) => n,
+                    Length::Percent(_) => bail!("letter-spacing: only px is supported: {value}"),
+                },
+            });
+        }
         "font-family" => style.font_family = Some(value.to_string()),
         "text-align" => {
             if !matches!(value, "left" | "center" | "right") {

@@ -41,8 +41,12 @@ impl<'a> Renderer<'a> {
                 .width
                 .map_or(parent.w, |n| n.resolve_scaled(parent.w, ps));
             Rect {
-                x: parent.x + style.left.map_or(0.0, |n| n.resolve_scaled(parent.w, ps)),
-                y: parent.y + style.top.map_or(0.0, |n| n.resolve_scaled(parent.h, ps)),
+                x: parent.x
+                    + style.left.map_or(0.0, |n| n.resolve_scaled(parent.w, ps))
+                    + style.margin[3] * ps,
+                y: parent.y
+                    + style.top.map_or(0.0, |n| n.resolve_scaled(parent.h, ps))
+                    + style.margin[0] * ps,
                 w: style
                     .max_width
                     .map_or(width, |n| width.min(n.resolve_scaled(parent.w, ps))),
@@ -121,6 +125,22 @@ impl<'a> Renderer<'a> {
             w: (rect.w - left - right).max(0.0),
             h: (rect.h - top - bottom).max(0.0),
         };
+        if element.style.overflow_hidden {
+            return self.draw_clipped(idx, rect, content, cumulative);
+        }
+        self.draw_contents(idx, rect, content, cumulative)
+    }
+
+    /// Draws the content of an element (image, text, and children); its own box is already painted.
+    pub(in crate::render) fn draw_contents(
+        &mut self,
+        idx: usize,
+        rect: Rect,
+        content: Rect,
+        cumulative: f32,
+    ) -> Result<()> {
+        let alpha = self.current[idx].alpha;
+        let element = &self.composition.elements[idx];
         match &element.content {
             Content::Image(path) => self.draw_image(
                 path,

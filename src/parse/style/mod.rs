@@ -50,9 +50,7 @@ pub(in crate::parse) fn style_for(
             k if k.starts_with("animation-") => {
                 apply_animation_longhand(&mut animation, k, &value)?
             }
-            "margin" if value == "0" || value == "0px" => {}
             "box-sizing" if value == "border-box" => {}
-            "overflow" if value == "visible" => {}
             "visibility"
                 if value == "hidden"
                     && attr(node, "class")

@@ -18,10 +18,27 @@ pub(in crate::render) fn break_lines(
     limit: Option<f32>,
     mut advance: impl FnMut(char) -> f32,
 ) -> Vec<Line> {
+    let mut lines = Vec::new();
+    let mut base = 0;
+    // `\n` (from `<br>`) forces a break; every paragraph wraps on its own.
+    for paragraph in text.split('\n') {
+        lines.extend(break_paragraph(paragraph, base, limit, &mut advance));
+        base += paragraph.len() + 1;
+    }
+    lines
+}
+
+/// Greedy breaking of one paragraph whose first byte sits at `base` in the source text.
+fn break_paragraph(
+    text: &str,
+    base: usize,
+    limit: Option<f32>,
+    advance: &mut impl FnMut(char) -> f32,
+) -> Vec<Line> {
     let space = advance(' ');
     let mut lines = Vec::new();
     let mut current: Option<Line> = None;
-    let mut offset = 0;
+    let mut offset = base;
     for word in text.split(' ') {
         let start = offset;
         offset += word.len() + 1;
@@ -29,7 +46,7 @@ pub(in crate::render) fn break_lines(
             continue;
         }
         let end = start + word.len();
-        let width: f32 = word.chars().map(&mut advance).sum();
+        let width: f32 = word.chars().map(&mut *advance).sum();
         current = Some(match current.take() {
             None => Line { start, end, width },
             Some(line) => {
@@ -50,8 +67,8 @@ pub(in crate::render) fn break_lines(
     lines.extend(current);
     if lines.is_empty() {
         lines.push(Line {
-            start: 0,
-            end: 0,
+            start: base,
+            end: base,
             width: 0.0,
         });
     }
@@ -91,6 +108,13 @@ mod tests {
     #[test]
     fn an_overlong_word_overflows_on_its_own_line() {
         assert_eq!(lines("a abcdefgh b", Some(4.0)), ["a", "abcdefgh", "b"]);
+    }
+
+    #[test]
+    fn a_newline_forces_a_break_and_keeps_byte_ranges() {
+        assert_eq!(lines("aa bb\ncc", None), ["aa bb", "cc"]);
+        assert_eq!(lines("aa\n\ncc", None), ["aa", "", "cc"]);
+        assert_eq!(lines("aaa bbb\nc ddd", Some(4.0)), ["aaa", "bbb", "c", "ddd"]);
     }
 
     #[test]

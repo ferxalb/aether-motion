@@ -1,6 +1,6 @@
 //! Software renderer: turns a parsed composition into RGBA frames, one pure function of time.
 //!
-//! Submodules: `draw` (scene traversal), `layout` (flex sizing and placement), `paint` (the `Surface` and pixel primitives),
+//! Submodules: `draw` (scene traversal), `layout` (flex sizing and placement), `paint` (the `Surface`, fills, gradients, rotation and `overflow` layers),
 //! `text` (fonts, measurement, glyph painting), `geometry` and `frame_state` (shared small types).
 
 mod draw;

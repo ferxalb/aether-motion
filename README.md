@@ -27,6 +27,7 @@ cargo run --release -- render examples/title-card.html --output /tmp/title-ffmpe
 | Type, class, ID, and descendant CSS selectors; inline styles | Yes |
 | `left`, `top`, `width`, `height` in px or %, hex/basic named colors, opacity, fonts, centered flex layout, `object-fit` | Yes |
 | `border-radius`, `linear-gradient(...)`, `radial-gradient(...)` | Background radius in px; angled, corner, and multi-stop gradients with translucent stops; radial glows |
+| `margin`, `overflow: hidden`, `letter-spacing`, `<br>` | Flex-aware margins, rounded content clipping, tracked text, and forced line breaks |
 | `font-weight` | `normal`, `bold`, or 1-1000, matched to installed font faces |
 | `data-hf-fade-in`, `data-hf-fade-out` | Native extension; seconds, linear transition |
 | `data-hf-keyframes` | Native extension; interpolated position and opacity with four easing curves |

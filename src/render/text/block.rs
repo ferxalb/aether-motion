@@ -58,12 +58,16 @@ impl<'a> Renderer<'a> {
             _ => "",
         };
         let font = self.fonts.get(props.family, props.weight)?;
-        let advance = |ch: char| font.metrics(ch, props.size).advance_width;
+        let advance =
+            |ch: char| font.metrics(ch, props.size).advance_width + props.letter_spacing;
         // One 1/64 px of slack keeps a block that exactly fills its box from re-wrapping.
         let slack_limit = quantized.map(|q| (q + 1) as f32 / 64.0);
         let block = Arc::new(TextBlock {
             lines: break_lines(text, slack_limit, advance),
-            max_content: text.chars().map(advance).sum(),
+            max_content: text
+                .split('\n')
+                .map(|paragraph| paragraph.chars().map(advance).sum::<f32>())
+                .fold(0.0, f32::max),
             line_height: props.line_height,
             nowrap: props.nowrap,
             limit_key: key.1,

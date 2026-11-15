@@ -17,12 +17,33 @@ pub(in crate::parse) fn number(value: &str, name: &str) -> Result<f64> {
     Ok(n)
 }
 
+/// Whitespace-normalized direct text of `node`; each `<br>` becomes a `\n` line break.
+///
+/// A single trailing `<br>` adds no line, as in CSS.
 pub(in crate::parse) fn direct_text(node: &NodeRef) -> String {
-    node.children()
-        .filter_map(|n| n.as_text().map(|t| t.borrow().to_string()))
-        .collect::<Vec<_>>()
-        .join(" ")
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
+    let mut segments: Vec<Vec<String>> = vec![Vec::new()];
+    for child in node.children() {
+        if let Some(text) = child.as_text() {
+            segments
+                .last_mut()
+                .unwrap()
+                .push(text.borrow().to_string());
+        } else if child
+            .as_element()
+            .is_some_and(|element| &*element.name.local == "br")
+        {
+            segments.push(Vec::new());
+        }
+    }
+    let mut lines: Vec<String> = segments
+        .iter()
+        .map(|parts| parts.join(" ").split_whitespace().collect::<Vec<_>>().join(" "))
+        .collect();
+    if lines.len() > 1 && lines.last().is_some_and(String::is_empty) {
+        lines.pop();
+    }
+    if lines.iter().all(String::is_empty) && lines.len() == 1 {
+        return String::new();
+    }
+    lines.join("\n")
 }

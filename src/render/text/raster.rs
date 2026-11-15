@@ -63,6 +63,7 @@ impl<'a> Renderer<'a> {
         width_px: i32,
     ) -> Result<TextRun> {
         let size = props.size * self.scale * zoom;
+        let spacing = props.letter_spacing * self.scale * zoom;
         let element = &self.composition.elements[idx];
         let text = match &element.content {
             Content::Text(text) => text.as_str(),
@@ -85,7 +86,8 @@ impl<'a> Renderer<'a> {
         for line in &block.lines {
             let first = glyphs.len();
             glyphs.extend(text[line.start..line.end].chars().map(|ch| {
-                let (metrics, coverage) = font.rasterize(ch, size);
+                let (mut metrics, coverage) = font.rasterize(ch, size);
+                metrics.advance_width += spacing;
                 Glyph { metrics, coverage }
             }));
             let advance = glyphs[first..]

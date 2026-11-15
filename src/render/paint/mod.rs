@@ -1,6 +1,7 @@
 //! Pixel painting for the renderer: the `Surface` buffer and one submodule per visual feature.
 
 mod border;
+mod clip;
 mod fill;
 mod gradient;
 mod images;

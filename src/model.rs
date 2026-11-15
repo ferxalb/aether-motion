@@ -132,6 +132,8 @@ pub struct Style {
     pub font_family: Option<String>,
     /// Inherited numeric `font-weight` (1..=1000); `None` means 400.
     pub font_weight: Option<u16>,
+    /// Inherited `letter-spacing` in composition px (may be negative); `None` means `normal`.
+    pub letter_spacing: Option<f32>,
     pub opacity: Option<f32>,
     pub text_align: Option<String>,
     /// Inherited text wrapping controls; see [`LineHeight`] and [`WhiteSpace`].
@@ -159,6 +161,10 @@ pub struct Style {
     pub gap: f32,
     /// Top, right, bottom, left.
     pub padding: [f32; 4],
+    /// Top, right, bottom, left. Non-negative px; applies to flex items and offsets other boxes.
+    pub margin: [f32; 4],
+    /// `overflow: hidden`: content is clipped to the padding box, following the rounded corners.
+    pub overflow_hidden: bool,
     pub flex_grow: f32,
     /// `flex: n` ignores the content size when distributing space.
     pub flex_basis_zero: bool,

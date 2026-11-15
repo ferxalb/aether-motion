@@ -25,6 +25,11 @@ impl<'a> Renderer<'a> {
         (left + right + border, top + bottom + border)
     }
 
+    /// Margins as top, right, bottom, left, in layout units.
+    pub(in crate::render) fn margins(&self, idx: usize, ps: f32) -> [f32; 4] {
+        self.composition.elements[idx].style.margin.map(|m| m * ps)
+    }
+
     /// Explicit or intrinsic size of an element in layout units; `None` means unknown.
     pub(in crate::render) fn item_size(
         &mut self,

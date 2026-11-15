@@ -30,7 +30,11 @@ pub(in crate::parse) fn walk(
         return Ok(());
     };
     let tag = el.name.local.to_string();
-    if matches!(tag.as_str(), "head" | "meta" | "style" | "title" | "link") {
+    // `<br>` is consumed by the parent's text (see `direct_text`); it is not an element of its own.
+    if matches!(
+        tag.as_str(),
+        "head" | "meta" | "style" | "title" | "link" | "br"
+    ) {
         return Ok(());
     }
     if matches!(

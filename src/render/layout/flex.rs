@@ -13,6 +13,9 @@ pub(in crate::render) struct FlexItem {
     main: f32,
     cross: Option<f32>,
     grow: f32,
+    /// Margin before and after the item on the main axis, then on the cross axis.
+    main_margin: (f32, f32),
+    cross_margin: (f32, f32),
 }
 
 impl<'a> Renderer<'a> {
@@ -39,15 +42,21 @@ impl<'a> Renderer<'a> {
         let (mut main, mut cross) = (0.0_f32, 0.0_f32);
         // Percentage sizes are cyclic here and contribute nothing, as in CSS shrink-to-fit sizing.
         let avail = (0.0, 0.0);
-        let room = Room {
-            width: inner_room,
-            fill: false,
-        };
         for &kid in &kids {
+            let [mt, mr, mb, ml] = self.margins(kid, ps);
+            let room = Room {
+                width: inner_room.map(|width| (width - ml - mr).max(0.0)),
+                fill: false,
+            };
             let (w, h) = self.item_size(kid, ps, avail, room)?;
             let (m, c) = if style.column { (h, w) } else { (w, h) };
-            main += m.unwrap_or(0.0);
-            cross = cross.max(c.unwrap_or(0.0));
+            let (margin_main, margin_cross) = if style.column {
+                (mt + mb, ml + mr)
+            } else {
+                (ml + mr, mt + mb)
+            };
+            main += m.unwrap_or(0.0) + margin_main;
+            cross = cross.max(c.unwrap_or(0.0) + margin_cross);
         }
         main += style.gap * ps * (kids.len() - 1) as f32;
         let (chrome_x, chrome_y) = self.chrome(idx, ps);
@@ -89,14 +98,22 @@ impl<'a> Renderer<'a> {
         );
         let mut items = Vec::with_capacity(kids.len());
         for &kid in &kids {
+            let [mt, mr, mb, ml] = self.margins(kid, ps);
             let room = Room {
-                width: Some(content.w),
+                width: Some((content.w - ml - mr).max(0.0)),
                 fill: column && stretch,
             };
             let (w, h) = self.item_size(kid, ps, (content.w, content.h), room)?;
             let (main, cross) = if column { (h, w) } else { (w, h) };
+            let (main_margin, cross_margin) = if column {
+                ((mt, mb), (ml, mr))
+            } else {
+                ((ml, mr), (mt, mb))
+            };
             let kid_style = &composition.elements[kid].style;
             items.push(FlexItem {
+                main_margin,
+                cross_margin,
                 idx: kid,
                 main: if kid_style.flex_basis_zero {
                     0.0
@@ -108,7 +125,11 @@ impl<'a> Renderer<'a> {
             });
         }
         let gaps = gap * (items.len() - 1) as f32;
-        let free = main_space - items.iter().map(|item| item.main).sum::<f32>() - gaps;
+        let margins: f32 = items
+            .iter()
+            .map(|item| item.main_margin.0 + item.main_margin.1)
+            .sum();
+        let free = main_space - items.iter().map(|item| item.main).sum::<f32>() - gaps - margins;
         let total_grow: f32 = items.iter().map(|item| item.grow).sum();
         let free = if free > 0.0 && total_grow > 0.0 {
             for item in &mut items {
@@ -137,17 +158,27 @@ impl<'a> Renderer<'a> {
             if !column && matches!(kid.content, Content::Text(_)) && kid.style.height.is_none() {
                 cross = Some(self.text_height_at(item.idx, ps, item.main)?);
             }
-            let mut cross = cross.unwrap_or(if stretch { cross_space } else { 0.0 });
+            let (cross_before, cross_after) = item.cross_margin;
+            let cross_margin = cross_before + cross_after;
+            let mut cross = cross.unwrap_or(if stretch {
+                (cross_space - cross_margin).max(0.0)
+            } else {
+                0.0
+            });
             if column {
                 if let Some(max) = kid.style.max_width {
                     cross = cross.min(max.resolve_scaled(content.w, ps));
                 }
             }
-            let offset = match style.align_items.as_deref() {
-                Some("center") => (cross_space - cross) / 2.0,
-                Some("flex-end" | "end") => cross_space - cross,
-                _ => 0.0,
-            };
+            // Alignment positions the margin box; the border box sits inside it.
+            let outer = cross + cross_margin;
+            let offset = cross_before
+                + match style.align_items.as_deref() {
+                    Some("center") => (cross_space - outer) / 2.0,
+                    Some("flex-end" | "end") => cross_space - outer,
+                    _ => 0.0,
+                };
+            position += item.main_margin.0;
             let rect = if column {
                 Rect {
                     x: content.x + offset,
@@ -164,7 +195,7 @@ impl<'a> Renderer<'a> {
                 }
             };
             placed.push((item.idx, rect));
-            position += item.main + gap + between;
+            position += item.main + item.main_margin.1 + gap + between;
         }
         Ok(placed)
     }
