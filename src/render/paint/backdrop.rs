@@ -15,32 +15,50 @@ pub(super) fn box_radius(sigma: f32) -> usize {
 
 /// One box blur of radius `radius` over `line`, clamping samples at both ends. `tmp` is scratch space.
 fn box_line(line: &mut [f32], tmp: &mut Vec<f32>, radius: usize) {
-    let n = line.len();
+    box_lines([line], tmp, radius);
+}
+
+/// `N` independent lines blurred in lockstep. Each line keeps its own running sum and performs
+/// exactly the operations of a lone `box_line` in the same order (results are bit-identical), but
+/// the `N` dependency chains overlap, which is what makes the horizontal pass fast.
+fn box_lines<const N: usize>(mut lines: [&mut [f32]; N], tmp: &mut Vec<f32>, radius: usize) {
+    let n = lines[0].len();
     if n == 0 || radius == 0 {
         return;
     }
     let r = radius as isize;
     let last = n as isize - 1;
     let window = (2 * radius + 1) as f32;
-    let mut sum: f32 = (-r..=r).map(|k| line[k.clamp(0, last) as usize]).sum();
+    let mut sums: [f32; N] =
+        std::array::from_fn(|k| (-r..=r).map(|j| lines[k][j.clamp(0, last) as usize]).sum());
     tmp.clear();
+    tmp.resize(N * n, 0.0);
     // Interior pixels need no index clamping; only the first and last `radius` pixels do.
-    // The sums are updated in the same order as the clamped version, so results are identical.
     let interior_from = (r + 1).min(n as isize) as usize;
-    let interior_to = (n as isize - r - 1).max(interior_from as isize) as usize;
+    let interior_to = ((n as isize - r - 1).max(interior_from as isize) as usize).min(n);
     for i in 0..interior_from {
-        tmp.push(sum / window);
-        sum += line[(i as isize + r + 1).min(last) as usize] - line[(i as isize - r).max(0) as usize];
+        let (add, sub) = ((i as isize + r + 1).min(last) as usize, (i as isize - r).max(0) as usize);
+        for k in 0..N {
+            tmp[k * n + i] = sums[k] / window;
+            sums[k] += lines[k][add] - lines[k][sub];
+        }
     }
     for i in interior_from..interior_to {
-        tmp.push(sum / window);
-        sum += line[i + radius + 1] - line[i - radius];
+        for k in 0..N {
+            tmp[k * n + i] = sums[k] / window;
+            sums[k] += lines[k][i + radius + 1] - lines[k][i - radius];
+        }
     }
     for i in interior_to.max(interior_from)..n {
-        tmp.push(sum / window);
-        sum += line[(i as isize + r + 1).min(last) as usize] - line[(i as isize - r).max(0) as usize];
+        let (add, sub) = ((i as isize + r + 1).min(last) as usize, (i as isize - r).max(0) as usize);
+        for k in 0..N {
+            tmp[k * n + i] = sums[k] / window;
+            sums[k] += lines[k][add] - lines[k][sub];
+        }
     }
-    line.copy_from_slice(tmp);
+    for (k, line) in lines.iter_mut().enumerate() {
+        line.copy_from_slice(&tmp[k * n..(k + 1) * n]);
+    }
 }
 
 /// One vertical box blur of radius `radius` from `src` into `dst` (both `width` x `height`).
@@ -87,18 +105,35 @@ fn blur_vertical(
 
 /// Three horizontal then three vertical box blurs over a `width` x `height` plane.
 pub(super) fn blur_plane(plane: &mut [f32], width: usize, height: usize, radius: usize) {
-    let mut tmp = Vec::with_capacity(width.max(height));
+    let mut tmp = Vec::with_capacity(width * 4);
     for _ in 0..3 {
-        for row in plane.chunks_exact_mut(width) {
+        let mut groups = plane.chunks_exact_mut(width * 4);
+        for group in &mut groups {
+            let (a, rest) = group.split_at_mut(width);
+            let (b, rest) = rest.split_at_mut(width);
+            let (c, d) = rest.split_at_mut(width);
+            box_lines([a, b, c, d], &mut tmp, radius);
+        }
+        for row in groups.into_remainder().chunks_exact_mut(width) {
             box_line(row, &mut tmp, radius);
         }
     }
     let mut scratch = vec![0.0_f32; plane.len()];
     let mut sums = Vec::new();
-    for _ in 0..3 {
-        blur_vertical(plane, &mut scratch, width, height, radius, &mut sums);
-        plane.copy_from_slice(&scratch);
-    }
+    // Ping-pong between the plane and the scratch buffer; three passes end in the scratch.
+    blur_vertical(plane, &mut scratch, width, height, radius, &mut sums);
+    blur_vertical(&scratch, plane, width, height, radius, &mut sums);
+    blur_vertical(plane, &mut scratch, width, height, radius, &mut sums);
+    plane.copy_from_slice(&scratch);
+}
+
+/// `value.round().clamp(0.0, 255.0) as u8` without the libm call: exact, because the fractional
+/// part of a float is computed without error.
+#[inline]
+fn round_to_u8(value: f32) -> u8 {
+    let value = value.clamp(0.0, 255.0);
+    let whole = value as u8;
+    whole + u8::from(value - f32::from(whole) >= 0.5 && whole < 255)
 }
 
 impl Surface {
@@ -126,9 +161,10 @@ impl Surface {
         let mut planes = vec![vec![0.0_f32; w * h]; 3];
         for y in 0..h {
             let base = (bounds.y0 + y) * stride + bounds.x0 * 4;
-            for x in 0..w {
-                for (c, plane) in planes.iter_mut().enumerate() {
-                    plane[y * w + x] = f32::from(self.pixels[base + x * 4 + c]);
+            let source = self.pixels[base..base + w * 4].as_chunks::<4>().0;
+            for (c, plane) in planes.iter_mut().enumerate() {
+                for (target, pixel) in plane[y * w..(y + 1) * w].iter_mut().zip(source) {
+                    *target = f32::from(pixel[c]);
                 }
             }
         }
@@ -141,7 +177,12 @@ impl Surface {
             let (left, right) = Self::rounded_span(float_edges, radius_px, y);
             let first = left.floor().max(bounds.x0 as f32) as usize;
             let last = right.ceil().min(bounds.x1 as f32) as usize;
-            for x in first..last {
+            // Pixels fully inside the span have coverage exactly 1; only its two ends need the
+            // fractional computation.
+            let inner_from = (left.ceil().max(first as f32) as usize).min(last);
+            let inner_to = (right.floor().min(last as f32) as usize).max(inner_from);
+            let mix_inner = 1.0_f32 * alpha.min(1.0);
+            for x in (first..inner_from).chain(inner_to..last) {
                 let coverage = (right.min(x as f32 + 1.0) - left.max(x as f32)).clamp(0.0, 1.0);
                 let mix = coverage * alpha.min(1.0);
                 if mix <= 0.0 {
@@ -151,11 +192,21 @@ impl Surface {
                 let offset = y * stride + x * 4;
                 for (c, plane) in planes.iter().enumerate() {
                     let old = f32::from(self.pixels[offset + c]);
-                    self.pixels[offset + c] = (plane[blurred] * mix + old * (1.0 - mix))
-                        .round()
-                        .clamp(0.0, 255.0) as u8;
+                    self.pixels[offset + c] = round_to_u8(plane[blurred] * mix + old * (1.0 - mix));
                 }
                 self.pixels[offset + 3] = 255;
+            }
+            if mix_inner > 0.0 && inner_from < inner_to {
+                let row = &mut self.pixels[y * stride + inner_from * 4..y * stride + inner_to * 4];
+                let blurred = (y - bounds.y0) * w + (inner_from - bounds.x0);
+                let count = inner_to - inner_from;
+                for (i, pixel) in row.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+                    for (c, plane) in planes.iter().enumerate() {
+                        let old = f32::from(pixel[c]);
+                        pixel[c] = round_to_u8(plane[blurred..blurred + count][i] * mix_inner + old * (1.0 - mix_inner));
+                    }
+                    pixel[3] = 255;
+                }
             }
         }
     }
@@ -185,6 +236,36 @@ mod tests {
                 assert_eq!(fast[i as usize], sum / (2 * radius + 1) as f32, "r={radius} i={i}");
                 sum += src[(i + r + 1).min(12) as usize] - src[(i - r).max(0) as usize];
             }
+        }
+    }
+
+    #[test]
+    fn round_to_u8_matches_round_and_clamp() {
+        for i in -600..=5600 {
+            let v = i as f32 * 0.05 - 4.0;
+            assert_eq!(round_to_u8(v), v.round().clamp(0.0, 255.0) as u8, "{v}");
+        }
+        for v in [0.499_999_97_f32, 0.5, 254.5, 254.499_97, 255.0, 300.0, -3.0] {
+            assert_eq!(round_to_u8(v), v.round().clamp(0.0, 255.0) as u8, "{v}");
+        }
+    }
+
+    #[test]
+    fn lockstep_lines_match_single_lines_bit_for_bit() {
+        let rows: Vec<Vec<f32>> = (0..4)
+            .map(|r| (0..37).map(|i| ((i * 31 + r * 17) % 255) as f32 * 0.37).collect())
+            .collect();
+        for radius in [1, 3, 18, 40] {
+            let mut single = rows.clone();
+            for row in &mut single {
+                box_line(row, &mut Vec::new(), radius);
+            }
+            let mut group = rows.clone();
+            let [a, b, c, d] = group.as_mut_slice() else {
+                unreachable!()
+            };
+            box_lines([a, b, c, d], &mut Vec::new(), radius);
+            assert_eq!(single, group, "radius {radius}");
         }
     }
 

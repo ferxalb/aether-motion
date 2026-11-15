@@ -115,8 +115,8 @@ At 960x540 the first step (the radial glows) took `premium-promo.html` from 10.2
 What changed:
 
 - Square-cornered gradients (the drifting glows) and soft box shadows (sigma of 2 px or more) are rasterized once per size and blended on later frames. Each tile is fixed point (gradient color x256, alpha x4096; shadow coverage x65535), so output can differ from direct drawing by up to one level per channel, and a moving card's shadow snaps to whole pixels. Tests compare both paths.
-- The horizontal pass of the backdrop blur has an interior loop without index clamping; it is bit-identical to the old loop (tested).
-- Remaining cost in `premium-promo.html` (attribution by removing one effect, 480x270): `backdrop-filter` about 0.47 s, glows about 0.33 s, box shadows about 0.25 s of 1.48 s. The backdrop blur reads what changes every frame, so it cannot use this cache.
+- Backdrop blur, bit-identical to before: the horizontal pass has an interior loop without index clamping and blurs four rows in lockstep (independent running sums overlap instead of waiting on each other), the vertical passes ping-pong between two buffers instead of copying, the pixel gather and mix work row by row, and rounding no longer calls libm. Unit tests compare each piece with a reference, and frames of a composition that uses only `backdrop-filter` were byte-identical (PNG `cmp`) to the build before this change at frames 40, 150, and 300. Lockstep over 8 rows was no faster than 4.
+- Remaining cost in `premium-promo.html` (attribution by removing one effect, 480x270): before the blur work `backdrop-filter` was about 0.47 s, glows about 0.33 s, and box shadows about 0.25 s of 1.48 s. After it, the whole composition takes about 1.3 s (1.29 and 1.33 s in two runs) and `backdrop-filter` about 0.3 s (1.30 s minus 1.02 s without it); `glass.html` at 960x540 went from 1.53–1.58 s to 1.24–1.35 s. The blur reads what changes every frame, so it cannot use the tile cache.
 
 Native MP4 export of `premium-promo.html` at `--scale 0.25` (30 fps, 450 frames):
 
