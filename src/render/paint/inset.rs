@@ -2,11 +2,27 @@
 //!
 //! The shadow is the complement of a blurred "hole" (the box shifted by the offset and shrunk by the
 //! spread), clipped to the box itself. It paints above the background and below the border and content.
+//! Guaranteed zero-shadow spans on curved rows are skipped without approximating edge coverage.
 
 use crate::model::{Color, Shadow};
 use crate::render::geometry::{clip_pixels, Rect};
 use crate::render::paint::shape::{rounded_distance, GaussianEdge};
 use crate::render::paint::surface::Surface;
+
+/// A conservative central strip at least the blur reach inside the rounded hole.
+/// The extra pixel also covers the hard-edge profile and floating-point boundaries.
+fn curved_zero_span(hole: [f32; 4], radius: f32, tail: f32, py: f32) -> Option<(usize, usize)> {
+    if hole[2] <= hole[0]
+        || hole[3] <= hole[1]
+        || py < hole[1] + tail + 1.0
+        || py > hole[3] - tail - 1.0
+    {
+        return None;
+    }
+    let first = (hole[0] + radius + tail + 1.0).ceil().max(0.0) as usize;
+    let last = (hole[2] - radius - tail - 1.0).floor();
+    (last >= first as f32).then_some((first, last.max(0.0) as usize))
+}
 
 impl Surface {
     /// Draws one inset shadow inside `rect` (the padding box, rounded by `radius`).
@@ -64,10 +80,15 @@ impl Surface {
         for y in bounds.y0..bounds.y1 {
             let py = y as f32 + 0.5;
             let straight = !empty && (py - hole_center_y).abs() <= hole_half_y - hole_radius - 1.0;
+            let (skip_from, skip_to) = if straight {
+                (deep_from, deep_to)
+            } else {
+                curved_zero_span(hole, hole_radius, edge.tail, py).unwrap_or((1, 0))
+            };
             let mut x = bounds.x0;
             while x < bounds.x1 {
-                if straight && x >= deep_from && x <= deep_to {
-                    x = deep_to + 1;
+                if x >= skip_from && x <= skip_to {
+                    x = skip_to + 1;
                     continue;
                 }
                 let px = x as f32 + 0.5;
@@ -120,6 +141,28 @@ mod tests {
         w: 40.0,
         h: 40.0,
     };
+
+    #[test]
+    fn curved_spans_have_exactly_zero_shadow_coverage() {
+        for origin in [-240.25, -30.75, 0.0, 15.25] {
+            for radius in [0.0, 4.0, 30.0, 90.0, 200.0] {
+                for sigma in [0.0, 0.005, 0.01, 2.0, 12.0, 40.0] {
+                    let hole = [origin, 3.25, origin + 240.0, 183.75];
+                    let edge = GaussianEdge::new(sigma);
+                    for y in 0..190 {
+                        let py = y as f32 + 0.5;
+                        if let Some((first, last)) = curved_zero_span(hole, radius, edge.tail, py) {
+                            for x in first..=last {
+                                let distance = rounded_distance(x as f32 + 0.5, py, hole, radius);
+                                assert_eq!(edge.coverage(distance), 1.0,
+                                    "origin {origin}, radius {radius}, sigma {sigma}, pixel {x},{y}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn a_hard_inset_shadow_darkens_the_side_opposite_to_its_offset() {

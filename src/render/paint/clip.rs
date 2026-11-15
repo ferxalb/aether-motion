@@ -18,14 +18,17 @@ pub(super) fn premultiply(black: &[u8], white: &[u8]) -> Vec<[u8; 4]> {
         .0
         .iter()
         .zip(white.as_chunks::<4>().0)
-        .map(|(b, w)| {
-            let gap = (0..3)
-                .map(|c| i32::from(w[c]) - i32::from(b[c]))
-                .sum::<i32>()
-                / 3;
-            [b[0], b[1], b[2], (255 - gap).clamp(0, 255) as u8]
-        })
+        .map(|(b, w)| premultiplied_pixel(b, w))
         .collect()
+}
+
+/// Recovers one texel, shared by clipping and direct blur-plane preparation.
+pub(super) fn premultiplied_pixel(b: &[u8; 4], w: &[u8; 4]) -> [u8; 4] {
+    let gap = (0..3)
+        .map(|c| i32::from(w[c]) - i32::from(b[c]))
+        .sum::<i32>()
+        / 3;
+    [b[0], b[1], b[2], (255 - gap).clamp(0, 255) as u8]
 }
 
 impl<'a> Renderer<'a> {

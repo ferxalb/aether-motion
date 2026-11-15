@@ -246,3 +246,76 @@ composition check passed and frame 30 was visually inspected. Single MP4
 exports at 1080p/30 fps, one worker: baseline 2.749 s, updated 2.687 s; these
 single runs do not establish an export speedup. No quality or encoder settings
 changed, and older PCs were not measured.
+
+## Exact zero-span skipping for inset shadows
+
+Inset shadows now skip a conservative central strip on curved rows when it
+is at least the Gaussian tail plus one pixel inside the rounded hole. The
+coverage there is exactly one, making the shadow contribution exactly zero.
+Existing straight-row behavior and all potentially visible pixel calculations
+remain unchanged. No cache, downsampling, or extra pixel buffer is introduced.
+
+Release, 1920x1080, 30 fps, one thread, frames 15–34 of
+[`rounded-inset.html`](benchmarks/rounded-inset.html), three alternating runs:
+baseline 0.216 / 0.213 / 0.215 s; updated 0.157 / 0.156 / 0.154 s.
+Median drawing time decreased 27.4% (0.215 to 0.156 s). The baseline without
+the inset shadow took 0.014 s in one attribution run, confirming this workload
+is dominated by the shadow. These numbers apply to this large-radius scene.
+
+All seven inset-shadow release tests passed. The new span test verifies
+exactly zero shadow contribution for every skipped pixel across four origins
+(including a fully offscreen hole), five radii, six sigmas including hard
+edges, and fractional geometry. Composition checking passed, frame 30 was
+visually inspected, and PNGs at frames 0, 30, and 59 were byte-identical.
+The complete 60-frame native MP4 was also byte-identical. Single export
+timings at 1080p/30 fps with one worker: baseline 1.409 s; updated 1.153 s.
+These single export timings are not a repeatable MP4 speedup estimate.
+No quality or encoder settings changed; older PCs were not measured.
+
+## Direct filter-plane preparation and rejected shadow-mask experiment
+
+`filter: blur()` now recovers premultiplied texels directly into the four blur
+planes, sharing the same per-texel recovery helper with clipping. This removes
+one intermediate RGBA allocation and its write/read pass (four bytes per layer
+pixel). The Gaussian algorithm, sample values, and output composition are unchanged.
+
+Release, one thread, 1920x1080, 30 fps, frames 15–34 of
+[`animated-filter.html`](benchmarks/animated-filter.html), three alternating runs:
+baseline 1.917 / 2.070 / 1.926 s; updated 1.847 / 1.871 / 1.903 s.
+An initial baseline run was 1.896 s. Median drawing time moved from 1.926 to
+1.871 s (2.9%), below the noise threshold; no CPU speedup is claimed.
+
+A separate memory pair measured using system process statistics:
+
+| Metric | Baseline | Updated |
+| --- | ---: | ---: |
+| Internal drawing time | 1.941 s | 1.962 s |
+| Wall time | 2.00 s | 2.02 s |
+| User CPU | 1.84 s | 1.85 s |
+| System CPU | 0.15 s | 0.14 s |
+| Maximum RSS | 151,134,208 bytes | 133,828,608 bytes |
+| Peak memory footprint | 97,091,584 bytes | 88,395,776 bytes |
+
+Maximum RSS fell by 17,305,600 bytes (11.5%) in this pair. Allocator behavior
+affects the process-level saving; the guaranteed allocation removed is four
+bytes per layer pixel. All five filter-blur and six overflow integration tests
+passed. PNGs at frames 0, 30, and 59 were byte-identical, and composition checking
+passed.
+
+A separate experiment skipped the fully hidden central rectangle when building
+outer-shadow masks. The exhaustive mask comparison passed, but the change was
+reverted because the timing difference was too small. Release, one thread,
+frames 15–34 of [`animated-shadow.html`](benchmarks/animated-shadow.html):
+baseline 0.198 / 0.192 / 0.198 s; experiment 0.194 / 0.196 / 0.194 s.
+An initial baseline was 0.198 s. Median difference: 2%, within measurement noise.
+
+Inspection also confirmed that fitted images are already cached by source, size,
+and object-fit, with a direct row-copy path for fully opaque images. Additional
+image caching was not introduced. Gradient blending and grain remain candidates;
+no new speedup for either is claimed here. No resolution or encoder settings
+changed, and older PCs were not measured.
+
+Final filter verification after reverting the shadow experiment: frame 30 was
+visually inspected. Complete native MP4 exports (60 frames, 1080p, 30 fps, one
+worker) were byte-identical: baseline 6.430 s; updated 5.823 s. These are single
+export runs and do not establish a repeatable speedup.

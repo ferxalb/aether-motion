@@ -3,6 +3,7 @@
 //! composites over the frame.
 //!
 //! Reuses the backdrop blur's three-pass box approximation, so the output stays deterministic.
+//! Black/white recovery writes directly to blur planes without an intermediate RGBA buffer.
 
 use crate::model::Color;
 use crate::render::geometry::{clip_pixels, Rect};
@@ -66,10 +67,16 @@ impl<'a> Renderer<'a> {
             layers.push(std::mem::replace(&mut self.surface, outer).pixels);
         }
         outcome?;
-        let texels = super::clip::premultiply(&layers[0], &layers[1]);
         let mut planes = vec![vec![0.0_f32; lw * lh]; 4];
-        for (i, texel) in texels.iter().enumerate() {
-            for (plane, &value) in planes.iter_mut().zip(texel) {
+        for (i, (black, white)) in layers[0]
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(layers[1].as_chunks::<4>().0)
+            .enumerate()
+        {
+            let texel = super::clip::premultiplied_pixel(black, white);
+            for (plane, value) in planes.iter_mut().zip(texel) {
                 plane[i] = f32::from(value);
             }
         }
