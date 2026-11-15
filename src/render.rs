@@ -174,6 +174,7 @@ impl<'a> Renderer<'a> {
             width as f32 / composition.width as f32,
             width,
             height,
+            None,
         )
     }
 
@@ -183,7 +184,20 @@ impl<'a> Renderer<'a> {
         }
         let width = (composition.width as f32 * scale).round() as u32;
         let height = (composition.height as f32 * scale).round() as u32;
-        Self::with_dimensions(composition, scale, width, height)
+        Self::with_dimensions(composition, scale, width, height, None)
+    }
+
+    /// Independent renderer for the same composition and output size.
+    /// It shares the already loaded system font index instead of scanning disks again,
+    /// so it can render any frame in any order on another thread.
+    pub fn fork(&self) -> Result<Self> {
+        Self::with_dimensions(
+            self.composition,
+            self.scale,
+            self.width,
+            self.height,
+            Some(self.font_db.clone()),
+        )
     }
 
     fn with_dimensions(
@@ -191,6 +205,7 @@ impl<'a> Renderer<'a> {
         scale: f32,
         width: u32,
         height: u32,
+        shared_fonts: Option<Database>,
     ) -> Result<Self> {
         if width == 0 || height == 0 {
             return Err(anyhow!("escala demasiado pequeña"));
@@ -202,14 +217,17 @@ impl<'a> Renderer<'a> {
         if size > 128 * 1024 * 1024 {
             return Err(anyhow!("frame requiere más de 128 MiB; usa --scale"));
         }
-        let mut font_db = Database::new();
-        if composition
-            .elements
-            .iter()
-            .any(|e| matches!(e.content, Content::Text(_)))
-        {
-            font_db.load_system_fonts();
-        }
+        let font_db = shared_fonts.unwrap_or_else(|| {
+            let mut db = Database::new();
+            if composition
+                .elements
+                .iter()
+                .any(|e| matches!(e.content, Content::Text(_)))
+            {
+                db.load_system_fonts();
+            }
+            db
+        });
         let children = composition
             .elements
             .iter()
@@ -246,6 +264,10 @@ impl<'a> Renderer<'a> {
 
     pub fn dimensions(&self) -> (u32, u32) {
         (self.width, self.height)
+    }
+    pub(crate) fn add_stats(&mut self, rasterized: usize, reused: usize) {
+        self.stats.rasterized += rasterized;
+        self.stats.reused += reused;
     }
     pub fn stats(&self) -> &RenderStats {
         &self.stats

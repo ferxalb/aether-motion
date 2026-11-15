@@ -14,7 +14,7 @@ fn usage() -> &'static str {
     "aether-hyperframes 0.1\n\
 Uso:\n\
   aether-hyperframes inspect <composicion.html>\n\
-  aether-hyperframes render <composicion.html> --output <video.mp4|frame.png> [--fps 30] [--scale 1 | --size 1080p|4k] [--threads 2] [--encoder native|ffmpeg] [--frame N]\n\
+  aether-hyperframes render <composicion.html> --output <video.mp4|frame.png> [--fps 30] [--scale 1 | --size 1080p|4k] [--threads N (por defecto: núcleos, máx. 4)] [--encoder native|ffmpeg] [--frame N]\n\
   aether-hyperframes bench <composicion.html> [--fps 30] [--scale 1 | --size 1080p|4k]\n\
   aether-hyperframes check <composicion.html>   (JSON; sale con 1 si falla)\n\
   aether-hyperframes mcp                        (servidor MCP por stdio, para agentes)\n\
@@ -59,7 +59,7 @@ fn options() -> Result<Option<Options>> {
         fps: 30,
         scale: None,
         size: None,
-        threads: 2,
+        threads: aether_hyperframes::encode::default_threads(),
         encoder: "native".to_string(),
         frame: None,
     };

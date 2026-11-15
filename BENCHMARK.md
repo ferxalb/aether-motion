@@ -1,6 +1,6 @@
 # Medición inicial
 
-Equipo: detalles identificadores omitidos. Compilación `cargo build --release`. Composición [`examples/title-card.html`](examples/title-card.html): 4 s, 24 fps, 96 frames, salida a 1920×1080 (`--scale 3`). Medición de tiempo real y RSS con herramientas del sistema.
+Compilación `cargo build --release`. Composición [`examples/title-card.html`](examples/title-card.html): 4 s, 24 fps, 96 frames, salida a 1920×1080 (`--scale 3`). Medición de tiempo real y RSS con herramientas del sistema.
 
 | Prueba | Tiempo interno | Tiempo real | RSS máximo | Resultado |
 | --- | ---: | ---: | ---: | --- |
@@ -24,7 +24,7 @@ Los diez MP4 tuvieron el mismo SHA-256. Esta comparación mide una composición 
 
 ## MP4 nativo a 60 fps
 
-Misma configuración de prueba. Composición de tres segundos con texto, bloques sólidos, desplazamientos y opacidad, anterior al degradado del ejemplo. Para medir a 4K con ambas versiones se usó un lienzo de entrada de 960×540 y salida de 3840×2160. Para 1080p se usó la entrada de 640×360. Medianas de tres ejecuciones de release por versión, con 180 fotogramas y `--threads 4`.
+Ambas versiones se midieron en el mismo equipo. Composición de tres segundos con texto, bloques sólidos, desplazamientos y opacidad, anterior al degradado del ejemplo. Para medir a 4K con ambas versiones se usó un lienzo de entrada de 960×540 y salida de 3840×2160. Para 1080p se usó la entrada de 640×360. Medianas de tres ejecuciones de release por versión, con 180 fotogramas y `--threads 4`.
 
 | Salida | Antes, dibujo | Ahora, dibujo | Antes, MP4 | Ahora, MP4 |
 | --- | ---: | ---: | ---: | ---: |
@@ -32,3 +32,20 @@ Misma configuración de prueba. Composición de tres segundos con texto, bloques
 | 3840×2160 | 0,767 s | 0,171 s | 7,127 s | 6,131 s |
 
 Las pruebas verifican la cadencia del MP4 a 30 y 60 fps en ambas resoluciones. La exportación 4K se ejecutó por debajo de 60 fotogramas por segundo. El ejemplo con degradado y esquinas redondeadas también se exportó en 4K a 60 fps y se decodificó tras la exportación.
+
+## Codificación paralela por segmentos
+
+Composición de 12 s con fades (`examples/title-card.html` con `data-duration="12"`), 60 fps, 720 fotogramas, MP4 nativo. Antes: un único GOP y `--threads 2`. Ahora: segmentos de 1 s, cada uno con su encoder, y `--threads 4`. Tres ejecuciones alternadas por caso.
+
+| Salida | Antes | Ahora | RSS antes | RSS ahora |
+| --- | ---: | ---: | ---: | ---: |
+| 1080p | 5,7–6,6 s | 2,2–2,5 s | 53 MB | 191 MB |
+| 4K | 26,2–26,9 s | 9,6–9,7 s | 160 MB | 533 MB |
+
+Mejora de unas 2,7x en ambos tamaños. El coste es memoria: cada hilo mantiene su propio fotograma y encoder. En equipos con poca RAM usa `--threads 1` o `2`.
+
+- Los segmentos son fijos (1 s), por lo que el MP4 es **byte a byte idéntico con cualquier número de hilos** (verificado con SHA-256 con 1, 2, 4, 8 y 12 hilos y por un test).
+- Cada segmento empieza con un fotograma IDR. El archivo pesa ~5 % más (843 KB frente a 800 KB en 1080p) y con `--threads 1` tarda ~10 % más que antes.
+- Una composición de 1 s o menos no se segmenta y conserva el pipeline anterior.
+- Por defecto `--threads` usa los núcleos disponibles, con máximo 4.
+- No se comparó contra otros motores ni se midió en una PC antigua.

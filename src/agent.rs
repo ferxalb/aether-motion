@@ -170,7 +170,7 @@ fn call(name: &str, a: &Value) -> Result<Value> {
                 }
             };
             let fps = integer("fps", 30)?;
-            let threads = integer("threads", 2)?;
+            let threads = integer("threads", crate::encode::default_threads())?;
             let c = parse_file(path)?;
             let mut r = renderer_for(&c, a)?;
             let t0 = std::time::Instant::now();

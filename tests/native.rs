@@ -208,3 +208,71 @@ fn rounds_gradient_backgrounds_and_clears_pixels_left_by_motion() {
     assert_eq!(renderer.render_at(0.0).unwrap(), first);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+fn motion_composition(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+    let dir = std::env::temp_dir().join(format!("aether-hf-{name}-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let html = dir.join("motion.html");
+    std::fs::write(
+        &html,
+        r#"<div data-composition-id="m" data-width="64" data-height="48" data-duration="3" style="background:#102030">
+<div id="a" class="clip" data-start="0" data-duration="3" data-track-index="0"
+ style="left:4px;top:4px;width:20px;height:20px;background:#ff8800"
+ data-hf-keyframes='[{"at":0,"x":0,"opacity":0},{"at":2,"x":30,"opacity":1,"easing":"ease-in-out"}]'></div></div>"#,
+    )
+    .unwrap();
+    (dir, html)
+}
+
+#[test]
+fn parallel_segments_are_byte_identical_for_any_thread_count() {
+    let (dir, html) = motion_composition("segments");
+    let composition = parse_file(&html).unwrap();
+    let mut outputs = Vec::new();
+    for threads in [1, 3] {
+        let mut renderer = Renderer::new(&composition, 1.0).unwrap();
+        let output = dir.join(format!("out-{threads}.mp4"));
+        // 4 fps x 3 s = 12 frames in three 1-second segments.
+        encode_native(&mut renderer, &output, 4, threads).unwrap();
+        assert_eq!(renderer.stats().rasterized + renderer.stats().reused, 12);
+        outputs.push(output);
+    }
+    let (a, b) = (
+        std::fs::read(&outputs[0]).unwrap(),
+        std::fs::read(&outputs[1]).unwrap(),
+    );
+    assert_eq!(a, b, "el MP4 no debe depender del número de hilos");
+    let size = a.len() as u64;
+    let mut mp4 =
+        mp4::Mp4Reader::read_header(BufReader::new(File::open(&outputs[0]).unwrap()), size)
+            .unwrap();
+    assert_eq!(mp4.sample_count(1).unwrap(), 12);
+    let sync: Vec<u32> = (1..=12)
+        .filter(|&i| mp4.read_sample(1, i).unwrap().unwrap().is_sync)
+        .collect();
+    assert_eq!(sync, [1, 5, 9], "un IDR al inicio de cada segmento");
+    drop(mp4);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn forked_renderer_matches_fresh_render_in_any_order() {
+    let (dir, html) = motion_composition("fork");
+    let composition = parse_file(&html).unwrap();
+    let mut main = Renderer::new(&composition, 1.0).unwrap();
+    let mut fork = main.fork().unwrap();
+    for frame in [29, 2, 11, 0, 23, 24, 5] {
+        let fresh = Renderer::new(&composition, 1.0)
+            .unwrap()
+            .render_frame(frame, 10)
+            .unwrap()
+            .to_vec();
+        assert_eq!(
+            fork.render_frame(frame, 10).unwrap(),
+            fresh.as_slice(),
+            "frame {frame}"
+        );
+    }
+    assert!(main.render_frame(0, 10).is_ok());
+    std::fs::remove_dir_all(dir).unwrap();
+}
