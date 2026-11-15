@@ -64,7 +64,9 @@ fn options() -> Result<Option<Options>> {
         frame: None,
     };
     while let Some(arg) = args.next() {
-        let value = args.next().ok_or_else(|| anyhow!("missing value for {arg}"))?;
+        let value = args
+            .next()
+            .ok_or_else(|| anyhow!("missing value for {arg}"))?;
         match arg.as_str() {
             "--output" => opts.output = Some(value.into()),
             "--fps" => opts.fps = value.parse().context("invalid --fps")?,

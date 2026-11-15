@@ -702,7 +702,8 @@ fn parse_shadow(raw: &str) -> Result<Option<Shadow>> {
         if token == "inset" {
             bail!("box-shadow: inset is unsupported");
         }
-        let numeric = token.starts_with(|c: char| c.is_ascii_digit() || matches!(c, '.' | '-' | '+'));
+        let numeric =
+            token.starts_with(|c: char| c.is_ascii_digit() || matches!(c, '.' | '-' | '+'));
         if numeric && !token.contains('(') {
             let n = match parse_length(token, "box-shadow")? {
                 Length::Px(n) => n,
@@ -1171,17 +1172,53 @@ fn style_for(node: &NodeRef, sheet: &Stylesheet, parent_vars: &Vars) -> Result<R
                 style.display = Some(value);
             }
             "align-items" => {
-                if value != "center" {
+                if !matches!(
+                    value.as_str(),
+                    "flex-start" | "start" | "center" | "flex-end" | "end" | "stretch"
+                ) {
                     bail!("unsupported align-items: {value}");
                 }
                 style.align_items = Some(value);
             }
             "justify-content" => {
-                if value != "center" {
+                if !matches!(
+                    value.as_str(),
+                    "flex-start"
+                        | "start"
+                        | "center"
+                        | "flex-end"
+                        | "end"
+                        | "space-between"
+                        | "space-around"
+                        | "space-evenly"
+                ) {
                     bail!("unsupported justify-content: {value}");
                 }
                 style.justify_content = Some(value);
             }
+            "flex-direction" => {
+                style.column = match value.as_str() {
+                    "row" => false,
+                    "column" => true,
+                    _ => bail!("unsupported flex-direction (use row or column): {value}"),
+                }
+            }
+            "gap" => style.gap = spacing_px(&value, &key)?,
+            "padding" => style.padding = parse_box(&value, &key)?,
+            "padding-top" => style.padding[0] = spacing_px(&value, &key)?,
+            "padding-right" => style.padding[1] = spacing_px(&value, &key)?,
+            "padding-bottom" => style.padding[2] = spacing_px(&value, &key)?,
+            "padding-left" => style.padding[3] = spacing_px(&value, &key)?,
+            "flex-grow" | "flex" => {
+                let n: f32 = value
+                    .parse()
+                    .ok()
+                    .filter(|n: &f32| n.is_finite() && *n >= 0.0)
+                    .ok_or_else(|| anyhow!("{key}: expected a non-negative number: {value}"))?;
+                style.flex_grow = n;
+                style.flex_basis_zero = key == "flex";
+            }
+            "box-shadow" => style.shadow = parse_shadow(&value)?,
             "object-fit" => {
                 if !matches!(value.as_str(), "fill" | "contain" | "cover") {
                     bail!("unsupported object-fit: {value}");

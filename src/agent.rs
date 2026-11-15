@@ -157,7 +157,10 @@ fn call(name: &str, a: &Value) -> Result<Value> {
                 return Err(anyhow!("the path must end in .html"));
             }
             if path.exists() && a.get("overwrite").and_then(Value::as_bool) != Some(true) {
-                return Err(anyhow!("{} already exists; use overwrite=true", path.display()));
+                return Err(anyhow!(
+                    "{} already exists; use overwrite=true",
+                    path.display()
+                ));
             }
             std::fs::write(path, s("html").ok_or_else(|| anyhow!("missing html"))?)?;
             Ok(text(check(path).to_string()))

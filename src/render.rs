@@ -1,4 +1,4 @@
-use crate::model::{Background, Color, Composition, Content, Element};
+use crate::model::{Background, Color, Composition, Content, Element, Shadow};
 use anyhow::{anyhow, Context, Result};
 use fontdb::{Database, Family, Query};
 use fontdue::{Font, FontSettings};
@@ -12,6 +12,53 @@ struct Rect {
     y: f32,
     w: f32,
     h: f32,
+}
+
+/// A flex item before its main size grows into the free space.
+struct FlexItem {
+    idx: usize,
+    main: f32,
+    cross: Option<f32>,
+    grow: f32,
+}
+
+/// Direct children that follow the parent's flex layout instead of positioning themselves.
+fn in_flow(composition: &Composition, idx: usize) -> bool {
+    let element = &composition.elements[idx];
+    element
+        .parent
+        .is_some_and(|parent| composition.elements[parent].style.display.as_deref() == Some("flex"))
+        && element.style.position.as_deref() != Some("absolute")
+}
+
+/// Signed distance from `(x, y)` to a rounded rectangle; negative inside.
+fn rounded_distance(x: f32, y: f32, [x0, y0, x1, y1]: [f32; 4], radius: f32) -> f32 {
+    let (hx, hy) = ((x1 - x0) / 2.0, (y1 - y0) / 2.0);
+    let radius = radius.clamp(0.0, hx.min(hy).max(0.0));
+    let qx = (x - (x0 + hx)).abs() - (hx - radius);
+    let qy = (y - (y0 + hy)).abs() - (hy - radius);
+    // Only the corner arcs need a square root.
+    let outside = if qx > 0.0 && qy > 0.0 {
+        qx.hypot(qy)
+    } else {
+        qx.max(qy)
+    };
+    outside - radius
+}
+
+/// Complementary error function (Abramowitz & Stegun 7.1.26, error below 1.5e-7).
+fn erfc(x: f32) -> f32 {
+    let z = x.abs();
+    let t = 1.0 / (1.0 + 0.327_591_1 * z);
+    let poly = t
+        * (0.254_829_6
+            + t * (-0.284_496_72 + t * (1.421_413_8 + t * (-1.453_152_1 + t * 1.061_405_4))));
+    let tail = poly * (-z * z).exp();
+    if x >= 0.0 {
+        tail
+    } else {
+        2.0 - tail
+    }
 }
 
 #[derive(Clone, Copy, Default, PartialEq)]
@@ -323,7 +370,7 @@ impl<'a> Renderer<'a> {
             w: self.composition.width as f32,
             h: self.composition.height as f32,
         };
-        self.draw_node(0, root, 1.0)?;
+        self.draw_node(0, root, 1.0, None)?;
         std::mem::swap(&mut self.previous, &mut self.current);
         self.stats.rasterized += 1;
         Ok(&self.pixels)
@@ -368,7 +415,13 @@ impl<'a> Renderer<'a> {
         (x0 < x1 && y0 < y1).then_some(PixelRect { x0, y0, x1, y1 })
     }
 
-    fn draw_node(&mut self, idx: usize, parent: Rect, parent_scale: f32) -> Result<()> {
+    fn draw_node(
+        &mut self,
+        idx: usize,
+        parent: Rect,
+        parent_scale: f32,
+        assigned: Option<Rect>,
+    ) -> Result<()> {
         let state = self.current[idx];
         let alpha = state.alpha;
         if alpha <= 0.0 {
@@ -378,6 +431,19 @@ impl<'a> Renderer<'a> {
         let ps = parent_scale;
         let mut rect = if idx == 0 {
             parent
+        } else if let Some(slot) = assigned {
+            // Static items ignore left/top; `position: relative` shifts them.
+            let relative = element.style.position.as_deref() == Some("relative");
+            let offset = |length: Option<crate::model::Length>, basis: f32| {
+                length
+                    .filter(|_| relative)
+                    .map_or(0.0, |n| n.resolve_scaled(basis, ps))
+            };
+            Rect {
+                x: slot.x + offset(element.style.left, parent.w),
+                y: slot.y + offset(element.style.top, parent.h),
+                ..slot
+            }
         } else {
             let style = &element.style;
             Rect {
@@ -407,6 +473,9 @@ impl<'a> Renderer<'a> {
         if rect.w <= 0.0 || rect.h <= 0.0 {
             return Ok(());
         }
+        if let Some(shadow) = element.style.shadow {
+            self.draw_shadow(rect, radius, shadow, alpha, cumulative);
+        }
         match element.style.background {
             Some(Background::Solid(color)) => {
                 let base = self.composition.background;
@@ -423,6 +492,13 @@ impl<'a> Renderer<'a> {
             }
             None => {}
         }
+        let [top, right, bottom, left] = element.style.padding.map(|p| p * cumulative);
+        let content = Rect {
+            x: rect.x + left,
+            y: rect.y + top,
+            w: (rect.w - left - right).max(0.0),
+            h: (rect.h - top - bottom).max(0.0),
+        };
         match &element.content {
             Content::Image(path) => self.draw_image(
                 path,
@@ -430,13 +506,271 @@ impl<'a> Renderer<'a> {
                 element.style.object_fit.as_deref().unwrap_or("fill"),
                 alpha,
             )?,
-            Content::Text(text) => self.draw_text(text, rect, idx, alpha, cumulative)?,
+            Content::Text(text) => self.draw_text(text, content, idx, alpha, cumulative)?,
             Content::Container => {}
         }
+        let layout = if element.style.display.as_deref() == Some("flex") {
+            self.flex_layout(idx, content, cumulative)?
+        } else {
+            Vec::new()
+        };
         for i in 0..self.children[idx].len() {
-            self.draw_node(self.children[idx][i], rect, cumulative)?;
+            let child = self.children[idx][i];
+            let slot = layout.iter().find(|(c, _)| *c == child).map(|(_, r)| *r);
+            self.draw_node(child, rect, cumulative, slot)?;
         }
         Ok(())
+    }
+
+    /// Explicit or intrinsic size of an element in layout units; `None` means unknown.
+    fn item_size(
+        &mut self,
+        idx: usize,
+        ps: f32,
+        avail: (f32, f32),
+    ) -> Result<(Option<f32>, Option<f32>)> {
+        let composition: &'a Composition = self.composition;
+        let element = &composition.elements[idx];
+        let mut width = element.style.width.map(|n| n.resolve_scaled(avail.0, ps));
+        let mut height = element.style.height.map(|n| n.resolve_scaled(avail.1, ps));
+        if width.is_some() && height.is_some() {
+            return Ok((width, height));
+        }
+        let intrinsic = match &element.content {
+            Content::Text(text) => Some(self.measure_text(text, idx, ps)?),
+            Content::Container if element.style.display.as_deref() == Some("flex") => {
+                self.flex_intrinsic(idx, ps)?
+            }
+            _ => None,
+        };
+        if let Some((w, h)) = intrinsic {
+            width = width.or(Some(w));
+            height = height.or(Some(h));
+        }
+        Ok((width, height))
+    }
+
+    /// Content-sized dimensions of a flex container, padding included.
+    fn flex_intrinsic(&mut self, idx: usize, ps: f32) -> Result<Option<(f32, f32)>> {
+        let composition: &'a Composition = self.composition;
+        let style = &composition.elements[idx].style;
+        let kids: Vec<usize> = composition.elements[idx]
+            .children
+            .iter()
+            .copied()
+            .filter(|&child| in_flow(composition, child))
+            .collect();
+        if kids.is_empty() {
+            return Ok(None);
+        }
+        let (mut main, mut cross) = (0.0_f32, 0.0_f32);
+        for &kid in &kids {
+            let (w, h) = self.item_size(kid, ps, (0.0, 0.0))?;
+            let (m, c) = if style.column { (h, w) } else { (w, h) };
+            main += m.unwrap_or(0.0);
+            cross = cross.max(c.unwrap_or(0.0));
+        }
+        main += style.gap * ps * (kids.len() - 1) as f32;
+        let [top, right, bottom, left] = style.padding.map(|p| p * ps);
+        Ok(Some(if style.column {
+            (cross + left + right, main + top + bottom)
+        } else {
+            (main + left + right, cross + top + bottom)
+        }))
+    }
+
+    /// Places the in-flow children of a flex container inside `content`.
+    fn flex_layout(&mut self, idx: usize, content: Rect, ps: f32) -> Result<Vec<(usize, Rect)>> {
+        let composition: &'a Composition = self.composition;
+        let style = &composition.elements[idx].style;
+        let kids: Vec<usize> = composition.elements[idx]
+            .children
+            .iter()
+            .copied()
+            .filter(|&child| in_flow(composition, child))
+            .collect();
+        if kids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let column = style.column;
+        let (main_space, cross_space) = if column {
+            (content.h, content.w)
+        } else {
+            (content.w, content.h)
+        };
+        let gap = style.gap * ps;
+        let stretch = !matches!(
+            style.align_items.as_deref(),
+            Some("flex-start" | "start" | "center" | "flex-end" | "end")
+        );
+        let mut items = Vec::with_capacity(kids.len());
+        for &kid in &kids {
+            let (w, h) = self.item_size(kid, ps, (content.w, content.h))?;
+            let (main, cross) = if column { (h, w) } else { (w, h) };
+            let kid_style = &composition.elements[kid].style;
+            items.push(FlexItem {
+                idx: kid,
+                main: if kid_style.flex_basis_zero {
+                    0.0
+                } else {
+                    main.unwrap_or(0.0)
+                },
+                cross,
+                grow: kid_style.flex_grow,
+            });
+        }
+        let gaps = gap * (items.len() - 1) as f32;
+        let free = main_space - items.iter().map(|item| item.main).sum::<f32>() - gaps;
+        let total_grow: f32 = items.iter().map(|item| item.grow).sum();
+        let free = if free > 0.0 && total_grow > 0.0 {
+            for item in &mut items {
+                item.main += free * item.grow / total_grow;
+            }
+            0.0
+        } else {
+            free
+        };
+        let count = items.len() as f32;
+        let spare = free.max(0.0);
+        let (start, between) = match style.justify_content.as_deref() {
+            Some("center") => (free / 2.0, 0.0),
+            Some("flex-end" | "end") => (free, 0.0),
+            Some("space-between") if items.len() > 1 => (0.0, spare / (count - 1.0)),
+            Some("space-around") => (spare / count / 2.0, spare / count),
+            Some("space-evenly") => (spare / (count + 1.0), spare / (count + 1.0)),
+            _ => (0.0, 0.0),
+        };
+        let mut position = start;
+        let mut placed = Vec::with_capacity(items.len());
+        for item in items {
+            let cross = item
+                .cross
+                .unwrap_or(if stretch { cross_space } else { 0.0 });
+            let offset = match style.align_items.as_deref() {
+                Some("center") => (cross_space - cross) / 2.0,
+                Some("flex-end" | "end") => cross_space - cross,
+                _ => 0.0,
+            };
+            let rect = if column {
+                Rect {
+                    x: content.x + offset,
+                    y: content.y + position,
+                    w: cross,
+                    h: item.main,
+                }
+            } else {
+                Rect {
+                    x: content.x + position,
+                    y: content.y + offset,
+                    w: item.main,
+                    h: cross,
+                }
+            };
+            placed.push((item.idx, rect));
+            position += item.main + gap + between;
+        }
+        Ok(placed)
+    }
+
+    /// Soft outer shadow: Gaussian falloff from the distance to the shadow's rounded rectangle.
+    fn draw_shadow(&mut self, rect: Rect, radius: f32, shadow: Shadow, alpha: f32, zoom: f32) {
+        let k = self.scale;
+        let unit = zoom * k;
+        let spread = shadow.spread * unit;
+        let sigma = shadow.blur * unit / 2.0;
+        let element = [
+            rect.x * k,
+            rect.y * k,
+            (rect.x + rect.w) * k,
+            (rect.y + rect.h) * k,
+        ];
+        let cast = [
+            element[0] + shadow.x * unit - spread,
+            element[1] + shadow.y * unit - spread,
+            element[2] + shadow.x * unit + spread,
+            element[3] + shadow.y * unit + spread,
+        ];
+        let tail = sigma * 3.0;
+        let reach = tail.ceil() + 1.0;
+        let Some(bounds) = Self::clip_pixels(
+            (self.width, self.height),
+            (cast[0] - reach).floor() as i32,
+            (cast[1] - reach).floor() as i32,
+            (cast[2] + reach).ceil() as i32,
+            (cast[3] + reach).ceil() as i32,
+        ) else {
+            return;
+        };
+        self.mark_painted(bounds);
+        let cast_radius = (radius * k + spread).max(0.0);
+        let element_radius = radius * k;
+        let strength = alpha * f32::from(shadow.color.a) / 255.0;
+        // Gaussian edge profile sampled every 1/16 px; beyond +-3 sigma it is flat.
+        const STEPS_PER_PX: f32 = 16.0;
+        let table: Vec<f32> = if sigma < 0.01 {
+            Vec::new()
+        } else {
+            let n = (tail * 2.0 * STEPS_PER_PX).ceil() as usize + 1;
+            (0..=n)
+                .map(|i| {
+                    let d = -tail + i as f32 / STEPS_PER_PX;
+                    0.5 * erfc(d / (sigma * std::f32::consts::SQRT_2))
+                })
+                .collect()
+        };
+        let coverage = |distance: f32| -> f32 {
+            if table.is_empty() {
+                (0.5 - distance).clamp(0.0, 1.0)
+            } else if distance >= tail {
+                0.0
+            } else if distance <= -tail {
+                1.0
+            } else {
+                let position = (distance + tail) * STEPS_PER_PX;
+                let i = (position as usize).min(table.len() - 2);
+                let fraction = position - i as f32;
+                table[i] + (table[i + 1] - table[i]) * fraction
+            }
+        };
+        let (center_y, half_y) = (
+            (element[1] + element[3]) / 2.0,
+            (element[3] - element[1]) / 2.0,
+        );
+        // Pixels well inside the element are hidden by it; skip them on its straight rows.
+        let inside_from = (element[0] + 0.5).ceil() as usize;
+        let inside_to = (element[2] - 1.5).floor().max(0.0) as usize;
+        let (blend_color, stride) = (
+            Color {
+                a: 255,
+                ..shadow.color
+            },
+            self.width as usize,
+        );
+        for y in bounds.y0..bounds.y1 {
+            let py = y as f32 + 0.5;
+            let straight = (py - center_y).abs() <= half_y - element_radius - 1.0;
+            let mut x = bounds.x0;
+            while x < bounds.x1 {
+                if straight && x >= inside_from && x <= inside_to {
+                    x = inside_to + 1;
+                    continue;
+                }
+                let px = x as f32 + 0.5;
+                let distance = rounded_distance(px, py, cast, cast_radius);
+                let hidden = coverage(distance) * strength;
+                if hidden > 0.002 {
+                    // CSS clips the shadow under the element itself.
+                    let outside =
+                        (rounded_distance(px, py, element, element_radius) + 0.5).clamp(0.0, 1.0);
+                    let a = hidden * outside;
+                    if a > 0.002 {
+                        let offset = (y * stride + x) * 4;
+                        Self::blend_pixel(&mut self.pixels[offset..offset + 4], blend_color, a);
+                    }
+                }
+                x += 1;
+            }
+        }
     }
 
     fn blend_at(
@@ -868,32 +1202,56 @@ impl<'a> Renderer<'a> {
         Ok(&self.fonts[family])
     }
 
-    fn prepare_text(&mut self, text: &str, idx: usize, zoom: f32) -> Result<TextRun> {
-        let element = &self.composition.elements[idx];
+    /// Inherited font family, base size (comp px), color and alignment for a text element.
+    fn text_props(&self, idx: usize) -> (&'a str, f32, Color, &'a str) {
+        let composition: &'a Composition = self.composition;
         let (mut family, mut font_size, mut color, mut align) = (None, None, None, None);
         let mut current = Some(idx);
         while let Some(i) = current {
-            let node = &self.composition.elements[i];
+            let node = &composition.elements[i];
             family = family.or(node.style.font_family.as_deref());
             font_size = font_size.or(node.style.font_size);
             color = color.or(node.style.color);
             align = align.or(node.style.text_align.as_deref());
             current = node.parent;
         }
-        let family = family.unwrap_or("sans-serif");
-        let size = font_size.unwrap_or(match element.tag.as_str() {
+        let size = font_size.unwrap_or(match composition.elements[idx].tag.as_str() {
             "h1" => 64.0,
             "h2" => 48.0,
             "h3" => 36.0,
             _ => 24.0,
-        }) * self.scale
-            * zoom;
-        let color = color.unwrap_or(Color::WHITE);
-        let align = align.unwrap_or("left");
+        });
+        (
+            family.unwrap_or("sans-serif"),
+            size,
+            color.unwrap_or(Color::WHITE),
+            align.unwrap_or("left"),
+        )
+    }
+
+    /// Width and height of one line of text in layout units, without rasterizing.
+    fn measure_text(&mut self, text: &str, idx: usize, zoom: f32) -> Result<(f32, f32)> {
+        let (family, base, _, _) = self.text_props(idx);
+        let scale = self.scale;
+        let size = base * scale * zoom;
+        let font = self.font(family)?;
+        let advance: f32 = text
+            .chars()
+            .map(|ch| font.metrics(ch, size).advance_width)
+            .sum();
+        Ok((advance / scale, size / scale))
+    }
+
+    fn prepare_text(&mut self, text: &str, idx: usize, zoom: f32) -> Result<TextRun> {
+        let (family, base, color, align) = self.text_props(idx);
+        let size = base * self.scale * zoom;
+        let element = &self.composition.elements[idx];
         let parent_style = element
             .parent
             .map(|parent| &self.composition.elements[parent]);
-        let parent_flex = parent_style.and_then(|p| p.style.display.as_deref()) == Some("flex");
+        // Flex items are placed by the layout; only out-of-flow children keep the legacy centering.
+        let parent_flex = parent_style.and_then(|p| p.style.display.as_deref()) == Some("flex")
+            && !in_flow(self.composition, idx);
         let center_x = align == "center"
             || (parent_flex
                 && parent_style.and_then(|p| p.style.justify_content.as_deref()) == Some("center"));

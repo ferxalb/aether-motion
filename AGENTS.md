@@ -4,6 +4,17 @@
 
 All human-readable content in this repository must be in English, including documentation, comments, examples, CLI and MCP descriptions, error messages, and test messages. Write all new content in English and translate existing prose into English when editing it. Preserve code identifiers, protocol terms, and program behavior.
 
+## Code organization and maintainability
+
+- Keep the code modular. Group related modules into clearly named folders by domain or responsibility so files are easy to locate and recognize. Avoid generic catch-all folders and monolithic files that mix unrelated concerns.
+- Split large files when they combine distinct responsibilities or become difficult to navigate. In particular, do not keep expanding `src/parse.rs` and `src/render.rs` as catch-all modules: extract cohesive areas into clearly named submodules and keep their entry points as small, easy-to-find facades.
+- Give each module a focused responsibility and expose small, explicit interfaces so components can evolve independently. Keep boundaries clear between core logic, parsing, rendering, I/O, and external integrations.
+- Start every source file with a concise English file-level comment describing its purpose, scope, and main responsibility. Use Rust module documentation (`//!`) for Rust files. Update this documentation when a file's responsibilities, interfaces, or place in the module structure changes; keep it useful without repeating implementation details.
+- Keep related architecture and usage documentation in sync as the project grows. When a change adds or moves modules, update relevant file-level documentation and the repository's architecture or contributor guidance.
+- Apply established design patterns when they fit the problem and the existing architecture. Prefer simple, reusable abstractions and low coupling; avoid patterns that add complexity without a concrete benefit.
+- Treat runtime optimization separately from code organization: profile before making performance-focused changes, and do not claim a refactor is faster without measurements. Preserve deterministic output.
+- Make changes with future scalability and maintainability in mind, keeping dependencies and responsibilities clear as the system grows.
+
 Create, validate, inspect, and render HTML compositions. Output must be deterministic: what appears in a frame is a function of time.
 
 ## Work loop
@@ -29,6 +40,8 @@ Create, validate, inspect, and render HTML compositions. Output must be determin
 - `transform: translate(Xpx, Ypx) scale(s)` also works as a static style. Scale is uniform, grows around the element center, and scales descendants (positions, sizes, text, radius). Rotation, skew, percent translations, and other transform origins are unsupported.
 - Custom properties: declare `--name: value` on `:root` or any element (inherited) and use `var(--name, fallback)` in any supported value, including inside `@keyframes`.
 - Colors: `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb()`, `rgba()`, `hsl()`, `hsla()`, `transparent`, and a set of common names.
+- Flex layout: `display: flex` with `flex-direction: row|column`, `gap` (px), `padding` (1 to 4 px values or `padding-top/right/bottom/left`), `justify-content: flex-start|center|flex-end|space-between|space-around|space-evenly`, and `align-items: flex-start|center|flex-end|stretch` (stretch is the default). Items use `width`/`height`, or their content size (text, nested flex containers); `flex-grow: n` and `flex: n` share the free space. All children occupy their slot for the whole composition, whatever their clip timing, so layout never jumps when a clip starts. Children with `position: absolute` stay out of the flow and use `left`/`top` as before. There is no wrap, shrink, margin, or `align-self`.
+- `box-shadow: offset-x offset-y [blur [spread]] color`: a single soft outer shadow that follows `border-radius`, scale, and opacity. `inset` and multiple shadows are unsupported.
 - Network access, `Date.now()`, and randomness are unsupported. Use relative paths.
 - Unsupported features return an explicit error; never silently produce a wrong video. This includes `<script>`, GSAP, `<video>`, `<audio>`, `<svg>`, canvas, and general CSS.
 

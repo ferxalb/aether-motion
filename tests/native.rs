@@ -135,10 +135,7 @@ fn animates_nested_clips_deterministically_at_arbitrary_times() {
     std::fs::write(&path, invalid).unwrap();
     let report = aether_hyperframes::agent::check(&path);
     assert_eq!(report["ok"], false);
-    assert!(report["error"]
-        .as_str()
-        .unwrap()
-        .contains("keyframe 3"));
+    assert!(report["error"].as_str().unwrap().contains("keyframe 3"));
     assert!(report["fix"].as_str().unwrap().contains("increasing"));
     std::fs::remove_dir_all(dir).unwrap();
 }
@@ -391,6 +388,140 @@ fn css_animation_errors_are_explicit() {
     for (i, (css, expected)) in cases.iter().enumerate() {
         let path = css_composition(
             &format!("err{i}"),
+            css,
+            r#"<div class="clip a" data-start="0" data-duration="2"></div>"#,
+        );
+        let error = format!("{:#}", parse_file(&path).unwrap_err());
+        assert!(error.contains(expected), "{css}: {error}");
+    }
+}
+
+/// Parses `body` in a `width`x`height` composition and returns an RGB sampler at scale 1.
+fn sized_render(
+    name: &str,
+    (width, height): (usize, usize),
+    css: &str,
+    body: &str,
+) -> impl FnMut(usize, usize) -> [u8; 3] {
+    let html = format!(
+        r#"<html><head><style>{css}</style></head><body>
+        <main data-composition-id="flex" data-width="{width}" data-height="{height}" data-duration="1">{body}</main>
+        </body></html>"#
+    );
+    let dir = std::env::temp_dir().join(format!("aether-hf-flex-{name}-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("flex.html");
+    std::fs::write(&path, html).unwrap();
+    let composition = Box::leak(Box::new(parse_file(&path).unwrap()));
+    let mut renderer = Renderer::new(composition, 1.0).unwrap();
+    let pixels = renderer.render_at(0.0).unwrap().to_vec();
+    move |x, y| {
+        let i = (y * width + x) * 4;
+        [pixels[i], pixels[i + 1], pixels[i + 2]]
+    }
+}
+
+const RED: [u8; 3] = [255, 0, 0];
+const GREEN: [u8; 3] = [0, 255, 0];
+const BLACK: [u8; 3] = [0, 0, 0];
+
+#[test]
+fn flex_row_centers_items_with_gap() {
+    let mut at = sized_render(
+        "row",
+        (30, 10),
+        ".row { left: 0; top: 0; width: 30px; height: 10px; display: flex; justify-content: center;
+                align-items: center; gap: 2px }
+         .a, .b { width: 4px; height: 4px } .a { background: #f00 } .b { background: #0f0 }",
+        r#"<div class="clip row" data-start="0" data-duration="1">
+             <div class="clip a" data-start="0" data-duration="1"></div>
+             <div class="clip b" data-start="0" data-duration="1"></div></div>"#,
+    );
+    // Items span 10..14 and 16..20 horizontally, 3..7 vertically.
+    assert_eq!(at(10, 3), RED);
+    assert_eq!(at(13, 6), RED);
+    assert_eq!(at(9, 3), BLACK);
+    assert_eq!(at(14, 3), BLACK, "gap");
+    assert_eq!(at(16, 3), GREEN);
+    assert_eq!(at(19, 6), GREEN);
+    assert_eq!(at(10, 2), BLACK);
+    assert_eq!(at(10, 7), BLACK);
+}
+
+#[test]
+fn flex_column_space_between_respects_padding() {
+    let mut at = sized_render(
+        "column",
+        (10, 30),
+        ".col { left: 0; top: 0; width: 10px; height: 30px; display: flex; flex-direction: column;
+                justify-content: space-between; padding: 2px }
+         .a { width: 6px; height: 4px; background: #f00 }",
+        r#"<div class="clip col" data-start="0" data-duration="1">
+             <div class="clip a" data-start="0" data-duration="1"></div>
+             <div class="clip a" data-start="0" data-duration="1"></div></div>"#,
+    );
+    assert_eq!(at(2, 2), RED, "first item at the padding edge");
+    assert_eq!(at(7, 5), RED);
+    assert_eq!(at(8, 2), BLACK, "item width is 6px");
+    assert_eq!(at(2, 1), BLACK, "padding");
+    assert_eq!(at(2, 12), BLACK, "space between");
+    assert_eq!(at(2, 24), RED, "last item at the bottom padding edge");
+    assert_eq!(at(2, 27), RED);
+    assert_eq!(at(2, 28), BLACK);
+}
+
+#[test]
+fn flex_grow_shares_free_space_and_stretches_the_cross_axis() {
+    let mut at = sized_render(
+        "grow",
+        (20, 4),
+        ".row { left: 0; top: 0; width: 20px; height: 4px; display: flex }
+         .a { flex: 1; background: #f00 } .b { flex: 3; background: #0f0 }",
+        r#"<div class="clip row" data-start="0" data-duration="1">
+             <div class="clip a" data-start="0" data-duration="1"></div>
+             <div class="clip b" data-start="0" data-duration="1"></div></div>"#,
+    );
+    assert_eq!(at(4, 0), RED);
+    assert_eq!(at(4, 3), RED, "stretched to the container height");
+    assert_eq!(at(5, 0), GREEN);
+    assert_eq!(at(19, 3), GREEN);
+}
+
+#[test]
+fn box_shadow_falls_off_outside_and_stays_under_the_element() {
+    let mut at = sized_render(
+        "shadow",
+        (24, 24),
+        ".box { left: 8px; top: 8px; width: 8px; height: 8px; background: #00f;
+                box-shadow: 0 0 6px 0 #f00 }",
+        r#"<div class="clip box" data-start="0" data-duration="1"></div>"#,
+    );
+    let near = at(7, 12);
+    let far = at(2, 12);
+    assert!(
+        near[0] > far[0] && near[0] > 40,
+        "shadow is strongest at the edge: {near:?} {far:?}"
+    );
+    assert_eq!(near[2], 0);
+    assert!(at(0, 12)[0] < 8, "only the Gaussian tail remains far away");
+    assert_eq!(at(12, 12), [0, 0, 255], "the element covers its own shadow");
+}
+
+#[test]
+fn flex_and_shadow_errors_are_explicit() {
+    let cases = [
+        (
+            ".a { box-shadow: inset 0 0 4px #000 }",
+            "inset is unsupported",
+        ),
+        (".a { flex-direction: row-reverse }", "flex-direction"),
+        (".a { padding: -1px }", "non-negative"),
+        (".a { gap: 10% }", "non-negative px"),
+        (".a { justify-content: baseline }", "justify-content"),
+    ];
+    for (i, (css, expected)) in cases.iter().enumerate() {
+        let path = css_composition(
+            &format!("flexerr{i}"),
             css,
             r#"<div class="clip a" data-start="0" data-duration="2"></div>"#,
         );
