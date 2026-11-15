@@ -126,3 +126,20 @@ Native MP4 export of `premium-promo.html` at `--scale 0.25` (30 fps, 450 frames)
 | Now (defaults) | 3 | 0.79 s | 2.03 s |
 
 The default worker count is now a quarter of the cores (1 to 4) and the priority is lowered, so the MP4 is no longer byte-identical to earlier builds, though it is still identical for any `--threads` value. Measured once; a second measurement after the shadow cache and blur change was not repeated.
+
+### Wide backdrop blur on a reduced copy
+
+`backdrop-filter: blur()` with a sigma of 16 px or more now blurs a copy of the region reduced 2x or 4x (block averages), then scales it back up bilinearly. The reduction keeps the reduced sigma at 8 px or more, regions narrower than two sigmas stay at full size, and the three box widths are chosen so the blur has the same strength as the full-size path. This is the one step that is not bit-identical: it is checked against the full-size blur.
+
+Quality, full-size blur versus reduced, on a stress scene (1920x1080 composition with a diagonal gradient, a white block, a black disc, and 160 px yellow text behind a 1100x500 glass card; the hard edges are the worst case for this technique):
+
+| Blur sigma (composition px) | Output | Max error (of 255) | Mean error | Values differing | PSNR |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 36 | 1920x1080 | 2 | 0.021 | 2.1% | 64.9 dB |
+| 36 | 960x540 | 2 | 0.024 | 2.4% | 64.3 dB |
+| 60 | 1920x1080 | 2 | 0.021 | 2.1% | 64.8 dB |
+| 60 | 960x540 | 2 | 0.026 | 2.6% | 64.0 dB |
+| 20 | 1920x1080 | 2 | 0.014 | 1.4% | 66.7 dB |
+| 20 | 960x540 | 0 | 0 | 0% | identical (not reduced) |
+
+Speed: the same scene animated (60 frames at 1920x1080, one run each, `nice 10`) took 5.2–5.4 s before and 1.94–1.99 s now; the same scene without the glass card takes 1.28 s, so the blur went from about 67 ms to about 11 ms per frame (about 6x). Unit tests bound the reduced blur to 3 levels on a 235-level step edge and verify the box widths reproduce the requested strength within 3%.

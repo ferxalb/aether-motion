@@ -61,6 +61,8 @@ Create, validate, inspect, and render HTML compositions. Output must be determin
 
 - A render's total CPU work is fixed; extra threads only finish it sooner. The defaults favor a responsive machine: `--threads` defaults to a quarter of the cores (1 to 4) and the process lowers its priority (`--priority low`, `nice 10`; `--priority normal` opts out).
 - Layers that repeat at the same size across frames (square-cornered gradients and soft box shadows) are rasterized once into `paint/tile_cache.rs` tiles (64 MiB per surface) and only blended afterwards. Tiles are built on the second sighting, so snapshots never pay for them. When adding a cached primitive, key it by everything its pixels depend on and add a test against the direct path.
+- Wide `backdrop-filter` blurs (sigma of 16 px or more) run on a 2x or 4x reduced copy scaled back up bilinearly; narrower blurs and small regions stay full size. Any change to this path must keep the error against the full-size blur at 2 levels or less on real frames (`BENCHMARK.md` lists the method and numbers), and every other speedup must keep output byte-identical.
+- Keep tests light: run targeted tests (`cargo test --release <name>`) at low priority, and compare images with small tools in a language other than Python.
 - Profile before changing hot paths, and record the before and after in `BENCHMARK.md`.
 
 ## Benchmark privacy

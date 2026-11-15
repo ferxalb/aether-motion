@@ -1,5 +1,9 @@
 //! `backdrop-filter: blur()`: blurs what is already painted behind an element, inside its rounded box.
 //!
+//! Wide blurs (sigma of 16 px or more) run on a reduced copy of the region and are scaled back up
+//! with bilinear filtering: the result is smooth, so detail is not lost, and the work drops by the
+//! square of the reduction. The reduction keeps at least 8 px of sigma at the reduced size.
+//!
 //! Three successive box blurs approximate the gaussian (as in CSS the radius is the standard deviation).
 //! Only the pixels inside the box are sampled and edge samples are clamped, so the result is a pure
 //! function of the pixels behind the element and stays deterministic.
@@ -11,6 +15,62 @@ use crate::render::paint::Surface;
 pub(super) fn box_radius(sigma: f32) -> usize {
     let width = (4.0 * sigma * sigma + 1.0).sqrt();
     ((width - 1.0) / 2.0).round().max(0.0) as usize
+}
+
+/// Reduction factor (1, 2, or 4) for a blur of `sigma` px over a `width` x `height` region:
+/// the largest that leaves the reduced blur at least 8 px wide. Narrow blurs and regions smaller
+/// than two sigmas (where edge clamping dominates and the work is small anyway) stay full size.
+fn reduction(sigma: f32, width: usize, height: usize) -> usize {
+    if (width.min(height) as f32) < 2.0 * sigma {
+        return 1;
+    }
+    [4, 2]
+        .into_iter()
+        .find(|&f| sigma / f as f32 >= 8.0)
+        .unwrap_or(1)
+}
+
+/// Blurs `plane` (`width` x `height`) with a gaussian of `sigma` px on a copy reduced `factor`
+/// times (block averages), then writes the bilinear upscale back into `plane`.
+fn blur_plane_reduced(plane: &mut [f32], width: usize, height: usize, sigma: f32, factor: usize) {
+    let (rw, rh) = (width.div_ceil(factor), height.div_ceil(factor));
+    let mut small = vec![0.0_f32; rw * rh];
+    for (ry, out) in small.chunks_exact_mut(rw).enumerate() {
+        let (y0, y1) = (ry * factor, ((ry + 1) * factor).min(height));
+        for (rx, value) in out.iter_mut().enumerate() {
+            let (x0, x1) = (rx * factor, ((rx + 1) * factor).min(width));
+            let mut sum = 0.0_f32;
+            for y in y0..y1 {
+                sum += plane[y * width + x0..y * width + x1].iter().sum::<f32>();
+            }
+            *value = sum / ((y1 - y0) * (x1 - x0)) as f32;
+        }
+    }
+    // Match the strength of the full-size blur (three equal boxes of `box_radius(sigma)`),
+    // which is what the unreduced path would produce, not the nominal sigma.
+    let width_px = (2 * box_radius(sigma) + 1) as f32;
+    let effective = (width_px * width_px - 1.0).max(0.0).sqrt() / 2.0;
+    blur_plane_radii(&mut small, rw, rh, box_radii(effective / factor as f32));
+    // Sample positions: pixel centers mapped onto block centers, clamped at the edges.
+    let taps = |n: usize, reduced: usize| -> Vec<(usize, usize, f32)> {
+        (0..n)
+            .map(|i| {
+                let u = ((i as f32 + 0.5) / factor as f32 - 0.5).max(0.0);
+                let a = (u as usize).min(reduced - 1);
+                (a, (a + 1).min(reduced - 1), (u - a as f32).clamp(0.0, 1.0))
+            })
+            .collect()
+    };
+    let (columns, rows) = (taps(width, rw), taps(height, rh));
+    for (y, out) in plane.chunks_exact_mut(width).enumerate() {
+        let (ra, rb, ty) = rows[y];
+        let (top, bottom) = (&small[ra * rw..(ra + 1) * rw], &small[rb * rw..(rb + 1) * rw]);
+        for (value, &(ca, cb, tx)) in out.iter_mut().zip(&columns) {
+            let upper = top[ca] + (top[cb] - top[ca]) * tx;
+            let lower = bottom[ca] + (bottom[cb] - bottom[ca]) * tx;
+            *value = upper + (lower - upper) * ty;
+        }
+    }
 }
 
 /// One box blur of radius `radius` over `line`, clamping samples at both ends. `tmp` is scratch space.
@@ -103,10 +163,33 @@ fn blur_vertical(
     }
 }
 
+/// Box radii for three passes whose combined variance matches a gaussian of `sigma` px: a mix of
+/// two neighboring widths, so the blur strength is accurate even at small sigma where one
+/// integer radius would be off by several percent.
+fn box_radii(sigma: f32) -> [usize; 3] {
+    let ideal = (4.0 * sigma * sigma + 1.0).sqrt();
+    let mut lower = ideal.floor() as i64;
+    if lower % 2 == 0 {
+        lower -= 1;
+    }
+    let lower = lower.max(1) as f32;
+    let narrower = ((12.0 * sigma * sigma - 3.0 * lower * lower - 12.0 * lower - 9.0)
+        / (-4.0 * lower - 4.0))
+        .round()
+        .clamp(0.0, 3.0) as usize;
+    let radius = |width: f32| ((width - 1.0) / 2.0) as usize;
+    std::array::from_fn(|i| radius(if i < narrower { lower } else { lower + 2.0 }))
+}
+
 /// Three horizontal then three vertical box blurs over a `width` x `height` plane.
 pub(super) fn blur_plane(plane: &mut [f32], width: usize, height: usize, radius: usize) {
+    blur_plane_radii(plane, width, height, [radius; 3]);
+}
+
+/// Like `blur_plane`, with a separate box radius for each of the three passes.
+fn blur_plane_radii(plane: &mut [f32], width: usize, height: usize, radii: [usize; 3]) {
     let mut tmp = Vec::with_capacity(width * 4);
-    for _ in 0..3 {
+    for radius in radii {
         let mut groups = plane.chunks_exact_mut(width * 4);
         for group in &mut groups {
             let (a, rest) = group.split_at_mut(width);
@@ -121,9 +204,9 @@ pub(super) fn blur_plane(plane: &mut [f32], width: usize, height: usize, radius:
     let mut scratch = vec![0.0_f32; plane.len()];
     let mut sums = Vec::new();
     // Ping-pong between the plane and the scratch buffer; three passes end in the scratch.
-    blur_vertical(plane, &mut scratch, width, height, radius, &mut sums);
-    blur_vertical(&scratch, plane, width, height, radius, &mut sums);
-    blur_vertical(plane, &mut scratch, width, height, radius, &mut sums);
+    blur_vertical(plane, &mut scratch, width, height, radii[0], &mut sums);
+    blur_vertical(&scratch, plane, width, height, radii[1], &mut sums);
+    blur_vertical(plane, &mut scratch, width, height, radii[2], &mut sums);
     plane.copy_from_slice(&scratch);
 }
 
@@ -168,8 +251,13 @@ impl Surface {
                 }
             }
         }
+        let factor = reduction(sigma, w, h);
         for plane in &mut planes {
-            blur_plane(plane, w, h, box_r);
+            if factor > 1 {
+                blur_plane_reduced(plane, w, h, sigma, factor);
+            } else {
+                blur_plane(plane, w, h, box_r);
+            }
         }
         self.mark_painted(bounds);
         let float_edges = edges.map(|edge| edge as f32);
@@ -267,6 +355,58 @@ mod tests {
             box_lines([a, b, c, d], &mut Vec::new(), radius);
             assert_eq!(single, group, "radius {radius}");
         }
+    }
+
+    #[test]
+    fn box_radii_match_the_requested_sigma_closely() {
+        for sigma in [8.0_f32, 9.0, 10.0, 12.0, 18.0, 36.0] {
+            // Variance of a box of width w is (w^2 - 1) / 12; passes add.
+            let variance: f32 = box_radii(sigma)
+                .iter()
+                .map(|&r| ((2 * r + 1) as f32).powi(2) / 12.0 - 1.0 / 12.0)
+                .sum();
+            let error = (variance.sqrt() / sigma - 1.0).abs();
+            assert!(error < 0.03, "sigma {sigma}: {error}");
+        }
+    }
+
+    #[test]
+    fn reduced_blur_stays_within_three_levels_of_the_full_size_blur() {
+        for sigma in [16.0_f32, 36.0, 64.0] {
+            let (w, h) = (sigma as usize * 8, sigma as usize * 5);
+            let image: Vec<f32> = (0..w * h)
+                .map(|i| {
+                    let (x, y) = (i % w, i / w);
+                    let inside = (w / 6..w / 2).contains(&x) && (h / 5..h * 2 / 3).contains(&y);
+                    let edge = if inside { 255.0 } else { 20.0 };
+                    edge + (x as f32 * 0.4)
+                })
+                .collect();
+            let factor = reduction(sigma, w, h);
+            assert!(factor > 1, "sigma {sigma} should be reduced");
+            let mut exact = image.clone();
+            blur_plane(&mut exact, w, h, box_radius(sigma));
+            let mut reduced = image.clone();
+            blur_plane_reduced(&mut reduced, w, h, sigma, factor);
+            let worst = exact
+                .iter()
+                .zip(&reduced)
+                .map(|(a, b)| (a - b).abs())
+                .fold(0.0_f32, f32::max);
+            // A 235-level step edge is the harshest input; photographic content stays near 2.
+            assert!(worst <= 3.0, "sigma {sigma}: worst error {worst}");
+        }
+    }
+
+    #[test]
+    fn narrow_blurs_are_not_reduced() {
+        assert_eq!(reduction(15.9, 1000, 1000), 1);
+        assert_eq!(reduction(16.0, 1000, 1000), 2);
+        assert_eq!(reduction(32.0, 1000, 1000), 4);
+        assert_eq!(reduction(64.0, 1000, 1000), 4);
+        assert_eq!(reduction(200.0, 2000, 2000), 4);
+        // A region narrower than two sigmas keeps the full-size blur.
+        assert_eq!(reduction(64.0, 1000, 100), 1);
     }
 
     #[test]
