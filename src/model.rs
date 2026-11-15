@@ -153,6 +153,8 @@ pub struct Style {
     /// Static `transform: rotate()` in degrees, clockwise, around the element center.
     pub rotate: f32,
     pub shadow: Option<Shadow>,
+    /// `backdrop-filter: blur(<px>)` radius (standard deviation) in composition px; 0 means none.
+    pub backdrop_blur: f32,
     /// Solid border drawn inside the box (border-box sizing); `None` color means white.
     pub border_width: f32,
     pub border_color: Option<Color>,
@@ -287,6 +289,10 @@ pub struct Composition {
     pub height: u32,
     pub duration: f64,
     pub background: Color,
+    /// `data-hf-vignette` on the root: corner darkening strength, 0..=1.
+    pub vignette: f32,
+    /// `data-hf-grain` on the root: film grain amplitude, 0..=1.
+    pub grain: f32,
     pub elements: Vec<Element>,
     pub ids: HashMap<String, usize>,
 }

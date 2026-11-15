@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Scene transitions</title>
+<style>
+  #root { background: #05070f; }
+  .clip { position: absolute; }
+  .scene { left: 0; top: 0; width: 1920px; height: 1080px; }
+  #s1 { background: linear-gradient(135deg, #1f2a5a, #3a1f6b); }
+  #s2 { background: linear-gradient(135deg, #0f4c4a, #1c7a64); }
+  #s3 { background: linear-gradient(135deg, #5a1f3a, #a8402f); }
+  .title { position: absolute; left: 160px; top: 440px; width: 1600px; color: #ffffff; font-size: 140px; font-weight: 800; text-align: center; }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="transitions" data-width="1920" data-height="1080" data-duration="9">
+  <!-- Titles inherit their scene's start, so they move with it. Each scene starts 0.8s before the previous one ends; that overlap is the transition. -->
+  <div id="s1" class="clip scene" data-start="0" data-duration="3.5" data-track-index="0">
+    <div class="title" data-track-index="1">Capture</div>
+  </div>
+  <div id="s2" class="clip scene" data-start="s1-0.8" data-duration="3.5" data-track-index="1"
+       data-hf-transition="push-left" data-hf-transition-from="s1">
+    <div class="title" data-track-index="1">Edit</div>
+  </div>
+  <div id="s3" class="clip scene" data-start="s2-0.8" data-duration="3.5" data-track-index="2"
+       data-hf-transition="zoom-in" data-hf-transition-from="s2">
+    <div class="title" data-track-index="1">Ship</div>
+  </div>
+</div>
+</body>
+</html>

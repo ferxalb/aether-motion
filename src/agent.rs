@@ -13,7 +13,17 @@ use std::path::Path;
 pub const GUIDE: &str = include_str!("../AGENTS.md");
 
 fn fix_hint(message: &str) -> &'static str {
-    if message.contains("data-hf-keyframes") {
+    if message.contains("backdrop-filter") {
+        "use backdrop-filter: blur(<px>) or none (at most 200px); no other filter functions are supported"
+    } else if message.contains("data-hf-vignette") || message.contains("data-hf-grain") {
+        "set data-hf-vignette and data-hf-grain on the composition root to a number between 0 and 1"
+    } else if message.contains("data-hf-transition") || message.contains("transition ") {
+        "on the incoming clip use data-hf-transition=crossfade|push-left|cover-left|zoom-in|zoom-out and data-hf-transition-from=<outgoing id>; start it inside the outgoing clip (data-start=\"a-0.6\"), give the outgoing clip a data-duration, and draw it above on a higher data-track-index"
+    } else if message.contains("data-hf-split") || message.contains("data-hf-stagger") {
+        "use data-hf-split=words|chars on an element with one line of plain text (no <br> or child elements); see AGENTS.md for data-hf-stagger, data-hf-split-from, and the other options"
+    } else if message.contains("data-hf-camera") || message.contains("camera keyframe") {
+        "use a JSON array of {at, zoom, x, y, easing} on a non-root container; at in local seconds, strictly increasing; zoom between 0.05 and 50"
+    } else if message.contains("data-hf-keyframes") {
         "use a JSON array with at in local seconds, strictly increasing and within the clip; check the indicated field"
     } else if message.contains("CSS variable") || message.contains("var()") {
         "define --name on :root or an ancestor, or add a fallback: var(--name, value)"
@@ -148,6 +158,7 @@ fn tools() -> Value {
     json!([
         {"name": "aether_guide", "description": "Format contract and work loop. Read it before writing a composition.", "inputSchema": {"type": "object", "properties": {}}},
         {"name": "aether_write", "description": "Write an HTML composition and validate it. Do not overwrite unless overwrite=true.", "inputSchema": {"type": "object", "properties": {"path": path, "html": {"type": "string"}, "overwrite": {"type": "boolean"}}, "required": ["path", "html"]}},
+        {"name": "aether_block", "description": "List ready-made blocks and themes, or render one as HTML to paste into a composition. Without name it returns the catalog with parameters and defaults.", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "params": {"type": "object", "additionalProperties": {"type": "string"}}}}},
         {"name": "aether_check", "description": "Validate the composition; return JSON with an error and fix on failure.", "inputSchema": {"type": "object", "properties": {"path": path}, "required": ["path"]}},
         {"name": "aether_snapshot", "description": "Render the exact second t (0 <= t < duration) and return a PNG.", "inputSchema": {"type": "object", "properties": {"path": path, "t": {"type": "number"}, "scale": {"type": "number"}, "size": {"type": "string", "enum": ["1080p", "4k"]}}, "required": ["path"]}},
         {"name": "aether_render", "description": "Render to MP4 (native H.264). Does not overwrite existing outputs.", "inputSchema": {"type": "object", "properties": {"path": path, "output": {"type": "string"}, "fps": {"type": "integer", "minimum": 1, "maximum": 60}, "threads": {"type": "integer", "minimum": 1, "maximum": 64}, "scale": {"type": "number"}, "size": {"type": "string", "enum": ["1080p", "4k"]}}, "required": ["path", "output"]}}
@@ -172,6 +183,26 @@ fn call(name: &str, a: &Value) -> Result<Value> {
             std::fs::write(path, s("html").ok_or_else(|| anyhow!("missing html"))?)?;
             Ok(text(check(path).to_string()))
         }
+        "aether_block" => match s("name") {
+            None => Ok(text(crate::blocks::list_json()?.to_string())),
+            Some(name) => {
+                let mut values = std::collections::BTreeMap::new();
+                if let Some(params) = a.get("params") {
+                    let params = params
+                        .as_object()
+                        .ok_or_else(|| anyhow!("params must be an object of strings"))?;
+                    for (key, value) in params {
+                        let value = value
+                            .as_str()
+                            .map(str::to_string)
+                            .or_else(|| value.as_f64().map(|n| n.to_string()))
+                            .ok_or_else(|| anyhow!("params.{key} must be a string or number"))?;
+                        values.insert(key.clone(), value);
+                    }
+                }
+                Ok(text(crate::blocks::render(name, &values)?))
+            }
+        },
         "aether_check" => Ok(text(check(path).to_string())),
         "aether_snapshot" => snapshot(path, a.get("t").and_then(Value::as_f64).unwrap_or(0.0), a),
         "aether_render" => {

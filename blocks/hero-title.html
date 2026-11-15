@@ -1,0 +1,12 @@
+<!-- Full-screen hero for a 1920x1080 scene: kicker, word-by-word headline, and subtitle. Wrap it in a clip that sets data-start and data-duration; it inherits that timing. -->
+<style>
+  #{{id|hero}} { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 30px; }
+  .{{id|hero}}-kicker { font-size: 26px; font-weight: 700; letter-spacing: 6px; color: var(--accent, #4be0b8); text-align: center; }
+  .{{id|hero}}-title { width: 1500px; font-size: 118px; font-weight: 800; color: var(--text, #f5f8ff); text-align: center; text-shadow: 0 8px 40px #00000099; }
+  .{{id|hero}}-sub { width: 1100px; font-size: 36px; line-height: 1.3; color: var(--muted, #8fa3c4); text-align: center; }
+</style>
+<div id="{{id|hero}}">
+  <div class="{{id|hero}}-kicker" data-hf-keyframes='[{"at":0,"y":18,"opacity":0},{"at":0.7,"y":0,"opacity":1,"easing":"ease-out-expo"}]'>{{kicker|INTRODUCING}}</div>
+  <div class="{{id|hero}}-title" data-hf-split="words" data-hf-stagger="0.1" data-hf-split-easing="ease-out-expo">{{title|Make every frame count}}</div>
+  <div class="{{id|hero}}-sub" data-hf-keyframes='[{"at":0.6,"y":24,"opacity":0},{"at":1.4,"y":0,"opacity":1,"easing":"ease-out-expo"}]'>{{subtitle|Deterministic video from plain HTML.}}</div>
+</div>

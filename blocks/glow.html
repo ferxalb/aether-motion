@@ -1,0 +1,11 @@
+<!-- Ambient background light for a 1920x1080 composition: two soft glows that drift slowly. Put it first in the root; seconds is the drift length and should match the composition duration. -->
+<style>
+  @keyframes {{id|glow}}-drift {
+    from { transform: translate(-40px, 20px); }
+    to { transform: translate(40px, -20px); }
+  }
+  .{{id|glow}}-a { position: absolute; left: -300px; top: -350px; width: 1400px; height: 1200px; background: radial-gradient(ellipse farthest-side at 50% 50%, var(--glow-a, #6f8dff57), var(--glow-a-fade, #6f8dff00)); animation: {{id|glow}}-drift {{seconds|15}}s linear 0s 1 both; }
+  .{{id|glow}}-b { position: absolute; left: 900px; top: 250px; width: 1300px; height: 1100px; background: radial-gradient(ellipse farthest-side at 50% 50%, var(--glow-b, #4be0b83d), var(--glow-b-fade, #4be0b800)); animation: {{id|glow}}-drift {{seconds|15}}s linear 0s 1 reverse both; }
+</style>
+<div class="{{id|glow}}-a"></div>
+<div class="{{id|glow}}-b"></div>

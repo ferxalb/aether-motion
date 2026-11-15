@@ -1,5 +1,6 @@
 //! `data-hf-keyframes` JSON attribute parsing.
 use crate::model::{Easing, Keyframe};
+use crate::parse::animation::timing::parse_keyframe_easing;
 use anyhow::{anyhow, bail, Context, Result};
 use std::collections::BTreeMap;
 
@@ -47,13 +48,11 @@ pub(in crate::parse) fn parse_keyframes(raw: &str) -> Result<Vec<Keyframe>> {
             }
             let easing = match frame.get("easing") {
                 None => Easing::Linear,
-                Some(value) => match value.as_str() {
-                    Some("linear") => Easing::Linear,
-                    Some("ease-in") => Easing::EaseIn,
-                    Some("ease-out") => Easing::EaseOut,
-                    Some("ease-in-out") => Easing::EaseInOut,
-                    _ => bail!("easing must be linear, ease-in, ease-out, or ease-in-out"),
-                },
+                Some(value) => parse_keyframe_easing(
+                    value
+                        .as_str()
+                        .ok_or_else(|| anyhow!("easing must be a string"))?,
+                )?,
             };
             Ok(Keyframe {
                 at,

@@ -251,7 +251,8 @@ impl<'a> Renderer<'a> {
                 FrameState::default()
             });
         }
-        if self.previous == self.current {
+        // Grain is reseeded every frame, so identical element states no longer mean identical pixels.
+        if self.previous == self.current && self.composition.grain <= 0.0 {
             self.stats.reused += 1;
             return Ok(&self.surface.pixels);
         }
@@ -264,6 +265,9 @@ impl<'a> Renderer<'a> {
             h: self.composition.height as f32,
         };
         self.draw_node(0, root, 1.0, None)?;
+        let seed = (time * 1000.0).round() as u32;
+        self.surface
+            .apply_finish(self.composition.vignette, self.composition.grain, seed);
         std::mem::swap(&mut self.previous, &mut self.current);
         self.stats.rasterized += 1;
         Ok(&self.surface.pixels)

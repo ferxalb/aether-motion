@@ -7,7 +7,24 @@ use crate::parse::values::length::{parse_length, spacing_px};
 use crate::parse::values::shadow::parse_shadow;
 use crate::parse::values::tokens::split_top;
 use crate::parse::values::transform::parse_transform;
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
+
+/// `backdrop-filter`: only `none` or a single `blur(<px>)` (at most 200 px) is supported.
+fn parse_backdrop_blur(value: &str, property: &str) -> Result<f32> {
+    let value = value.trim();
+    if value == "none" {
+        return Ok(0.0);
+    }
+    let inner = value
+        .strip_prefix("blur(")
+        .and_then(|rest| rest.strip_suffix(')'))
+        .ok_or_else(|| anyhow!("unsupported {property} (only blur(<px>) or none): {value}"))?;
+    let blur = spacing_px(inner, property)?;
+    if blur > 200.0 {
+        bail!("{property}: blur radius is limited to 200px");
+    }
+    Ok(blur)
+}
 
 /// Applies a visual declaration to `style`; `Ok(false)` means the property is not a visual property.
 pub(super) fn apply(key: &str, value: &str, style: &mut Style) -> Result<bool> {
@@ -35,6 +52,9 @@ pub(super) fn apply(key: &str, value: &str, style: &mut Style) -> Result<bool> {
             style.opacity = Some(n);
         }
         "box-shadow" => style.shadow = parse_shadow(value, key)?,
+        "backdrop-filter" | "-webkit-backdrop-filter" => {
+            style.backdrop_blur = parse_backdrop_blur(value, key)?
+        }
         "border" => {
             (style.border_width, style.border_color) = (0.0, None);
             for token in split_top(value, ' ') {

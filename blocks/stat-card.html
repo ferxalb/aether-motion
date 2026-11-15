@@ -1,0 +1,14 @@
+<!-- Statistic card (520x300): a big value that pops in letter by letter, and a label. Set left, top, and delay (seconds). -->
+<style>
+  @keyframes {{id|stat}}-in {
+    from { transform: translate(0, 40px); opacity: 0; }
+    to { transform: translate(0, 0); opacity: 1; }
+  }
+  #{{id|stat}} { position: absolute; left: {{left|200}}px; top: {{top|390}}px; width: 520px; height: 300px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; border-radius: 36px; background: var(--panel, #ffffff1a); border: 2px solid var(--line, #ffffff40); backdrop-filter: blur(36px); box-shadow: 0 30px 80px 0 #00000066; animation: {{id|stat}}-in 0.8s ease-out {{delay|0}}s 1 both; }
+  .{{id|stat}}-value { font-size: 150px; font-weight: 800; color: var(--accent, #4be0b8); }
+  .{{id|stat}}-label { font-size: 30px; color: var(--muted, #8fa3c4); text-align: center; }
+</style>
+<div id="{{id|stat}}">
+  <div class="{{id|stat}}-value" data-hf-split="chars" data-hf-split-from="scale" data-hf-stagger="0.07" data-hf-split-easing="ease-out-back">{{value|98%}}</div>
+  <div class="{{id|stat}}-label">{{label|of frames reused}}</div>
+</div>

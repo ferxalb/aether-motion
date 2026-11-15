@@ -1,5 +1,6 @@
 //! CSS animation model: declarations, resolved frames, and shared limits.
 
+pub(in crate::parse) mod camera;
 pub(in crate::parse) mod decl;
 pub(in crate::parse) mod keyframes;
 pub(in crate::parse) mod motion;

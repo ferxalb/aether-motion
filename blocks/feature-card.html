@@ -1,0 +1,16 @@
+<!-- Glass feature card (560x330) with accent dot, title, and body. Place it inside a scene and set left and top in px; delay is the entrance delay in seconds. -->
+<style>
+  @keyframes {{id|card}}-in {
+    from { transform: translate(0, 50px); opacity: 0; }
+    to { transform: translate(0, 0); opacity: 1; }
+  }
+  #{{id|card}} { position: absolute; left: {{left|200}}px; top: {{top|330}}px; width: 560px; height: 330px; padding: 44px; display: flex; flex-direction: column; gap: 18px; border-radius: 36px; background: var(--panel, #ffffff1a); border: 2px solid var(--line, #ffffff40); backdrop-filter: blur(36px); box-shadow: 0 30px 80px 0 #00000066; animation: {{id|card}}-in 0.9s ease-out {{delay|0}}s 1 both; }
+  .{{id|card}}-dot { width: 18px; height: 18px; border-radius: 9px; background: var(--accent, #4be0b8); }
+  .{{id|card}}-title { font-size: 44px; font-weight: 700; color: var(--text, #f5f8ff); }
+  .{{id|card}}-body { font-size: 28px; line-height: 1.35; color: var(--muted, #8fa3c4); }
+</style>
+<div id="{{id|card}}">
+  <div class="{{id|card}}-dot"></div>
+  <div class="{{id|card}}-title">{{title|Native rendering}}</div>
+  <div class="{{id|card}}-body">{{body|No browser, no JavaScript. Every frame is a pure function of time.}}</div>
+</div>

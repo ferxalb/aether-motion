@@ -90,6 +90,10 @@ impl<'a> Renderer<'a> {
             self.surface
                 .draw_shadow(rect, radius, shadow, alpha, cumulative);
         }
+        if element.style.backdrop_blur > 0.0 {
+            let sigma = element.style.backdrop_blur * cumulative * self.surface.scale;
+            self.surface.backdrop_blur(rect, radius, sigma, alpha);
+        }
         match element.style.background {
             Some(Background::Solid(color)) => {
                 let base = self.composition.background;

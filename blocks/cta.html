@@ -1,0 +1,17 @@
+<!-- Closing call to action for a 1920x1080 scene: headline, gradient button, and URL. Wrap it in a clip that sets data-start and data-duration. -->
+<style>
+  @keyframes {{id|cta}}-pop {
+    from { transform: translate(0, 30px) scale(0.85); opacity: 0; }
+    to { transform: translate(0, 0) scale(1); opacity: 1; }
+  }
+  #{{id|cta}} { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 48px; }
+  .{{id|cta}}-title { width: 1500px; font-size: 112px; font-weight: 800; color: var(--text, #f5f8ff); text-align: center; text-shadow: 0 8px 40px #00000099; }
+  .{{id|cta}}-button { display: flex; padding: 28px 84px; border-radius: 80px; background: linear-gradient(135deg, var(--accent, #4be0b8), var(--accent-2, #6f8dff)); box-shadow: 0 20px 60px 0 var(--glow-b, #4be0b83d); animation: {{id|cta}}-pop 0.8s ease-out 0.9s 1 both; }
+  .{{id|cta}}-label { font-size: 42px; font-weight: 700; color: var(--on-accent, #05070f); }
+  .{{id|cta}}-url { font-size: 30px; letter-spacing: 3px; color: var(--muted, #8fa3c4); text-align: center; animation: {{id|cta}}-pop 0.8s ease-out 1.2s 1 both; }
+</style>
+<div id="{{id|cta}}">
+  <div class="{{id|cta}}-title" data-hf-split="words" data-hf-stagger="0.1" data-hf-split-easing="ease-out-expo">{{title|Start creating today}}</div>
+  <div class="{{id|cta}}-button"><div class="{{id|cta}}-label">{{button|Get started}}</div></div>
+  <div class="{{id|cta}}-url">{{url|example.com}}</div>
+</div>

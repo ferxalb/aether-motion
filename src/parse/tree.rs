@@ -1,9 +1,12 @@
 //! DOM walk: validates elements, resolves styles, and collects clips in document order.
 use crate::model::{Content, Element, Keyframe, Motion, Pose};
+use crate::parse::animation::camera::{parse_camera, CameraFrame};
 use crate::parse::animation::keyframes::parse_keyframes;
 use crate::parse::animation::AnimationSpec;
 use crate::parse::css::{Stylesheet, Vars};
 use crate::parse::html::{attr, direct_text, number};
+use crate::parse::split::parse_split;
+use crate::parse::transition::{parse_transition, TransitionSpec};
 use crate::parse::style::{style_for, Resolved};
 use anyhow::{anyhow, bail, Context, Result};
 use kuchiki::NodeRef;
@@ -15,6 +18,8 @@ pub(in crate::parse) struct Pending {
     pub(in crate::parse) start_expr: Option<String>,
     pub(in crate::parse) duration: Option<f64>,
     pub(in crate::parse) keyframes: Vec<Keyframe>,
+    pub(in crate::parse) camera: Vec<CameraFrame>,
+    pub(in crate::parse) transition: Option<TransitionSpec>,
     pub(in crate::parse) animation: Option<AnimationSpec>,
 }
 
@@ -66,7 +71,7 @@ pub(in crate::parse) fn walk(
         bail!("data-composition-src is not yet supported");
     }
     let Resolved {
-        style,
+        mut style,
         vars,
         animation,
     } = style_for(node, sheet, vars).with_context(|| format!("styles for <{tag}>"))?;
@@ -92,9 +97,25 @@ pub(in crate::parse) fn walk(
             )
         })?
         .unwrap_or_default();
+    let camera = attr(node, "data-hf-camera")
+        .map(|raw| parse_camera(&raw))
+        .transpose()
+        .with_context(|| {
+            format!(
+                "data-hf-camera on <{tag}> ({})",
+                attr(node, "id").as_deref().unwrap_or("no id")
+            )
+        })?
+        .unwrap_or_default();
     if animation.is_some() && !keyframes.is_empty() {
         bail!(
             "<{tag}> ({}) combines CSS animation and data-hf-keyframes; use only one",
+            attr(node, "id").as_deref().unwrap_or("no id")
+        );
+    }
+    if !camera.is_empty() && (animation.is_some() || !keyframes.is_empty()) {
+        bail!(
+            "<{tag}> ({}) combines data-hf-camera with another animation; wrap the element in a camera container",
             attr(node, "id").as_deref().unwrap_or("no id")
         );
     }
@@ -115,6 +136,36 @@ pub(in crate::parse) fn walk(
         } else {
             Content::Text(text)
         }
+    };
+    let transition = parse_transition(node).with_context(|| {
+        format!(
+            "data-hf-transition on <{tag}> ({})",
+            attr(node, "id").as_deref().unwrap_or("no id")
+        )
+    })?;
+    let split = parse_split(node, &tag, &style).with_context(|| {
+        format!(
+            "data-hf-split on <{tag}> ({})",
+            attr(node, "id").as_deref().unwrap_or("no id")
+        )
+    })?;
+    let mut split_text = None;
+    let content = if let Some(spec) = &split {
+        let Content::Text(text) = &content else {
+            bail!("data-hf-split requires an element with direct text");
+        };
+        if text.contains('\n')
+            || node
+                .children()
+                .any(|c| c.as_element().is_some_and(|e| &*e.name.local != "br"))
+        {
+            bail!("data-hf-split supports one line of plain text (no <br> or child elements)");
+        }
+        split_text = Some(text.clone());
+        spec.apply_container_style(&mut style);
+        Content::Container
+    } else {
+        content
     };
     let idx = out.len();
     let rest = Pose {
@@ -145,10 +196,15 @@ pub(in crate::parse) fn walk(
         start_expr,
         duration,
         keyframes,
+        camera,
+        transition,
         animation,
     });
     if let Some(parent_idx) = parent {
         out[parent_idx].element.children.push(idx);
+    }
+    if let (Some(spec), Some(text)) = (&split, &split_text) {
+        return spec.expand(text, idx, out);
     }
     for child in node.children() {
         walk(&child, Some(idx), base, sheet, &vars, out)?;

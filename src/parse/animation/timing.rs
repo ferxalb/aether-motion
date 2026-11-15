@@ -82,6 +82,46 @@ pub(in crate::parse) fn parse_timing(raw: &str) -> Result<Easing> {
     })
 }
 
+/// Named cubic-bezier presets (expo, cubic, quart, back) shared by the `data-hf-*` attributes.
+/// The `back` curves overshoot, which gives a spring-like settle while staying a pure function of time.
+fn preset_easing(name: &str) -> Option<Easing> {
+    let curve = match name {
+        "ease-in-cubic" => [0.32, 0.0, 0.67, 0.0],
+        "ease-out-cubic" => [0.33, 1.0, 0.68, 1.0],
+        "ease-in-out-cubic" => [0.65, 0.0, 0.35, 1.0],
+        "ease-out-quart" => [0.25, 1.0, 0.5, 1.0],
+        "ease-in-out-quart" => [0.76, 0.0, 0.24, 1.0],
+        "ease-in-expo" => [0.7, 0.0, 0.84, 0.0],
+        "ease-out-expo" => [0.16, 1.0, 0.3, 1.0],
+        "ease-in-out-expo" => [0.87, 0.0, 0.13, 1.0],
+        "ease-in-back" => [0.36, 0.0, 0.66, -0.56],
+        "ease-out-back" => [0.34, 1.56, 0.64, 1.0],
+        "ease-in-out-back" => [0.68, -0.6, 0.32, 1.6],
+        _ => return None,
+    };
+    Some(Easing::Bezier(curve))
+}
+
+/// Easing for `data-hf-keyframes` and `data-hf-camera`.
+///
+/// `linear`, `ease-in`, `ease-out`, and `ease-in-out` keep their quadratic meaning; named presets
+/// and any CSS timing function (`cubic-bezier(...)`, `steps(...)`, `ease`) are also accepted.
+pub(in crate::parse) fn parse_keyframe_easing(raw: &str) -> Result<Easing> {
+    let raw = raw.trim();
+    Ok(match raw {
+        "linear" => Easing::Linear,
+        "ease-in" => Easing::EaseIn,
+        "ease-out" => Easing::EaseOut,
+        "ease-in-out" => Easing::EaseInOut,
+        _ => match preset_easing(raw) {
+            Some(easing) => easing,
+            None => parse_timing(raw).map_err(|e| {
+                anyhow!("unsupported easing '{raw}' ({e}); use linear, ease-in/out, a named preset such as ease-out-expo or ease-out-back, or cubic-bezier(x1, y1, x2, y2)")
+            })?,
+        },
+    })
+}
+
 pub(in crate::parse) fn parse_iterations(raw: &str) -> Result<Iterations> {
     if raw == "infinite" {
         return Ok(Iterations::Infinite);

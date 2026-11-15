@@ -30,10 +30,27 @@ cargo run --release -- render examples/title-card.html --output /tmp/title-ffmpe
 | `margin`, `overflow: hidden`, `letter-spacing`, `<br>` | Flex-aware margins, rounded content clipping, tracked text, and forced line breaks |
 | `font-weight` | `normal`, `bold`, or 1-1000, matched to installed font faces |
 | `data-hf-fade-in`, `data-hf-fade-out` | Native extension; seconds, linear transition |
-| `data-hf-keyframes` | Native extension; interpolated position and opacity with four easing curves |
+| `data-hf-keyframes` | Native extension; interpolated position and opacity with quadratic, expo, cubic, quart, back, and `cubic-bezier` easings |
+| `data-hf-split` | Native extension; kinetic text with per-word or per-letter staggered entrances |
+| `data-hf-transition` | Native extension; crossfade, push, cover, and zoom transitions between overlapping scene clips |
+| `backdrop-filter: blur()` | Glass cards: blurs the already painted backdrop behind a translucent element |
+| `data-hf-vignette`, `data-hf-grain` | Native extension on the root; frame-wide corner darkening and deterministic film grain |
+| `data-hf-camera` | Native extension; zoom in/out and pan with a focus point over a container's whole subtree |
 | GSAP, `<script>`, `<video>`, `<audio>`, `<svg>`, canvas, complex effects, external compositions, general CSS | Not yet; explicit error |
 
 Fonts are looked up on the system. Text wraps at spaces (`max-width`, `line-height`, `white-space: nowrap`) but does not implement all browser typography shaping: no kerning, hyphenation, or breaks inside words. `text-shadow` takes a single shadow. Only local images are accepted. For a real composition, run `inspect` first; if a feature is unsupported, the program reports the first incompatibility.
+
+## Blocks and themes
+
+Ready-made, parametrized pieces for premium compositions. Print one and paste it into your file:
+
+```sh
+aether-hyperframes block list
+aether-hyperframes block theme-midnight
+aether-hyperframes block hero-title --set title="Premium by default" --set id=intro
+```
+
+Blocks are 1920x1080 fragments (`hero-title`, `feature-card`, `stat-card`, `cta`, `glow`) styled with custom properties such as `--text`, `--accent`, and `--panel`; a theme (`theme-midnight`, `theme-sunrise`, `theme-paper`) sets them all. Give each block a unique `id`, and wrap scene-sized blocks in a clip that sets `data-start` and `data-duration`. [examples/premium-promo.html](examples/premium-promo.html) is a 15 s promo built from them, with camera moves, kinetic type, scene transitions, glass, vignette, and grain.
 
 ## Export at 1080p and 4K
 
@@ -79,6 +96,7 @@ The code uses portable Rust APIs, and the repository includes a CI matrix for Li
 ## Source layout
 
 - `src/model.rs`: parsed composition, styles, and time-sampled motion tracks.
-- `src/parse/`: HTML/CSS parser; unsupported features fail with explicit errors. `mod.rs` is the `parse_file` facade; `css/` (stylesheet, selectors, cascade, variables), `values/` (lengths, colors, backgrounds, transforms, shadows), `style/` (property groups: layout, text, visual), `animation/` (CSS animation and `data-hf-keyframes` into motion tracks), `tree.rs` (DOM walk), `timeline.rs` (`data-start`), `html.rs` (node helpers).
-- `src/render/`: software renderer. `mod.rs` holds the public `Renderer` and frame loop; `draw.rs` walks the scene; `layout/` sizes and places flex items; `paint/` holds the `Surface` pixel buffer and its primitives (fills, borders, box shadows, images, rotation); `text/` handles fonts, inherited properties, line wrapping (`wrap.rs`), block layout (`block.rs`), glyph painting, and `text-shadow` (`shadow.rs`); `geometry.rs` and `frame_state.rs` hold small shared types.
+- `src/parse/`: HTML/CSS parser; unsupported features fail with explicit errors. `mod.rs` is the `parse_file` facade; `css/` (stylesheet, selectors, cascade, variables), `values/` (lengths, colors, backgrounds, transforms, shadows), `style/` (property groups: layout, text, visual), `animation/` (CSS animation, `data-hf-keyframes`, and `data-hf-camera` into motion tracks), `split.rs` (`data-hf-split` kinetic text), `transition.rs` (`data-hf-transition` scene transitions), `tree.rs` (DOM walk), `timeline.rs` (`data-start`), `html.rs` (node helpers).
+- `src/render/`: software renderer. `mod.rs` holds the public `Renderer` and frame loop; `draw.rs` walks the scene; `layout/` sizes and places flex items; `paint/` holds the `Surface` pixel buffer and its primitives (fills, borders, box shadows, backdrop blur, images, rotation, and the vignette/grain `finish` pass); `text/` handles fonts, inherited properties, line wrapping (`wrap.rs`), block layout (`block.rs`), glyph painting, and `text-shadow` (`shadow.rs`); `geometry.rs` and `frame_state.rs` hold small shared types.
+- `src/blocks/` and `blocks/`: ready-made blocks and themes. `blocks/*.html` are `{{name|default}}` templates embedded by `catalog.rs`; `template.rs` fills them; `mod.rs` serves the `block` CLI command and the `aether_block` MCP tool.
 - `src/encode.rs`: native H.264/MP4 encoding. `src/agent.rs`: `check` and the MCP server.

@@ -1,4 +1,4 @@
-//! Command-line entry point: `inspect`, `render`, `bench`, `check`, and `mcp`.
+//! Command-line entry point: `inspect`, `render`, `bench`, `check`, `block`, and `mcp`.
 
 use aether_hyperframes::encode::encode_native;
 use aether_hyperframes::parse::parse_file;
@@ -19,6 +19,7 @@ Usage:\n\
   aether-hyperframes render <composition.html> --output <video.mp4|frame.png> [--fps 30] [--scale 1 | --size 1080p|4k] [--threads N (default: cores, max 4)] [--encoder native|ffmpeg] [--frame N]\n\
   aether-hyperframes bench <composition.html> [--fps 30] [--scale 1 | --size 1080p|4k]\n\
   aether-hyperframes check <composition.html>   (JSON; exits with 1 on failure)\n\
+  aether-hyperframes block [list | <name> [--set key=value]...]   (print a ready-made block or theme as HTML)\n\
   aether-hyperframes mcp                        (MCP server over stdio for agents)\n\
 The native backend accepts an explicit subset of HyperFrames HTML/CSS.\n\
 MP4 uses built-in OpenH264 by default; --encoder ffmpeg requires FFmpeg on PATH."
@@ -186,6 +187,11 @@ fn main() -> Result<()> {
     let mut raw = env::args().skip(1);
     match raw.next().as_deref() {
         Some("mcp") => return aether_hyperframes::agent::serve(),
+        Some("block") => {
+            let args: Vec<String> = raw.collect();
+            print!("{}", aether_hyperframes::blocks::run_cli(&args)?);
+            return Ok(());
+        }
         Some("check") => {
             let file = raw
                 .next()

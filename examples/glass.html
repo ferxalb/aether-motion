@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Glass cards</title>
+<style>
+  #root { background: #070b16; }
+  .clip { position: absolute; }
+  #glow-a { left: 120px; top: 60px; width: 900px; height: 900px; background: radial-gradient(circle farthest-side at 50% 50%, rgba(111, 141, 255, 0.85), rgba(111, 141, 255, 0)); }
+  #glow-b { left: 900px; top: 300px; width: 900px; height: 900px; background: radial-gradient(circle farthest-side at 50% 50%, rgba(75, 224, 184, 0.7), rgba(75, 224, 184, 0)); }
+  .glass { left: 360px; top: 280px; width: 1200px; height: 520px; border-radius: 40px; background: rgba(255, 255, 255, 0.10); border: 2px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(40px); box-shadow: 0 30px 80px 0 rgba(0, 0, 0, 0.45); }
+  .headline { left: 60px; top: 150px; width: 1080px; color: #ffffff; font-size: 110px; font-weight: 800; text-align: center; }
+</style>
+</head>
+<body>
+<!-- Vignette and grain apply to the whole frame; the glass card blurs the glows painted before it. -->
+<div id="root" data-composition-id="glass" data-width="1920" data-height="1080" data-duration="4"
+     data-hf-vignette="0.45" data-hf-grain="0.04">
+  <div id="glow-a" class="clip" data-start="0" data-duration="4" data-track-index="0"
+       data-hf-keyframes='[{"at":0,"x":0,"y":0},{"at":4,"x":260,"y":120,"easing":"ease-in-out"}]'></div>
+  <div id="glow-b" class="clip" data-start="0" data-duration="4" data-track-index="0"
+       data-hf-keyframes='[{"at":0,"x":0,"y":0},{"at":4,"x":-300,"y":-100,"easing":"ease-in-out"}]'></div>
+  <div class="clip glass" data-start="0" data-duration="4" data-track-index="1"
+       data-hf-keyframes='[{"at":0,"y":40,"opacity":0},{"at":0.9,"y":0,"opacity":1,"easing":"ease-out"}]'>
+    <div class="clip headline" data-start="0" data-duration="4" data-track-index="2"
+         data-hf-split="words" data-hf-stagger="0.12">Glass looks premium</div>
+  </div>
+</div>
+</body>
+</html>

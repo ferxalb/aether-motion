@@ -2,19 +2,22 @@
 //!
 //! `parse_file` is the facade. Submodules: `html` (node helpers), `css` (stylesheet, selectors, cascade,
 //! variables), `values` (value parsers), `style` (property groups into `Style`), `animation`
-//! (CSS animation and `data-hf-keyframes` into motion tracks), `tree` (DOM walk), `timeline` (`data-start`).
+//! (CSS animation, `data-hf-keyframes`, and `data-hf-camera` into motion tracks), `split` (`data-hf-split` kinetic text), `transition` (`data-hf-transition` scene transitions), `tree` (DOM walk), `timeline` (`data-start`).
 
 mod animation;
 mod css;
 mod html;
+mod split;
 mod style;
 mod timeline;
+mod transition;
 mod tree;
 mod values;
 
 pub use values::color::parse_color;
 
 use crate::model::{Background, Color, Composition, Content};
+use animation::camera::motion_from_camera;
 use animation::motion::{build_motion, motion_from_keyframes};
 use anyhow::{anyhow, bail, Context, Result};
 use css::cascade::cascade;
@@ -27,6 +30,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use timeline::resolve_start;
+use transition::apply_transitions;
 use tree::walk;
 
 pub fn parse_file(path: &Path) -> Result<Composition> {
@@ -105,6 +109,18 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
     let explicit_duration = attr(metadata.as_node(), "data-duration")
         .map(|s| number(&s, "data-duration"))
         .transpose()?;
+    let effect = |name: &str| -> Result<f32> {
+        let value = attr(metadata.as_node(), name)
+            .map(|raw| number(&raw, name))
+            .transpose()?
+            .unwrap_or(0.0);
+        if !(0.0..=1.0).contains(&value) {
+            bail!("{name} must be between 0 and 1");
+        }
+        Ok(value as f32)
+    };
+    let vignette = effect("data-hf-vignette")?;
+    let grain = effect("data-hf-grain")?;
     let inferred_duration = pending
         .iter()
         .enumerate()
@@ -125,6 +141,7 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
         bail!("unknown duration: add data-duration to the root or clips");
     }
     let mut elements = Vec::with_capacity(pending.len());
+    let mut transitions = Vec::new();
     for (idx, mut p) in pending.into_iter().enumerate() {
         p.element.start = memo[idx].unwrap();
         p.element.end = if let Some(d) = p.duration {
@@ -157,9 +174,21 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
                 bail!("data-hf-keyframes exceeds the duration of {label}");
             }
             p.element.motion = motion_from_keyframes(rest, &p.keyframes);
+        } else if !p.camera.is_empty() {
+            if idx == 0 {
+                bail!("data-hf-camera cannot be on the root; add a container inside it");
+            }
+            if p.camera.last().is_some_and(|frame| frame.at > clip_len + 1e-9) {
+                bail!("data-hf-camera exceeds the duration of {label}");
+            }
+            p.element.motion = motion_from_camera(rest, &p.camera);
+        }
+        if let Some(spec) = p.transition.take() {
+            transitions.push((idx, spec));
         }
         elements.push(p.element);
     }
+    apply_transitions(&mut elements, &transitions, &ids, (width, height))?;
     let background = match elements[0].style.background {
         Some(Background::Solid(color)) => color,
         _ => Color::BLACK,
@@ -169,6 +198,8 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
         height,
         duration,
         background,
+        vignette,
+        grain,
         elements,
         ids,
     })

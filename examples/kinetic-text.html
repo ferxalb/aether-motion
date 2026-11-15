@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Kinetic text</title>
+<style>
+  #root { background: #0b1020; }
+  .clip { position: absolute; }
+  .headline { left: 160px; width: 1600px; color: #ffffff; font-size: 120px; font-weight: 800; text-align: center; }
+  #h1 { top: 300px; }
+  #h2 { top: 470px; font-size: 64px; color: #8fa3c4; font-weight: 500; }
+  #h3 { top: 640px; font-size: 96px; color: #4be0b8; overflow: hidden; height: 130px; }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="kinetic-text" data-width="1920" data-height="1080" data-duration="5">
+  <!-- Words rise and fade in one after another. -->
+  <div id="h1" class="clip headline" data-start="0" data-duration="5" data-track-index="0"
+       data-hf-split="words" data-hf-stagger="0.12">Make every frame count</div>
+  <!-- Letters pop in with a spring-like overshoot. -->
+  <div id="h2" class="clip headline" data-start="0.8" data-duration="4.2" data-track-index="1"
+       data-hf-split="chars" data-hf-split-from="scale" data-hf-stagger="0.03"
+       data-hf-split-easing="ease-out-back">Deterministic. Native. Fast.</div>
+  <!-- Line reveal: words slide up from under the clipped edge. -->
+  <div id="h3" class="clip headline" data-start="1.6" data-duration="3.4" data-track-index="2"
+       data-hf-split="words" data-hf-split-from="mask" data-hf-stagger="0.15">Premium by default</div>
+</div>
+</body>
+</html>
