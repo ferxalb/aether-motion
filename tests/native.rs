@@ -98,7 +98,7 @@ fn check_reports_ok_and_actionable_errors() {
     std::fs::write(&bad, r#"<div data-composition-id="x" data-width="100" data-height="100" data-duration="1"><script>1</script></div>"#).unwrap();
     let report = aether_hyperframes::agent::check(&bad);
     assert_eq!(report["ok"], false);
-    assert!(report["fix"].as_str().unwrap().contains("elimina"));
+    assert!(report["fix"].as_str().unwrap().contains("remove"));
 }
 
 #[test]
@@ -138,8 +138,8 @@ fn animates_nested_clips_deterministically_at_arbitrary_times() {
     assert!(report["error"]
         .as_str()
         .unwrap()
-        .contains("fotograma clave 3"));
-    assert!(report["fix"].as_str().unwrap().contains("ascendente"));
+        .contains("keyframe 3"));
+    assert!(report["fix"].as_str().unwrap().contains("increasing"));
     std::fs::remove_dir_all(dir).unwrap();
 }
 
@@ -241,7 +241,7 @@ fn parallel_segments_are_byte_identical_for_any_thread_count() {
         std::fs::read(&outputs[0]).unwrap(),
         std::fs::read(&outputs[1]).unwrap(),
     );
-    assert_eq!(a, b, "el MP4 no debe depender del número de hilos");
+    assert_eq!(a, b, "MP4 output must not depend on the thread count");
     let size = a.len() as u64;
     let mut mp4 =
         mp4::Mp4Reader::read_header(BufReader::new(File::open(&outputs[0]).unwrap()), size)
@@ -250,7 +250,7 @@ fn parallel_segments_are_byte_identical_for_any_thread_count() {
     let sync: Vec<u32> = (1..=12)
         .filter(|&i| mp4.read_sample(1, i).unwrap().unwrap().is_sync)
         .collect();
-    assert_eq!(sync, [1, 5, 9], "un IDR al inicio de cada segmento");
+    assert_eq!(sync, [1, 5, 9], "an IDR at the start of each segment");
     drop(mp4);
     std::fs::remove_dir_all(dir).unwrap();
 }
@@ -275,4 +275,126 @@ fn forked_renderer_matches_fresh_render_in_any_order() {
     }
     assert!(main.render_frame(0, 10).is_ok());
     std::fs::remove_dir_all(dir).unwrap();
+}
+
+fn css_composition(name: &str, css: &str, body: &str) -> std::path::PathBuf {
+    let html = format!(
+        r#"<html><head><style>{css}</style></head><body>
+        <main data-composition-id="css" data-width="16" data-height="16" data-duration="6">{body}</main>
+        </body></html>"#
+    );
+    let dir = std::env::temp_dir().join(format!("aether-hf-css-{name}-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("css.html");
+    std::fs::write(&path, html).unwrap();
+    path
+}
+
+/// Red channel of the pixel at (x, y) in a 16x16 render at scale 1.
+fn red_at(renderer: &mut Renderer, time: f64, x: usize, y: usize) -> u8 {
+    renderer.render_at(time).unwrap()[(y * 16 + x) * 4]
+}
+
+#[test]
+fn css_keyframes_animate_with_fill_modes() {
+    let css = "@keyframes slide { from { transform: translate(0, 0) } to { transform: translate(8px, 0) } }
+        .box { left: 0; top: 0; width: 4px; height: 4px; background: #f00 }";
+    let hold = css_composition(
+        "hold",
+        css,
+        r#"<div class="clip box" data-start="0" data-duration="6" style="animation: slide 2s linear forwards"></div>"#,
+    );
+    let composition = parse_file(&hold).unwrap();
+    let mut r = Renderer::new(&composition, 1.0).unwrap();
+    assert_eq!(red_at(&mut r, 0.0, 1, 1), 255);
+    assert_eq!(red_at(&mut r, 1.0, 1, 1), 0, "moved 4px at the midpoint");
+    assert_eq!(red_at(&mut r, 1.0, 5, 1), 255);
+    assert_eq!(
+        red_at(&mut r, 4.0, 9, 1),
+        255,
+        "forwards holds the end pose"
+    );
+
+    let reset = css_composition(
+        "reset",
+        css,
+        r#"<div class="clip box" data-start="0" data-duration="6" style="animation: slide 2s linear"></div>"#,
+    );
+    let composition = parse_file(&reset).unwrap();
+    let mut r = Renderer::new(&composition, 1.0).unwrap();
+    assert_eq!(red_at(&mut r, 4.0, 1, 1), 255, "fill none returns to rest");
+    assert_eq!(red_at(&mut r, 4.0, 9, 1), 0);
+}
+
+#[test]
+fn css_delay_direction_and_iterations_are_a_pure_function_of_time() {
+    let css =
+        "@keyframes slide { from { transform: translateX(0) } to { transform: translateX(8px) } }
+        .box { left: 0; top: 0; width: 4px; height: 4px; background: #f00 }";
+    let path = css_composition(
+        "loop",
+        css,
+        r#"<div class="clip box" data-start="0" data-duration="6"
+            style="animation: slide 2s linear 1s infinite alternate both"></div>"#,
+    );
+    let composition = parse_file(&path).unwrap();
+    let mut r = Renderer::new(&composition, 1.0).unwrap();
+    assert_eq!(
+        red_at(&mut r, 0.5, 1, 1),
+        255,
+        "backwards fill holds 0% during the delay"
+    );
+    // Iteration 0 forwards: at 2s elapsed 1s => +4px. Iteration 1 backwards: at 4s => +4px again.
+    let forward = r.render_at(2.0).unwrap().to_vec();
+    let backward = r.render_at(4.0).unwrap().to_vec();
+    assert_eq!(forward, backward);
+    // Same time reached in a different order renders the same bytes.
+    let again = r.render_at(2.0).unwrap().to_vec();
+    assert_eq!(forward, again);
+    assert_eq!(red_at(&mut r, 3.0, 9, 1), 255, "end of the first leg");
+}
+
+#[test]
+fn css_variables_color_functions_and_scale() {
+    let css = ":root { --size: 4px; --accent: rgb(255 0 0) }
+        .box { left: 6px; top: 6px; width: var(--size); height: var(--size, 9px); background: var(--accent);
+               transform: scale(2) }";
+    let path = css_composition(
+        "vars",
+        css,
+        r#"<div class="clip box" data-start="0" data-duration="6"></div>"#,
+    );
+    let composition = parse_file(&path).unwrap();
+    let mut r = Renderer::new(&composition, 1.0).unwrap();
+    // 4px box centered at (8, 8), doubled: covers 4..12.
+    assert_eq!(red_at(&mut r, 0.0, 4, 4), 255);
+    assert_eq!(red_at(&mut r, 0.0, 11, 11), 255);
+    assert_eq!(red_at(&mut r, 0.0, 3, 8), 0);
+    assert_eq!(red_at(&mut r, 0.0, 12, 8), 0);
+}
+
+#[test]
+fn css_animation_errors_are_explicit() {
+    let cases = [
+        (".a { animation: nope 1s }", "@keyframes nope"),
+        (
+            "@keyframes k { to { left: 5px } } .a { animation: k 1s }",
+            "unsupported property: left",
+        ),
+        (".a { width: var(--missing) }", "CSS variable not defined"),
+        (
+            "@keyframes k { to { opacity: 0 } } .a { animation: k }",
+            "animation-duration is missing",
+        ),
+        ("@media print { .a { width: 1px } }", "@"),
+    ];
+    for (i, (css, expected)) in cases.iter().enumerate() {
+        let path = css_composition(
+            &format!("err{i}"),
+            css,
+            r#"<div class="clip a" data-start="0" data-duration="2"></div>"#,
+        );
+        let error = format!("{:#}", parse_file(&path).unwrap_err());
+        assert!(error.contains(expected), "{css}: {error}");
+    }
 }

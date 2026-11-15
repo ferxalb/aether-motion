@@ -12,14 +12,14 @@ use std::time::Instant;
 
 fn usage() -> &'static str {
     "aether-hyperframes 0.1\n\
-Uso:\n\
-  aether-hyperframes inspect <composicion.html>\n\
-  aether-hyperframes render <composicion.html> --output <video.mp4|frame.png> [--fps 30] [--scale 1 | --size 1080p|4k] [--threads N (por defecto: núcleos, máx. 4)] [--encoder native|ffmpeg] [--frame N]\n\
-  aether-hyperframes bench <composicion.html> [--fps 30] [--scale 1 | --size 1080p|4k]\n\
-  aether-hyperframes check <composicion.html>   (JSON; sale con 1 si falla)\n\
-  aether-hyperframes mcp                        (servidor MCP por stdio, para agentes)\n\
-El backend nativo acepta un subconjunto explícito de HTML/CSS de HyperFrames.\n\
-MP4 usa OpenH264 integrado por defecto; --encoder ffmpeg requiere FFmpeg en PATH."
+Usage:\n\
+  aether-hyperframes inspect <composition.html>\n\
+  aether-hyperframes render <composition.html> --output <video.mp4|frame.png> [--fps 30] [--scale 1 | --size 1080p|4k] [--threads N (default: cores, max 4)] [--encoder native|ffmpeg] [--frame N]\n\
+  aether-hyperframes bench <composition.html> [--fps 30] [--scale 1 | --size 1080p|4k]\n\
+  aether-hyperframes check <composition.html>   (JSON; exits with 1 on failure)\n\
+  aether-hyperframes mcp                        (MCP server over stdio for agents)\n\
+The native backend accepts an explicit subset of HyperFrames HTML/CSS.\n\
+MP4 uses built-in OpenH264 by default; --encoder ffmpeg requires FFmpeg on PATH."
 }
 
 #[derive(Debug)]
@@ -46,11 +46,11 @@ fn options() -> Result<Option<Options>> {
         return Ok(None);
     }
     if !matches!(command.as_str(), "inspect" | "render" | "bench") {
-        bail!("comando desconocido: {command}\n{}", usage());
+        bail!("unknown command: {command}\n{}", usage());
     }
     let input = args
         .next()
-        .ok_or_else(|| anyhow!("falta <composicion.html>"))?
+        .ok_or_else(|| anyhow!("missing <composition.html>"))?
         .into();
     let mut opts = Options {
         command,
@@ -64,29 +64,29 @@ fn options() -> Result<Option<Options>> {
         frame: None,
     };
     while let Some(arg) = args.next() {
-        let value = args.next().ok_or_else(|| anyhow!("falta valor de {arg}"))?;
+        let value = args.next().ok_or_else(|| anyhow!("missing value for {arg}"))?;
         match arg.as_str() {
             "--output" => opts.output = Some(value.into()),
-            "--fps" => opts.fps = value.parse().context("--fps inválido")?,
-            "--scale" => opts.scale = Some(value.parse().context("--scale inválido")?),
+            "--fps" => opts.fps = value.parse().context("invalid --fps")?,
+            "--scale" => opts.scale = Some(value.parse().context("invalid --scale")?),
             "--size" => opts.size = Some(value.parse()?),
-            "--threads" => opts.threads = value.parse().context("--threads inválido")?,
+            "--threads" => opts.threads = value.parse().context("invalid --threads")?,
             "--encoder" => opts.encoder = value,
-            "--frame" => opts.frame = Some(value.parse().context("--frame inválido")?),
-            _ => bail!("opción desconocida: {arg}"),
+            "--frame" => opts.frame = Some(value.parse().context("invalid --frame")?),
+            _ => bail!("unknown option: {arg}"),
         }
     }
     if opts.size.is_some() && opts.scale.is_some() {
-        bail!("elige --size o --scale");
+        bail!("choose either --size or --scale");
     }
     if opts.fps == 0 || opts.fps > 240 {
-        bail!("--fps debe estar entre 1 y 240");
+        bail!("--fps must be between 1 and 240");
     }
     if opts.threads == 0 || opts.threads > 64 {
-        bail!("--threads debe estar entre 1 y 64");
+        bail!("--threads must be between 1 and 64");
     }
     if opts.encoder != "native" && opts.encoder != "ffmpeg" {
-        bail!("--encoder debe ser native o ffmpeg");
+        bail!("--encoder must be native or ffmpeg");
     }
     Ok(Some(opts))
 }
@@ -95,24 +95,24 @@ fn png(renderer: &mut Renderer<'_>, output: &Path, frame: usize, fps: u32) -> Re
     let (w, h) = renderer.dimensions();
     let pixels = renderer.render_frame(frame, fps)?;
     image::save_buffer(output, pixels, w, h, ColorType::Rgba8)
-        .with_context(|| format!("no se pudo guardar {}", output.display()))?;
+        .with_context(|| format!("could not save {}", output.display()))?;
     Ok(())
 }
 
 fn mp4_ffmpeg(renderer: &mut Renderer<'_>, output: &Path, fps: u32, threads: u32) -> Result<()> {
     let (w, h) = renderer.dimensions();
     if w % 2 != 0 || h % 2 != 0 {
-        bail!("MP4 yuv420p necesita dimensiones pares; cambia --scale");
+        bail!("MP4 yuv420p requires even dimensions; change --scale");
     }
     if output.exists() {
-        bail!("salida ya existe: {}", output.display());
+        bail!("output already exists: {}", output.display());
     }
     let parent = output
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
     if !parent.exists() {
-        bail!("directorio de salida no existe: {}", parent.display());
+        bail!("output directory does not exist: {}", parent.display());
     }
     let partial = output.with_extension(format!("aether-{}.partial.mp4", std::process::id()));
     let size = format!("{w}x{h}");
@@ -151,23 +151,23 @@ fn mp4_ffmpeg(renderer: &mut Renderer<'_>, output: &Path, fps: u32, threads: u32
         .stderr(Stdio::inherit())
         .stdout(Stdio::null())
         .spawn()
-        .context("no se pudo iniciar FFmpeg; instala FFmpeg y añádelo a PATH")?;
+        .context("could not start FFmpeg; install it and add it to PATH")?;
     let result = (|| -> Result<()> {
         let mut stdin = child
             .stdin
             .take()
-            .ok_or_else(|| anyhow!("pipe de FFmpeg no disponible"))?;
+            .ok_or_else(|| anyhow!("FFmpeg pipe is unavailable"))?;
         for frame in 0..renderer.frame_count(fps) {
             stdin
                 .write_all(renderer.render_frame(frame, fps)?)
-                .with_context(|| format!("FFmpeg cerró el pipe en frame {frame}"))?;
+                .with_context(|| format!("FFmpeg closed the pipe at frame {frame}"))?;
         }
         drop(stdin);
-        let status = child.wait().context("no se pudo esperar a FFmpeg")?;
+        let status = child.wait().context("could not wait for FFmpeg")?;
         if !status.success() {
-            bail!("FFmpeg terminó con {status}");
+            bail!("FFmpeg exited with {status}");
         }
-        fs::rename(&partial, output).context("no se pudo guardar MP4")?;
+        fs::rename(&partial, output).context("could not save MP4")?;
         Ok(())
     })();
     if result.is_err() {
@@ -185,7 +185,7 @@ fn main() -> Result<()> {
         Some("check") => {
             let file = raw
                 .next()
-                .ok_or_else(|| anyhow!("falta <composicion.html>"))?;
+                .ok_or_else(|| anyhow!("missing <composition.html>"))?;
             let report = aether_hyperframes::agent::check(Path::new(&file));
             println!("{}", serde_json::to_string_pretty(&report)?);
             std::process::exit(if report["ok"] == true { 0 } else { 1 });
@@ -198,7 +198,7 @@ fn main() -> Result<()> {
     let composition = parse_file(&opts.input)?;
     if opts.command == "inspect" {
         println!(
-            "{}x{} | {:.3} s | {} elementos",
+            "{}x{} | {:.3} s | {} elements",
             composition.width,
             composition.height,
             composition.duration,
@@ -207,8 +207,8 @@ fn main() -> Result<()> {
         for element in &composition.elements {
             if element.parent.is_some() && (element.end - element.start) < composition.duration {
                 println!(
-                    "  {} <{}> {:.3}..{:.3} s, pista {}",
-                    element.id.as_deref().unwrap_or("sin id"),
+                    "  {} <{}> {:.3}..{:.3} s, track {}",
+                    element.id.as_deref().unwrap_or("no id"),
                     element.tag,
                     element.start,
                     element.end,
@@ -233,12 +233,12 @@ fn main() -> Result<()> {
         let output = opts
             .output
             .as_deref()
-            .ok_or_else(|| anyhow!("render requiere --output"))?;
+            .ok_or_else(|| anyhow!("render requires --output"))?;
         match output.extension().and_then(|x| x.to_str()) {
             Some("png") => png(&mut renderer, output, opts.frame.unwrap_or(0), opts.fps)?,
             Some("mp4") => {
                 if opts.frame.is_some() {
-                    bail!("--frame solo aplica a PNG");
+                    bail!("--frame only applies to PNG");
                 }
                 if opts.encoder == "native" {
                     encode_native(&mut renderer, output, opts.fps, opts.threads)?;
@@ -246,13 +246,13 @@ fn main() -> Result<()> {
                     mp4_ffmpeg(&mut renderer, output, opts.fps, opts.threads)?;
                 }
             }
-            _ => bail!("salida debe terminar en .png o .mp4"),
+            _ => bail!("output must end in .png or .mp4"),
         }
     }
     let elapsed = start.elapsed().as_secs_f64();
     let stats = renderer.stats();
     println!(
-        "{}x{} | {frames} frames | {:.3} s | rasterizados {} | reutilizados {}",
+        "{}x{} | {frames} frames | {:.3} s | rasterized {} | reused {}",
         w, h, elapsed, stats.rasterized, stats.reused
     );
     Ok(())

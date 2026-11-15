@@ -24,7 +24,7 @@ impl NalFrame {
         let nal = unit
             .strip_prefix(&[0, 0, 0, 1])
             .or_else(|| unit.strip_prefix(&[0, 0, 1]))
-            .ok_or_else(|| anyhow!("NAL H.264 sin start code"))?;
+            .ok_or_else(|| anyhow!("H.264 NAL unit has no start code"))?;
         if nal.is_empty() {
             return Ok(());
         }
@@ -33,7 +33,7 @@ impl NalFrame {
             8 => self.pps = Some(nal.to_vec()),
             9 => {} // Access unit delimiters are not needed inside MP4 samples.
             _ => {
-                let len = u32::try_from(nal.len()).context("NAL demasiado grande")?;
+                let len = u32::try_from(nal.len()).context("NAL unit is too large")?;
                 self.sample.extend_from_slice(&len.to_be_bytes());
                 self.sample.extend_from_slice(nal);
             }
@@ -49,27 +49,27 @@ pub fn encode_native(
     threads: u32,
 ) -> Result<()> {
     if !(1..=60).contains(&fps) {
-        bail!("OpenH264 admite de 1 a 60 fps");
+        bail!("OpenH264 supports 1 to 60 fps");
     }
     if !(1..=64).contains(&threads) {
-        bail!("threads debe estar entre 1 y 64");
+        bail!("threads must be between 1 and 64");
     }
     let (width, height) = renderer.dimensions();
     if width.max(height) > 3840 || width.min(height) > 2160 {
-        bail!("OpenH264 admite hasta 3840×2160 o 2160×3840; usa --size 4k o --scale");
+        bail!("OpenH264 supports up to 3840×2160 or 2160×3840; use --size 4k or --scale");
     }
     if width % 2 != 0 || height % 2 != 0 {
-        bail!("MP4 yuv420p necesita dimensiones pares; cambia --scale");
+        bail!("MP4 yuv420p requires even dimensions; change --scale");
     }
     if output.exists() {
-        bail!("salida ya existe: {}", output.display());
+        bail!("output already exists: {}", output.display());
     }
     let parent = output
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
     if !parent.exists() {
-        bail!("directorio de salida no existe: {}", parent.display());
+        bail!("output directory does not exist: {}", parent.display());
     }
     let partial = output.with_extension(format!("aether-{}.partial.mp4", std::process::id()));
     let frame_count = renderer.frame_count(fps);
@@ -92,7 +92,7 @@ pub fn encode_native(
                             }
                         }
                     })
-                    .context("no se pudo iniciar el hilo de dibujo")?;
+                    .context("could not start the drawing thread")?;
                 let result = write_video(
                     &partial,
                     (width, height),
@@ -103,7 +103,7 @@ pub fn encode_native(
                 );
                 producer
                     .join()
-                    .map_err(|_| anyhow!("falló el hilo de dibujo"))?;
+                    .map_err(|_| anyhow!("drawing thread failed"))?;
                 result?;
                 Ok(())
             })?;
@@ -117,7 +117,7 @@ pub fn encode_native(
                 video_frames(renderer, fps),
             )?;
         }
-        fs::rename(&partial, output).context("no se pudo guardar MP4")?;
+        fs::rename(&partial, output).context("could not save MP4")?;
         Ok(())
     })();
     if result.is_err() {
@@ -197,7 +197,7 @@ fn encode_one(
         .map_err(|e| anyhow!("OpenH264 frame {frame}: {e}"))?;
     let frame_type = encoded.frame_type();
     if matches!(frame_type, FrameType::Skip | FrameType::Invalid) {
-        bail!("OpenH264 omitió el frame {frame}: {frame_type:?}");
+        bail!("OpenH264 omitted frame {frame}: {frame_type:?}");
     }
     let mut nal = NalFrame::default();
     for i in 0..encoded.num_layers() {
@@ -208,7 +208,7 @@ fn encode_one(
         }
     }
     if nal.sample.is_empty() {
-        bail!("OpenH264 no produjo datos de video para el frame {frame}");
+        bail!("OpenH264 produced no video data for frame {frame}");
     }
     Ok((nal, frame_type))
 }
@@ -220,7 +220,7 @@ fn start_mp4(
     sps: Vec<u8>,
     pps: Vec<u8>,
 ) -> Result<Mp4Writer<File>> {
-    let file = File::create(partial).context("no se pudo crear MP4")?;
+    let file = File::create(partial).context("could not create MP4")?;
     let container = Mp4Config {
         major_brand: "isom".parse()?,
         minor_version: 512,
@@ -273,11 +273,11 @@ fn write_video(
         let (nal, frame_type) = encode_one(&mut encoder, &yuv, frame, fps)?;
         if writer.is_none() {
             if frame_type != FrameType::IDR {
-                bail!("el primer frame H.264 no es IDR");
+                bail!("the first H.264 frame is not IDR");
             }
             let (sps, pps) = (
-                nal.sps.ok_or_else(|| anyhow!("falta SPS H.264"))?,
-                nal.pps.ok_or_else(|| anyhow!("falta PPS H.264"))?,
+                nal.sps.ok_or_else(|| anyhow!("missing H.264 SPS"))?,
+                nal.pps.ok_or_else(|| anyhow!("missing H.264 PPS"))?,
             );
             writer = Some(start_mp4(partial, dimensions, fps, sps, pps)?);
         }
@@ -289,9 +289,9 @@ fn write_video(
         written += 1;
     }
     if written != frame_count {
-        bail!("se produjeron {written} de {frame_count} fotogramas");
+        bail!("produced {written} of {frame_count} frames");
     }
-    let mut writer = writer.ok_or_else(|| anyhow!("composición sin frames"))?;
+    let mut writer = writer.ok_or_else(|| anyhow!("composition has no frames"))?;
     writer.write_end()?;
     Ok(())
 }
@@ -331,7 +331,7 @@ fn encode_segment(
         let (nal, frame_type) = encode_one(&mut encoder, &yuv, frame, fps)?;
         if samples.is_empty() {
             if frame_type != FrameType::IDR {
-                bail!("el primer frame del segmento {index} no es IDR");
+                bail!("the first frame of segment {index} is not IDR");
             }
             sps = nal.sps;
             pps = nal.pps;
@@ -343,8 +343,8 @@ fn encode_segment(
         rasterized: renderer.stats().rasterized - before.0,
         reused: renderer.stats().reused - before.1,
         samples,
-        sps: sps.ok_or_else(|| anyhow!("falta SPS H.264 en segmento {index}"))?,
-        pps: pps.ok_or_else(|| anyhow!("falta PPS H.264 en segmento {index}"))?,
+        sps: sps.ok_or_else(|| anyhow!("missing H.264 SPS en segmento {index}"))?,
+        pps: pps.ok_or_else(|| anyhow!("missing H.264 PPS en segmento {index}"))?,
     })
 }
 
@@ -386,7 +386,7 @@ fn write_segmented(
                         break;
                     }
                 })
-                .context("no se pudo iniciar un hilo de codificación")?;
+                .context("could not start an encoding thread")?;
         }
         drop(sender);
         let mut pending: BTreeMap<usize, EncodedSegment> = BTreeMap::new();
@@ -410,7 +410,7 @@ fn write_segmented(
                         parameter_sets = Some((segment.sps, segment.pps));
                     }
                     Some((sps, pps)) if *sps != segment.sps || *pps != segment.pps => {
-                        bail!("los segmentos H.264 no comparten SPS/PPS")
+                        bail!("H.264 segments do not share SPS/PPS")
                     }
                     Some(_) => {}
                 }
@@ -424,10 +424,10 @@ fn write_segmented(
             }
         }
         if frame != frame_count {
-            bail!("se produjeron {frame} de {frame_count} fotogramas");
+            bail!("produced {frame} of {frame_count} frames");
         }
         writer
-            .ok_or_else(|| anyhow!("composición sin frames"))?
+            .ok_or_else(|| anyhow!("composition has no frames"))?
             .write_end()?;
         Ok(totals)
     })

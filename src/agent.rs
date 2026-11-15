@@ -1,4 +1,4 @@
-//! Modo agéntico: `check` estructurado y servidor MCP por stdio.
+//! Agent mode: structured `check` and MCP server over stdio.
 use crate::encode::encode_native;
 use crate::model::{Composition, Content};
 use crate::parse::parse_file;
@@ -14,27 +14,33 @@ pub const GUIDE: &str = include_str!("../AGENTS.md");
 
 fn fix_hint(message: &str) -> &'static str {
     if message.contains("data-hf-keyframes") {
-        "usa un array JSON con at en segundos locales, estrictamente ascendente y dentro del clip; revisa el campo indicado"
-    } else if message.contains("no se pudo leer imagen") || message.contains("imágenes locales") {
-        "comprueba que el PNG, JPEG o WebP exista y que src sea relativo al HTML"
-    } else if message.contains("JavaScript") || message.contains("elemento HTML no soportado") {
-        "elimina el elemento o reemplázalo por div, texto o img local"
-    } else if message.contains("id duplicado") {
-        "usa un id único por elemento"
-    } else if message.contains("data-start referencia") {
-        "apunta data-start a un id existente que tenga data-duration"
-    } else if message.contains("duración desconocida") {
-        "añade data-duration al root o a cada clip"
+        "use a JSON array with at in local seconds, strictly increasing and within the clip; check the indicated field"
+    } else if message.contains("CSS variable") || message.contains("var()") {
+        "define --name on :root or an ancestor, or add a fallback: var(--name, value)"
+    } else if message.contains("animation") || message.contains("@keyframes") {
+        "define @keyframes name { from {..} 50% {..} to {..} } using only transform (translate/scale), opacity and animation-timing-function, then use animation: name 1s ease-out [delay] [count] [direction] [fill-mode]"
+    } else if message.contains("unsupported CSS") || message.contains("unsupported transform") {
+        "use a supported CSS value; see the contract in AGENTS.md"
+    } else if message.contains("could not read image") || message.contains("local images") {
+        "make sure the PNG, JPEG, or WebP file exists and that src is relative to the HTML file"
+    } else if message.contains("JavaScript") || message.contains("unsupported HTML element") {
+        "remove the element or replace it with a div, text, or local img"
+    } else if message.contains("duplicate id") {
+        "use a unique id for each element"
+    } else if message.contains("data-start references") {
+        "point data-start to an existing id with data-duration"
+    } else if message.contains("unknown duration") {
+        "add data-duration to the root or to each clip"
     } else if message.contains("data-composition-id") {
-        "añade data-composition-id, data-width y data-height al root"
-    } else if message.contains("no soportado") || message.contains("solo px") {
-        "usa un valor soportado; ver contrato en AGENTS.md"
+        "add data-composition-id, data-width, and data-height to the root"
+    } else if message.contains("not supported") || message.contains("only px") {
+        "use a supported value; see the contract in AGENTS.md"
     } else {
-        "revisa el contrato en AGENTS.md"
+        "see the contract in AGENTS.md"
     }
 }
 
-/// Valida la estructura y las cabeceras de imágenes, y dibuja un fotograma de prueba.
+/// Validates the structure and image headers, then renders a test frame.
 pub fn check(path: &Path) -> Value {
     let run = || -> Result<Value> {
         let c = parse_file(path)?;
@@ -58,10 +64,10 @@ pub fn check(path: &Path) -> Value {
         let animations: Vec<Value> = c
             .elements
             .iter()
-            .filter(|e| !e.keyframes.is_empty())
+            .filter(|e| !e.motion.is_static())
             .map(|e| {
                 json!({"id": e.id, "tag": e.tag, "start": e.start, "end": e.end,
-                "keyframeTimes": e.keyframes.iter().map(|key| key.at).collect::<Vec<_>>()})
+                "keyframeTimes": e.motion.times()})
             })
             .collect();
         Ok(
@@ -103,11 +109,11 @@ fn base64(d: &[u8]) -> String {
 fn renderer_for<'a>(composition: &'a Composition, args: &Value) -> Result<Renderer<'a>> {
     if let Some(size) = args.get("size") {
         if args.get("scale").is_some() {
-            return Err(anyhow!("elige size o scale"));
+            return Err(anyhow!("choose either size or scale"));
         }
         let size = size
             .as_str()
-            .ok_or_else(|| anyhow!("size debe ser 1080p o 4k"))?;
+            .ok_or_else(|| anyhow!("size must be 1080p or 4k"))?;
         return Renderer::with_output_size(composition, size.parse()?);
     }
     let scale = args.get("scale").and_then(Value::as_f64).unwrap_or(1.0) as f32;
@@ -131,13 +137,13 @@ fn text(s: impl Into<String>) -> Value {
 }
 
 fn tools() -> Value {
-    let path = json!({"type": "string", "description": "Ruta a la composición .html"});
+    let path = json!({"type": "string", "description": "Path to the .html composition"});
     json!([
-        {"name": "aether_guide", "description": "Contrato del formato y bucle de trabajo. Léelo antes de escribir una composición.", "inputSchema": {"type": "object", "properties": {}}},
-        {"name": "aether_write", "description": "Escribe una composición HTML y la valida. No sobrescribe salvo overwrite=true.", "inputSchema": {"type": "object", "properties": {"path": path, "html": {"type": "string"}, "overwrite": {"type": "boolean"}}, "required": ["path", "html"]}},
-        {"name": "aether_check", "description": "Valida la composición; devuelve JSON con error y fix si falla.", "inputSchema": {"type": "object", "properties": {"path": path}, "required": ["path"]}},
-        {"name": "aether_snapshot", "description": "Dibuja en el segundo exacto t (0 <= t < duración) y devuelve un PNG.", "inputSchema": {"type": "object", "properties": {"path": path, "t": {"type": "number"}, "scale": {"type": "number"}, "size": {"type": "string", "enum": ["1080p", "4k"]}}, "required": ["path"]}},
-        {"name": "aether_render", "description": "Renderiza a MP4 (H.264 nativo). No sobrescribe salidas existentes.", "inputSchema": {"type": "object", "properties": {"path": path, "output": {"type": "string"}, "fps": {"type": "integer", "minimum": 1, "maximum": 60}, "threads": {"type": "integer", "minimum": 1, "maximum": 64}, "scale": {"type": "number"}, "size": {"type": "string", "enum": ["1080p", "4k"]}}, "required": ["path", "output"]}}
+        {"name": "aether_guide", "description": "Format contract and work loop. Read it before writing a composition.", "inputSchema": {"type": "object", "properties": {}}},
+        {"name": "aether_write", "description": "Write an HTML composition and validate it. Do not overwrite unless overwrite=true.", "inputSchema": {"type": "object", "properties": {"path": path, "html": {"type": "string"}, "overwrite": {"type": "boolean"}}, "required": ["path", "html"]}},
+        {"name": "aether_check", "description": "Validate the composition; return JSON with an error and fix on failure.", "inputSchema": {"type": "object", "properties": {"path": path}, "required": ["path"]}},
+        {"name": "aether_snapshot", "description": "Render the exact second t (0 <= t < duration) and return a PNG.", "inputSchema": {"type": "object", "properties": {"path": path, "t": {"type": "number"}, "scale": {"type": "number"}, "size": {"type": "string", "enum": ["1080p", "4k"]}}, "required": ["path"]}},
+        {"name": "aether_render", "description": "Render to MP4 (native H.264). Does not overwrite existing outputs.", "inputSchema": {"type": "object", "properties": {"path": path, "output": {"type": "string"}, "fps": {"type": "integer", "minimum": 1, "maximum": 60}, "threads": {"type": "integer", "minimum": 1, "maximum": 64}, "scale": {"type": "number"}, "size": {"type": "string", "enum": ["1080p", "4k"]}}, "required": ["path", "output"]}}
     ])
 }
 
@@ -148,25 +154,25 @@ fn call(name: &str, a: &Value) -> Result<Value> {
         "aether_guide" => Ok(text(GUIDE)),
         "aether_write" => {
             if path.extension().and_then(|e| e.to_str()) != Some("html") {
-                return Err(anyhow!("la ruta debe terminar en .html"));
+                return Err(anyhow!("the path must end in .html"));
             }
             if path.exists() && a.get("overwrite").and_then(Value::as_bool) != Some(true) {
-                return Err(anyhow!("{} ya existe; usa overwrite=true", path.display()));
+                return Err(anyhow!("{} already exists; use overwrite=true", path.display()));
             }
-            std::fs::write(path, s("html").ok_or_else(|| anyhow!("falta html"))?)?;
+            std::fs::write(path, s("html").ok_or_else(|| anyhow!("missing html"))?)?;
             Ok(text(check(path).to_string()))
         }
         "aether_check" => Ok(text(check(path).to_string())),
         "aether_snapshot" => snapshot(path, a.get("t").and_then(Value::as_f64).unwrap_or(0.0), a),
         "aether_render" => {
-            let out = Path::new(s("output").ok_or_else(|| anyhow!("falta output"))?);
+            let out = Path::new(s("output").ok_or_else(|| anyhow!("missing output"))?);
             let integer = |name: &str, default| -> Result<u32> {
                 match a.get(name) {
                     None => Ok(default),
                     Some(value) => value
                         .as_u64()
                         .and_then(|n| u32::try_from(n).ok())
-                        .ok_or_else(|| anyhow!("{name} requiere un entero positivo")),
+                        .ok_or_else(|| anyhow!("{name} must be a positive integer")),
                 }
             };
             let fps = integer("fps", 30)?;
@@ -178,18 +184,18 @@ fn call(name: &str, a: &Value) -> Result<Value> {
                 Some("mp4") => encode_native(&mut r, out, fps, threads)?,
                 _ => {
                     return Err(anyhow!(
-                        "output debe terminar en .mp4; para un fotograma usa aether_snapshot"
+                        "output must end in .mp4; use aether_snapshot for a frame"
                     ))
                 }
             }
             Ok(text(format!(
-                "{} frames en {:.2}s -> {}",
+                "{} frames in {:.2}s -> {}",
                 r.frame_count(fps),
                 t0.elapsed().as_secs_f64(),
                 out.display()
             )))
         }
-        _ => Err(anyhow!("herramienta desconocida: {name}")),
+        _ => Err(anyhow!("unknown tool: {name}")),
     }
 }
 
@@ -218,7 +224,7 @@ pub fn serve() -> Result<()> {
                 ))
             }
             "ping" => Some(Ok(json!({}))),
-            _ if id.is_some() => Some(Err(format!("método no encontrado: {method}"))),
+            _ if id.is_some() => Some(Err(format!("method not found: {method}"))),
             _ => None,
         };
         if let (Some(id), Some(r)) = (id, result) {

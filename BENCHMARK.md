@@ -1,51 +1,51 @@
-# Medición inicial
+# Initial measurements
 
-Compilación `cargo build --release`. Composición [`examples/title-card.html`](examples/title-card.html): 4 s, 24 fps, 96 frames, salida a 1920×1080 (`--scale 3`). Medición de tiempo real y RSS con herramientas del sistema.
+Built with `cargo build --release`. Composition: [`examples/title-card.html`](examples/title-card.html), 4 s, 24 fps, 96 frames, rendered at 1920×1080 (`--scale 3`). Wall time and RSS were measured with system tools.
 
-| Prueba | Tiempo interno | Tiempo real | RSS máximo | Resultado |
+| Test | Internal time | Wall time | Peak RSS | Result |
 | --- | ---: | ---: | ---: | --- |
-| `bench` (solo dibujo) | 0,481 s | 0,55 s | 25.849.856 bytes | 28 frames dibujados, 68 reutilizados |
-| `render` MP4 nativo, 2 hilos | 2,021 s | 2,12 s | 50.044.928 bytes | H.264 MP4 de 366 KiB |
+| `bench` (drawing only) | 0.481 s | 0.55 s | 25,849,856 bytes | 28 frames drawn, 68 reused |
+| Native MP4 `render`, 2 threads | 2.021 s | 2.12 s | 50,044,928 bytes | H.264 MP4, 366 KiB |
 
-Binario final: 2.907.536 bytes. El MP4 se abrió y transcodificó con una herramienta externa. `cargo test` y `cargo clippy --all-targets -- -D warnings` pasaron.
+Final binary: 2,907,536 bytes. The MP4 was opened and transcoded with an external tool. `cargo test` and `cargo clippy --all-targets -- -D warnings` passed.
 
-Esto prueba una composición pequeña, dominada por escenas estáticas. No mide el rendimiento en una PC antigua ni efectos CSS/GSAP que el backend nativo todavía no soporta. No se deben extrapolar estos resultados a otras composiciones o equipos. Para comparar motores, usar una composición representativa y medir tiempo total, RSS, calidad visual y tamaño de salida en el mismo hardware.
+This measures a small composition dominated by static scenes. It does not measure performance on an older computer or CSS/GSAP effects that the native backend does not yet support. Do not extrapolate these results to other compositions or machines. To compare engines, use a representative composition and measure total time, RSS, visual quality, and output size on the same hardware.
 
-## Comparación del core nativo
+## Native core comparison
 
-Mismo equipo y composición. Binarios de release del commit base y de esta revisión. Mediana de cinco ejecuciones por versión, alternadas, a 1920×1080 con 24 fps y 96 fotogramas. Se usó el tiempo interno de la CLI. El MP4 se codificó con OpenH264 y dos hilos.
+Same machine and composition. Release binaries from the base commit and this revision. Median of five alternating runs per version at 1920×1080, 24 fps, and 96 frames. CLI internal time was used. MP4 was encoded with OpenH264 and two threads.
 
-| Prueba | Antes | Ahora | Reducción de tiempo |
+| Test | Before | Now | Time reduction |
 | --- | ---: | ---: | ---: |
-| `bench` (solo dibujo) | 0,465 s | 0,099 s | 79 % |
-| `render` (MP4 nativo) | 1,876 s | 1,445 s | 23 % |
+| `bench` (drawing only) | 0.465 s | 0.099 s | 79% |
+| `render` (native MP4) | 1.876 s | 1.445 s | 23% |
 
-Los diez MP4 tuvieron el mismo SHA-256. Esta comparación mide una composición con fades y pausas estáticas. Los resultados dependen de la composición y del equipo.
+All ten MP4 files had the same SHA-256. This comparison measures a composition with fades and static pauses. Results depend on the composition and the machine.
 
-## MP4 nativo a 60 fps
+## Native MP4 at 60 fps
 
-Ambas versiones se midieron en el mismo equipo. Composición de tres segundos con texto, bloques sólidos, desplazamientos y opacidad, anterior al degradado del ejemplo. Para medir a 4K con ambas versiones se usó un lienzo de entrada de 960×540 y salida de 3840×2160. Para 1080p se usó la entrada de 640×360. Medianas de tres ejecuciones de release por versión, con 180 fotogramas y `--threads 4`.
+Both versions were measured on the same machine. The composition is three seconds long and contains text, solid blocks, translation, and opacity; it predates the example gradient. To measure 4K with both versions, a 960×540 input canvas and a 3840×2160 output were used. For 1080p, the input was 640×360. These are medians of three release runs per version, with 180 frames and `--threads 4`.
 
-| Salida | Antes, dibujo | Ahora, dibujo | Antes, MP4 | Ahora, MP4 |
+| Output | Before, drawing | Now, drawing | Before, MP4 | Now, MP4 |
 | --- | ---: | ---: | ---: | ---: |
-| 1920×1080 | 0,214 s | 0,094 s | 2,277 s | 1,908 s |
-| 3840×2160 | 0,767 s | 0,171 s | 7,127 s | 6,131 s |
+| 1920×1080 | 0.214 s | 0.094 s | 2.277 s | 1.908 s |
+| 3840×2160 | 0.767 s | 0.171 s | 7.127 s | 6.131 s |
 
-Las pruebas verifican la cadencia del MP4 a 30 y 60 fps en ambas resoluciones. La exportación 4K se ejecutó por debajo de 60 fotogramas por segundo. El ejemplo con degradado y esquinas redondeadas también se exportó en 4K a 60 fps y se decodificó tras la exportación.
+The tests verify MP4 frame cadence at 30 and 60 fps at both resolutions. The 4K export ran below 60 frames per second. The example with a gradient and rounded corners was also exported at 4K/60 fps and decoded after export.
 
-## Codificación paralela por segmentos
+## Parallel segment encoding
 
-Composición de 12 s con fades (`examples/title-card.html` con `data-duration="12"`), 60 fps, 720 fotogramas, MP4 nativo. Antes: un único GOP y `--threads 2`. Ahora: segmentos de 1 s, cada uno con su encoder, y `--threads 4`. Tres ejecuciones alternadas por caso.
+A 12 s composition with fades (`examples/title-card.html` with `data-duration="12"`), 60 fps, 720 frames, native MP4. Before: one GOP and `--threads 2`. Now: 1 s segments, each with its own encoder, and `--threads 4`. Three alternating runs per case.
 
-| Salida | Antes | Ahora | RSS antes | RSS ahora |
+| Output | Before | Now | RSS before | RSS now |
 | --- | ---: | ---: | ---: | ---: |
-| 1080p | 5,7–6,6 s | 2,2–2,5 s | 53 MB | 191 MB |
-| 4K | 26,2–26,9 s | 9,6–9,7 s | 160 MB | 533 MB |
+| 1080p | 5.7–6.6 s | 2.2–2.5 s | 53 MB | 191 MB |
+| 4K | 26.2–26.9 s | 9.6–9.7 s | 160 MB | 533 MB |
 
-Mejora de unas 2,7x en ambos tamaños. El coste es memoria: cada hilo mantiene su propio fotograma y encoder. En equipos con poca RAM usa `--threads 1` o `2`.
+About a 2.7× improvement at both sizes. The tradeoff is memory: each thread holds its own frame and encoder. On machines with little RAM, use `--threads 1` or `2`.
 
-- Los segmentos son fijos (1 s), por lo que el MP4 es **byte a byte idéntico con cualquier número de hilos** (verificado con SHA-256 con 1, 2, 4, 8 y 12 hilos y por un test).
-- Cada segmento empieza con un fotograma IDR. El archivo pesa ~5 % más (843 KB frente a 800 KB en 1080p) y con `--threads 1` tarda ~10 % más que antes.
-- Una composición de 1 s o menos no se segmenta y conserva el pipeline anterior.
-- Por defecto `--threads` usa los núcleos disponibles, con máximo 4.
-- No se comparó contra otros motores ni se midió en una PC antigua.
+- Segments are fixed at 1 s, so the MP4 is **byte-for-byte identical with any thread count** (verified with SHA-256 using 1, 2, 4, 8, and 12 threads, and by a test).
+- Each segment starts with an IDR frame. The file is about 5% larger (843 KB vs. 800 KB at 1080p), and `--threads 1` takes about 10% longer than before.
+- Compositions of 1 s or less are not segmented and keep the previous pipeline.
+- By default, `--threads` uses the available cores, up to a maximum of 4.
+- No comparison with other engines was made, and no measurement was taken on an older computer.

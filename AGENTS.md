@@ -1,5 +1,9 @@
 # Aether — Agent Guide
 
+## Language policy
+
+All human-readable content in this repository must be in English, including documentation, comments, examples, CLI and MCP descriptions, error messages, and test messages. Write all new content in English and translate existing prose into English when editing it. Preserve code identifiers, protocol terms, and program behavior.
+
 Create, validate, inspect, and render HTML compositions. Output must be deterministic: what appears in a frame is a function of time.
 
 ## Work loop
@@ -20,6 +24,11 @@ Create, validate, inspect, and render HTML compositions. Output must be determin
 - Use `data-hf-keyframes` for native motion. The single-quoted HTML attribute contains a JSON array, for example `data-hf-keyframes='[{"at":0,"x":-80,"opacity":0},{"at":0.6,"x":0,"opacity":1,"easing":"ease-out"}]'`.
 - Each keyframe requires `at` in seconds from the element's resolved start. Times must be strictly increasing within its duration. `x` and `y` are offsets in composition pixels that move the element and its children. `opacity` (0–1) multiplies existing opacity and fades. Omitted values inherit the previous keyframe's values and default to x=0, y=0, opacity=1.
 - The destination keyframe sets the segment's easing. Available values are `linear` (default), `ease-in` and `ease-out` (quadratic), and `ease-in-out` (smoothstep). The first and last values hold outside the keyed interval while the clip is active.
+- CSS animation is compiled to native motion tracks. Define `@keyframes name { from {...} 40% {...} to {...} }` using only `transform` (`translate`, `translateX`, `translateY`, uniform `scale`), `opacity`, and `animation-timing-function`. Apply it with `animation: name 1s ease-out 0.2s 1 normal forwards` or the `animation-*` longhands (`name`, `duration`, `delay`, `timing-function`, `iteration-count` as a positive integer or `infinite`, `direction`, `fill-mode`). One animation per element. The animation starts at the clip start plus `animation-delay`. CSS semantics apply: without `forwards`/`backwards` the element returns to its resting style outside the animation. Do not combine with `data-hf-keyframes` on the same element.
+- Easing in CSS animations follows CSS: `linear`, `ease`, `ease-in`, `ease-out`, `ease-in-out` (cubic Béziers), `cubic-bezier(x1, y1, x2, y2)`, `steps(n, jump-start|jump-end)`, `step-start`, `step-end`. (`data-hf-keyframes` keeps its own quadratic easings.)
+- `transform: translate(Xpx, Ypx) scale(s)` also works as a static style. Scale is uniform, grows around the element center, and scales descendants (positions, sizes, text, radius). Rotation, skew, percent translations, and other transform origins are unsupported.
+- Custom properties: declare `--name: value` on `:root` or any element (inherited) and use `var(--name, fallback)` in any supported value, including inside `@keyframes`.
+- Colors: `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb()`, `rgba()`, `hsl()`, `hsla()`, `transparent`, and a set of common names.
 - Network access, `Date.now()`, and randomness are unsupported. Use relative paths.
 - Unsupported features return an explicit error; never silently produce a wrong video. This includes `<script>`, GSAP, `<video>`, `<audio>`, `<svg>`, canvas, and general CSS.
 

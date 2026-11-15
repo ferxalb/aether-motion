@@ -1,4 +1,4 @@
-use crate::model::{Background, Color, Composition, Content, Easing, Element};
+use crate::model::{Background, Color, Composition, Content, Element};
 use anyhow::{anyhow, Context, Result};
 use fontdb::{Database, Family, Query};
 use fontdue::{Font, FontSettings};
@@ -19,6 +19,7 @@ struct FrameState {
     alpha: f32,
     x: f32,
     y: f32,
+    scale: f32,
 }
 
 impl FrameState {
@@ -26,36 +27,12 @@ impl FrameState {
         if alpha <= 0.0 {
             return Self::default();
         }
-        let frames = &element.keyframes;
-        if frames.is_empty() {
-            return Self {
-                alpha,
-                ..Self::default()
-            };
-        }
-        let elapsed = time - element.start;
-        let next = frames.partition_point(|frame| frame.at <= elapsed);
-        let from = frames[next.saturating_sub(1)];
-        if next == 0 || next == frames.len() {
-            return Self {
-                alpha: alpha * from.opacity,
-                x: from.x,
-                y: from.y,
-            };
-        }
-        let to = frames[next];
-        let t = ((elapsed - from.at) / (to.at - from.at)) as f32;
-        let progress = match to.easing {
-            Easing::Linear => t,
-            Easing::EaseIn => t * t,
-            Easing::EaseOut => t * (2.0 - t),
-            Easing::EaseInOut => t * t * (3.0 - 2.0 * t),
-        };
-        let lerp = |a, b| a + (b - a) * progress;
+        let pose = element.motion.pose(time - element.start);
         Self {
-            alpha: alpha * lerp(from.opacity, to.opacity),
-            x: lerp(from.x, to.x),
-            y: lerp(from.y, to.y),
+            alpha: alpha * pose.opacity,
+            x: pose.x,
+            y: pose.y,
+            scale: pose.scale,
         }
     }
 }
@@ -94,7 +71,7 @@ impl std::str::FromStr for OutputSize {
         match value {
             "1080p" => Ok(Self::FullHd),
             "4k" => Ok(Self::Uhd),
-            _ => Err(anyhow!("size debe ser 1080p o 4k")),
+            _ => Err(anyhow!("size must be 1080p or 4k")),
         }
     }
 }
@@ -136,7 +113,7 @@ pub struct Renderer<'a> {
     previous: Vec<FrameState>,
     current: Vec<FrameState>,
     children: Vec<Vec<usize>>,
-    text_runs: HashMap<usize, TextRun>,
+    text_runs: HashMap<(usize, u32), TextRun>,
     text_cache_bytes: usize,
     images: HashMap<ImageKey<'a>, CachedImage>,
     image_order: VecDeque<ImageKey<'a>>,
@@ -148,10 +125,10 @@ pub struct Renderer<'a> {
 
 pub(crate) fn check_image(path: &Path) -> Result<()> {
     let (width, height) = image::image_dimensions(path)
-        .with_context(|| format!("no se pudo leer imagen {}", path.display()))?;
+        .with_context(|| format!("could not read image {}", path.display()))?;
     if width as u64 * height as u64 > 16_000_000 {
         return Err(anyhow!(
-            "imagen de más de 16 megapíxeles: {}; redúcela",
+            "image exceeds 16 megapixels: {}; reduce its size",
             path.display()
         ));
     }
@@ -162,7 +139,7 @@ impl<'a> Renderer<'a> {
     pub fn with_output_size(composition: &'a Composition, size: OutputSize) -> Result<Self> {
         if u64::from(composition.width) * 9 != u64::from(composition.height) * 16 {
             return Err(anyhow!(
-                "size requiere una composición 16:9; usa --scale para otras proporciones"
+                "size requires a 16:9 composition; use --scale for other aspect ratios"
             ));
         }
         let (width, height) = match size {
@@ -180,7 +157,7 @@ impl<'a> Renderer<'a> {
 
     pub fn new(composition: &'a Composition, scale: f32) -> Result<Self> {
         if !scale.is_finite() || scale <= 0.0 || scale > 4.0 {
-            return Err(anyhow!("--scale debe estar entre 0 y 4"));
+            return Err(anyhow!("--scale must be between 0 and 4"));
         }
         let width = (composition.width as f32 * scale).round() as u32;
         let height = (composition.height as f32 * scale).round() as u32;
@@ -208,14 +185,14 @@ impl<'a> Renderer<'a> {
         shared_fonts: Option<Database>,
     ) -> Result<Self> {
         if width == 0 || height == 0 {
-            return Err(anyhow!("escala demasiado pequeña"));
+            return Err(anyhow!("scale is too small"));
         }
         let size = (width as usize)
             .checked_mul(height as usize)
             .and_then(|n| n.checked_mul(4))
             .ok_or_else(|| anyhow!("dimensiones demasiado grandes"))?;
         if size > 128 * 1024 * 1024 {
-            return Err(anyhow!("frame requiere más de 128 MiB; usa --scale"));
+            return Err(anyhow!("frame requires more than 128 MiB; use --scale"));
         }
         let font_db = shared_fonts.unwrap_or_else(|| {
             let mut db = Database::new();
@@ -280,7 +257,8 @@ impl<'a> Renderer<'a> {
         if time + 1e-10 < element.start || time >= element.end - 1e-10 {
             return 0.0;
         }
-        let mut alpha = element.style.opacity.unwrap_or(1.0);
+        // Element opacity lives in `motion.base`, so animations can replace it.
+        let mut alpha = 1.0;
         if element.fade_in > 0.0 {
             alpha *= ((time - element.start) / element.fade_in).clamp(0.0, 1.0) as f32;
         }
@@ -301,10 +279,10 @@ impl<'a> Renderer<'a> {
         fps: u32,
     ) -> Result<(&[u8], usize)> {
         if fps == 0 {
-            return Err(anyhow!("fps debe ser mayor que cero"));
+            return Err(anyhow!("fps must be greater than zero"));
         }
         if frame >= self.frame_count(fps) {
-            return Err(anyhow!("frame fuera de la duración"));
+            return Err(anyhow!("frame is outside the composition duration"));
         }
         self.render_time(frame as f64 / fps as f64)?;
         Ok((&self.pixels, self.stats.rasterized))
@@ -312,7 +290,7 @@ impl<'a> Renderer<'a> {
 
     pub fn render_at(&mut self, time: f64) -> Result<&[u8]> {
         if !time.is_finite() || time < 0.0 || time >= self.composition.duration {
-            return Err(anyhow!("tiempo fuera de la duración"));
+            return Err(anyhow!("time is outside the composition duration"));
         }
         self.render_time(time)
     }
@@ -345,7 +323,7 @@ impl<'a> Renderer<'a> {
             w: self.composition.width as f32,
             h: self.composition.height as f32,
         };
-        self.draw_node(0, root)?;
+        self.draw_node(0, root, 1.0)?;
         std::mem::swap(&mut self.previous, &mut self.current);
         self.stats.rasterized += 1;
         Ok(&self.pixels)
@@ -390,43 +368,42 @@ impl<'a> Renderer<'a> {
         (x0 < x1 && y0 < y1).then_some(PixelRect { x0, y0, x1, y1 })
     }
 
-    fn draw_node(&mut self, idx: usize, parent: Rect) -> Result<()> {
+    fn draw_node(&mut self, idx: usize, parent: Rect, parent_scale: f32) -> Result<()> {
         let state = self.current[idx];
         let alpha = state.alpha;
         if alpha <= 0.0 {
             return Ok(());
         }
         let element = &self.composition.elements[idx];
+        let ps = parent_scale;
         let mut rect = if idx == 0 {
             parent
         } else {
+            let style = &element.style;
             Rect {
-                x: parent.x
-                    + element
-                        .style
-                        .left
-                        .map(|n| n.resolve(parent.w))
-                        .unwrap_or(0.0),
-                y: parent.y
-                    + element
-                        .style
-                        .top
-                        .map(|n| n.resolve(parent.h))
-                        .unwrap_or(0.0),
-                w: element
-                    .style
+                x: parent.x + style.left.map_or(0.0, |n| n.resolve_scaled(parent.w, ps)),
+                y: parent.y + style.top.map_or(0.0, |n| n.resolve_scaled(parent.h, ps)),
+                w: style
                     .width
-                    .map(|n| n.resolve(parent.w))
-                    .unwrap_or(parent.w),
-                h: element
-                    .style
+                    .map_or(parent.w, |n| n.resolve_scaled(parent.w, ps)),
+                h: style
                     .height
-                    .map(|n| n.resolve(parent.h))
-                    .unwrap_or(parent.h),
+                    .map_or(parent.h, |n| n.resolve_scaled(parent.h, ps)),
             }
         };
-        rect.x += state.x;
-        rect.y += state.y;
+        rect.x += state.x * ps;
+        rect.y += state.y * ps;
+        // CSS scale grows around the element center; descendants inherit it.
+        let mut cumulative = ps;
+        if idx != 0 && state.scale != 1.0 {
+            let (cx, cy) = (rect.x + rect.w / 2.0, rect.y + rect.h / 2.0);
+            rect.w *= state.scale;
+            rect.h *= state.scale;
+            rect.x = cx - rect.w / 2.0;
+            rect.y = cy - rect.h / 2.0;
+            cumulative *= state.scale;
+        }
+        let radius = element.style.border_radius * cumulative;
         if rect.w <= 0.0 || rect.h <= 0.0 {
             return Ok(());
         }
@@ -434,7 +411,7 @@ impl<'a> Renderer<'a> {
             Some(Background::Solid(color)) => {
                 let base = self.composition.background;
                 if idx != 0 || (color.r, color.g, color.b) != (base.r, base.g, base.b) {
-                    self.fill(rect, color, alpha, element.style.border_radius);
+                    self.fill(rect, color, alpha, radius);
                 }
             }
             Some(Background::Linear {
@@ -442,13 +419,7 @@ impl<'a> Renderer<'a> {
                 to,
                 horizontal,
             }) => {
-                self.fill_gradient(
-                    rect,
-                    [from, to],
-                    horizontal,
-                    alpha,
-                    element.style.border_radius,
-                );
+                self.fill_gradient(rect, [from, to], horizontal, alpha, radius);
             }
             None => {}
         }
@@ -459,11 +430,11 @@ impl<'a> Renderer<'a> {
                 element.style.object_fit.as_deref().unwrap_or("fill"),
                 alpha,
             )?,
-            Content::Text(text) => self.draw_text(text, rect, idx, alpha)?,
+            Content::Text(text) => self.draw_text(text, rect, idx, alpha, cumulative)?,
             Content::Container => {}
         }
         for i in 0..self.children[idx].len() {
-            self.draw_node(self.children[idx][i], rect)?;
+            self.draw_node(self.children[idx][i], rect, cumulative)?;
         }
         Ok(())
     }
@@ -742,14 +713,14 @@ impl<'a> Renderer<'a> {
             let bytes = (w as usize)
                 .checked_mul(h as usize)
                 .and_then(|n| n.checked_mul(4))
-                .ok_or_else(|| anyhow!("imagen rasterizada demasiado grande"))?;
+                .ok_or_else(|| anyhow!("rasterized image is too large"))?;
             const CACHE_LIMIT: usize = 64 * 1024 * 1024;
             if bytes > CACHE_LIMIT {
-                return Err(anyhow!("imagen rasterizada excede 64 MiB; usa --scale"));
+                return Err(anyhow!("rasterized image exceeds 64 MiB; use --scale"));
             }
             check_image(path)?;
             let image = image::open(path)
-                .with_context(|| format!("no se pudo abrir imagen {}", path.display()))?
+                .with_context(|| format!("could not open image {}", path.display()))?
                 .to_rgba8();
             let fitted = match fit {
                 "fill" => imageops::resize(&image, w, h, imageops::FilterType::Triangle),
@@ -765,7 +736,7 @@ impl<'a> Renderer<'a> {
                     let nh = ((image.height() as f32 * factor).round() as u32).max(1);
                     if u64::from(nw) * u64::from(nh) > (CACHE_LIMIT / 4) as u64 {
                         return Err(anyhow!(
-                            "imagen intermedia excede 64 MiB; ajusta object-fit o --scale"
+                            "intermediate image exceeds 64 MiB; adjust object-fit or --scale"
                         ));
                     }
                     let resized = imageops::resize(&image, nw, nh, imageops::FilterType::Triangle);
@@ -778,7 +749,7 @@ impl<'a> Renderer<'a> {
                     );
                     canvas
                 }
-                _ => return Err(anyhow!("object-fit no soportado: {fit}")),
+                _ => return Err(anyhow!("unsupported object-fit: {fit}")),
             };
             while self.image_cache_bytes + bytes > CACHE_LIMIT {
                 if let Some(oldest) = self.image_order.pop_front() {
@@ -876,7 +847,7 @@ impl<'a> Renderer<'a> {
                         ..Default::default()
                     })
                 })
-                .ok_or_else(|| anyhow!("no hay tipografía del sistema disponible"))?;
+                .ok_or_else(|| anyhow!("no system font is available"))?;
             let font = self
                 .font_db
                 .with_face_data(id, |data, index| {
@@ -890,14 +861,14 @@ impl<'a> Renderer<'a> {
                         },
                     )
                 })
-                .ok_or_else(|| anyhow!("no se pudo leer tipografía"))?
-                .map_err(|error| anyhow!("tipografía inválida: {error}"))?;
+                .ok_or_else(|| anyhow!("could not read font"))?
+                .map_err(|error| anyhow!("invalid font: {error}"))?;
             self.fonts.insert(family.to_string(), font);
         }
         Ok(&self.fonts[family])
     }
 
-    fn prepare_text(&mut self, text: &str, idx: usize) -> Result<TextRun> {
+    fn prepare_text(&mut self, text: &str, idx: usize, zoom: f32) -> Result<TextRun> {
         let element = &self.composition.elements[idx];
         let (mut family, mut font_size, mut color, mut align) = (None, None, None, None);
         let mut current = Some(idx);
@@ -915,7 +886,8 @@ impl<'a> Renderer<'a> {
             "h2" => 48.0,
             "h3" => 36.0,
             _ => 24.0,
-        }) * self.scale;
+        }) * self.scale
+            * zoom;
         let color = color.unwrap_or(Color::WHITE);
         let align = align.unwrap_or("left");
         let parent_style = element
@@ -947,12 +919,20 @@ impl<'a> Renderer<'a> {
         })
     }
 
-    fn draw_text(&mut self, text: &str, rect: Rect, idx: usize, alpha: f32) -> Result<()> {
+    fn draw_text(
+        &mut self,
+        text: &str,
+        rect: Rect,
+        idx: usize,
+        alpha: f32,
+        zoom: f32,
+    ) -> Result<()> {
+        let key = (idx, zoom.to_bits());
         let uncached;
-        let run = if let Some(run) = self.text_runs.get(&idx) {
+        let run = if let Some(run) = self.text_runs.get(&key) {
             run
         } else {
-            let prepared = self.prepare_text(text, idx)?;
+            let prepared = self.prepare_text(text, idx, zoom)?;
             let bytes = prepared
                 .glyphs
                 .iter()
@@ -960,7 +940,7 @@ impl<'a> Renderer<'a> {
                 .sum::<usize>();
             if self.text_cache_bytes.saturating_add(bytes) <= 32 * 1024 * 1024 {
                 self.text_cache_bytes += bytes;
-                self.text_runs.entry(idx).or_insert(prepared)
+                self.text_runs.entry(key).or_insert(prepared)
             } else {
                 uncached = prepared;
                 &uncached
