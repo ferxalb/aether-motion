@@ -1,7 +1,7 @@
 //! Command-line entry point: short project commands live in `cli`; this file keeps the legacy flag-based `inspect`, `render --output`, `bench`, `block`, and `mcp`.
 
 use aether_motion::encode::{encode_native_with_options, EncodeOptions, Quality};
-use aether_motion::parse::parse_file;
+use aether_motion::parse::parse_file_with;
 use aether_motion::render::{OutputSize, Renderer};
 use anyhow::{anyhow, bail, Context, Result};
 use std::env;
@@ -17,6 +17,7 @@ Quick start:\n\
   aether-motion init [dir]                 create a project with a sample video, agent skills, and MCP config\n\
   aether-motion preview [file] [--at 2.5] [--watch]   render one frame to .aether/preview.png and open it\n\
   aether-motion render [file] [-o out.mp4] [--size 1080p|4k] [--fps 30] [--quality standard]   (defaults from aether.json; writes out/<name>.mp4)\n\
+  --variables '{\"title\":\"Q4\"}' or --variables-file values.json   (render, preview, check, bench, inspect: values for data-composition-variables)\n\
   aether-motion check [file]               validate (summary on a terminal, JSON when piped or with --json)\n\
   aether-motion add [block] [--set k=v]    list blocks, or append one to the composition\n\
   aether-motion captions <file> [--to srt]  convert a transcript (JSON, SRT, VTT) to JSON, SRT, or VTT\n\
@@ -53,6 +54,10 @@ struct Options {
     frame: Option<usize>,
     /// `bench` only: how many frames to draw from `frame` (default: all of them).
     count: Option<usize>,
+    /// `--variables`: a JSON object of values for the composition's declared variables.
+    variables: Option<String>,
+    /// `--variables-file`: a JSON file holding that object.
+    variables_file: Option<String>,
 }
 
 fn options() -> Result<Option<Options>> {
@@ -90,6 +95,8 @@ fn options() -> Result<Option<Options>> {
         low_priority: true,
         frame: None,
         count: None,
+        variables: None,
+        variables_file: None,
     };
     while let Some(arg) = args.next() {
         let value = args
@@ -115,6 +122,8 @@ fn options() -> Result<Option<Options>> {
             }
             "--frame" => opts.frame = Some(value.parse().context("invalid --frame")?),
             "--count" => opts.count = Some(value.parse().context("invalid --count")?),
+            "--variables" => opts.variables = Some(value),
+            "--variables-file" => opts.variables_file = Some(value),
             _ => bail!("unknown option: {arg}"),
         }
     }
@@ -261,7 +270,12 @@ fn main() -> Result<()> {
     let Some(opts) = options()? else {
         return Ok(());
     };
-    let composition = parse_file(&opts.input)?;
+    let values = aether_motion::cli::variables::values(
+        opts.variables.as_deref(),
+        opts.variables_file.as_deref(),
+        &Default::default(),
+    )?;
+    let composition = parse_file_with(&opts.input, &values)?;
     if opts.command == "inspect" {
         println!(
             "{}x{} | {:.3} s | {} elements",

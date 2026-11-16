@@ -7,6 +7,7 @@ AETHER Motion reads a documented subset of the HyperFrames composition format. T
 - Preserve root composition metadata and ordinary timed clips that use `class="clip"`, `data-start`, `data-duration`, and `data-track-index`.
 - Keep styles and elements only when they are in AETHER Motion's current supported HTML/CSS contract. Existing supported `data-hf-*` attributes can usually remain; check their exact semantics in the target repository's `AGENTS.md`.
 - Convert asset paths to local relative paths. Local PNG, JPEG, WebP, static SVG, and supported `<audio>` sources can be reused when their formats and markup meet the AETHER limits.
+- Keep `data-composition-variables` declarations and their `data-var-text`, `data-var-src`, and `var(--id)` bindings. Check that every declaration has a typed `default` and only fields the target accepts (no font `source`, image `fit`, or per-instance `data-variable-values`), and replace script reads of the values with bindings or `data-var-if`.
 - Replace upstream timeline scripts or GSAP motion with native AETHER attributes or the limited CSS animation subset only when the same timing and result can be expressed. Preserve the source composition unchanged.
 
 ## Flag incompatible behavior

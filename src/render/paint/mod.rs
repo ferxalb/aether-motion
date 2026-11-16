@@ -3,8 +3,8 @@
 mod backdrop;
 mod border;
 mod clip;
+mod effects;
 mod fill;
-mod filter;
 mod finish;
 mod float_ops;
 mod gradient;
@@ -20,5 +20,6 @@ pub(crate) mod svg;
 mod tile_cache;
 mod video;
 
+pub(super) use effects::color::ColorChain;
 pub(super) use images::{CachedImage, ImageKey, ImageSrc};
 pub(super) use surface::Surface;

@@ -1,8 +1,8 @@
 //! HTML/CSS parser: turns a composition file into the `model` types, rejecting unsupported features explicitly.
 //!
-//! `parse_file` is the facade. Submodules: `html` (node helpers), `css` (stylesheet, selectors, cascade,
+//! `parse_file` (and `parse_file_with`, which takes variable values) is the facade. Submodules: `html` (node helpers), `css` (stylesheet, selectors, cascade,
 //! variables), `values` (value parsers), `style` (property groups into `Style`), `animation`
-//! (CSS animation, `data-hf-keyframes`, and `data-hf-camera` into motion tracks), `split` (`data-hf-split` kinetic text), `audio` (`<audio>` clips for the mixer), `captions` (`data-hf-captions` timed captions from a transcript), `counter` (`data-hf-counter` animated numbers; `data-hf-reveal` lives in `animation/reveal.rs`), `transition` (`data-hf-transition` scene transitions), `tree` (DOM walk), `timeline` (`data-start`).
+//! (CSS animation, `data-hf-keyframes`, and `data-hf-camera` into motion tracks), `split` (`data-hf-split` kinetic text), `audio` (`<audio>` clips for the mixer), `captions` (`data-hf-captions` timed captions from a transcript), `counter` (`data-hf-counter` animated numbers; `data-hf-reveal` lives in `animation/reveal.rs`), `transition` (`data-hf-transition` scene transitions), `variables` (`data-composition-variables` declarations and their `data-var-*` bindings, applied to the DOM first), `tree` (DOM walk), `timeline` (`data-start`).
 
 mod animation;
 mod audio;
@@ -16,11 +16,13 @@ mod timeline;
 mod transition;
 mod tree;
 mod values;
+mod variables;
 mod video;
 
 pub use values::color::parse_color;
+pub use variables::{read_values_file, values_from_json, VariableValues};
 
-use crate::model::{Background, Color, Composition, Content};
+use crate::model::{Background, BlendMode, Color, Composition, Content, MotionBlur};
 use animation::camera::motion_from_camera;
 use animation::motion::{build_motion, motion_from_keyframes};
 use anyhow::{anyhow, bail, Context, Result};
@@ -37,7 +39,13 @@ use timeline::{resolve_audio_start, resolve_start};
 use transition::apply_transitions;
 use tree::walk;
 
+/// Parses a composition with every variable at its declared default.
 pub fn parse_file(path: &Path) -> Result<Composition> {
+    parse_file_with(path, &VariableValues::new())
+}
+
+/// Parses a composition with `values` for its declared variables (`data-composition-variables`).
+pub fn parse_file_with(path: &Path, values: &VariableValues) -> Result<Composition> {
     let html =
         fs::read_to_string(path).with_context(|| format!("could not read {}", path.display()))?;
     let document = kuchiki::parse_html().one(html);
@@ -65,19 +73,6 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
     if width == 0 || height == 0 || width > 8192 || height > 8192 {
         bail!("dimensions are outside 1..8192");
     }
-    let mut sheet = Stylesheet::default();
-    for node in document
-        .select("style")
-        .map_err(|_| anyhow!("error selecting CSS"))?
-    {
-        parse_css(&node.text_contents(), &mut sheet)?;
-    }
-    // Custom properties declared on `:root` (the <html> element) inherit into the composition.
-    let mut root_vars = Vars::new();
-    if let Ok(html) = document.select_first("html") {
-        let properties = cascade(html.as_node(), &sheet.rules)?;
-        root_vars = inherit_vars(&properties, &root_vars);
-    }
     let root = if metadata
         .as_node()
         .as_element()
@@ -91,6 +86,24 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
     } else {
         metadata.as_node().clone()
     };
+    // Variables rewrite the document (text, sources, removed elements) before anything reads it.
+    let applied = variables::apply(&document, metadata.as_node(), &root, values)?;
+    let mut sheet = Stylesheet {
+        pinned: applied.pinned,
+        ..Stylesheet::default()
+    };
+    for node in document
+        .select("style")
+        .map_err(|_| anyhow!("error selecting CSS"))?
+    {
+        parse_css(&node.text_contents(), &mut sheet)?;
+    }
+    // Custom properties declared on `:root` (the <html> element) inherit into the composition.
+    let mut root_vars = Vars::new();
+    if let Ok(html) = document.select_first("html") {
+        let properties = cascade(html.as_node(), &sheet.rules)?;
+        root_vars = inherit_vars(&properties, &root_vars);
+    }
     let base = path.parent().unwrap_or_else(|| Path::new("."));
     let mut pending = Vec::new();
     let mut pending_audio = Vec::new();
@@ -147,6 +160,8 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
     };
     let vignette = effect("data-hf-vignette")?;
     let grain = effect("data-hf-grain")?;
+    let motion_blur = parse_motion_blur(metadata.as_node())?;
+    let mut grade = Vec::new();
     let inferred_duration = pending
         .iter()
         .enumerate()
@@ -208,10 +223,16 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
             bail!("fade-in + fade-out exceeds the clip duration");
         }
         let clip_len = p.element.end - p.element.start;
-        let label = p.element.id.as_deref().unwrap_or("element with no id");
+        let label = p
+            .element
+            .id
+            .clone()
+            .unwrap_or_else(|| "element with no id".to_string());
+        let label = label.as_str();
         let rest = p.element.motion.base;
+        let filter_rest = filter_base(&p.element.style);
         if let Some(spec) = &p.animation {
-            p.element.motion = build_motion(spec, rest, clip_len)
+            p.element.motion = build_motion(spec, rest, filter_rest, clip_len)
                 .with_context(|| format!("CSS animation on {label}"))?;
         } else if !p.keyframes.is_empty() {
             if p.keyframes
@@ -220,7 +241,7 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
             {
                 bail!("data-hf-keyframes exceeds the duration of {label}");
             }
-            p.element.motion = motion_from_keyframes(rest, &p.keyframes);
+            p.element.motion = motion_from_keyframes(rest, filter_rest, &p.keyframes);
         } else if !p.camera.is_empty() {
             if idx == 0 {
                 bail!("data-hf-camera cannot be on the root; add a container inside it");
@@ -233,8 +254,28 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
             }
             p.element.motion = motion_from_camera(rest, &p.camera);
         }
-        if idx == 0 && p.element.style.filter_blur > 0.0 {
-            bail!("filter: blur cannot be on the root; add a container inside it");
+        order_animated_filters(&mut p.element, idx == 0)
+            .with_context(|| format!("animated filter on {label}"))?;
+        if idx == 0 {
+            let style = &mut p.element.style;
+            if style.filter_blur > 0.0 {
+                bail!("filter: blur cannot be on the root; add a container inside it");
+            }
+            if style.drop_shadow.is_some() {
+                bail!("filter: drop-shadow cannot be on the root; add a container inside it");
+            }
+            if style.blend != BlendMode::Normal {
+                bail!("mix-blend-mode cannot be on the root; add a container inside it");
+            }
+            if style
+                .filter_colors
+                .iter()
+                .any(|f| matches!(f, crate::model::ColorFilter::Opacity(_)))
+            {
+                bail!("filter: opacity() cannot be on the root; use it on a container inside it");
+            }
+            // Color functions on the root grade every finished frame instead of a layer.
+            grade = std::mem::take(&mut style.filter_colors);
         }
         if let Some(spec) = p.reveal.take() {
             if idx == 0 {
@@ -254,6 +295,7 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
         elements.push(p.element);
     }
     apply_transitions(&mut elements, &transitions, &ids, (width, height))?;
+    check_blend_isolation(&elements)?;
     let background = match elements[0].style.background {
         Some(Background::Solid(color)) => color,
         _ => Color::BLACK,
@@ -265,8 +307,126 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
         background,
         vignette,
         grain,
+        grade,
+        motion_blur,
         elements,
         ids,
         audio,
+        variables: applied.report,
     })
+}
+
+/// `data-motion-blur="on"` with optional `data-motion-blur-shutter` (degrees, default 180) and
+/// `data-motion-blur-samples` (2 to 64; automatic when omitted) on the composition root.
+fn parse_motion_blur(node: &kuchiki::NodeRef) -> Result<Option<MotionBlur>> {
+    let shutter = attr(node, "data-motion-blur-shutter")
+        .map(|raw| number(&raw, "data-motion-blur-shutter"))
+        .transpose()?;
+    let samples = attr(node, "data-motion-blur-samples")
+        .map(|raw| number(&raw, "data-motion-blur-samples"))
+        .transpose()?;
+    match attr(node, "data-motion-blur").as_deref().map(str::trim) {
+        None | Some("off") => {
+            if shutter.is_some() || samples.is_some() {
+                bail!("data-motion-blur-shutter and -samples need data-motion-blur=\"on\"");
+            }
+            return Ok(None);
+        }
+        Some("on" | "") => {}
+        Some(other) => bail!("data-motion-blur must be on or off, not {other}"),
+    }
+    let shutter = shutter.unwrap_or(180.0);
+    if !(shutter > 0.0 && shutter <= 720.0) {
+        bail!("data-motion-blur-shutter must be above 0 and at most 720 degrees");
+    }
+    if samples.is_some_and(|n| n.fract() != 0.0 || !(2.0..=64.0).contains(&n)) {
+        bail!("data-motion-blur-samples must be a whole number from 2 to 64");
+    }
+    Ok(Some(MotionBlur {
+        shutter: shutter as f32,
+        samples: samples.map(|n| n as u32),
+    }))
+}
+
+/// Blend modes need the real backdrop, which an ancestor drawn through an offscreen layer hides.
+fn check_blend_isolation(elements: &[crate::model::Element]) -> Result<()> {
+    for element in elements
+        .iter()
+        .filter(|e| e.style.blend != BlendMode::Normal)
+    {
+        let mut parent = element.parent;
+        while let Some(idx) = parent {
+            let ancestor = &elements[idx];
+            let style = &ancestor.style;
+            let layered = style.overflow_hidden
+                || !ancestor.motion.filter.is_static()
+                || style.rotate != 0.0
+                || ancestor.motion.base.rotate != 0.0
+                || !ancestor.motion.rotate.0.is_empty()
+                || ancestor.motion.wipe.is_some()
+                || style.filter_blur > 0.0
+                || !style.filter_colors.is_empty()
+                || style.drop_shadow.is_some()
+                || style.blend != BlendMode::Normal;
+            if idx != 0 && layered {
+                let name = |e: &crate::model::Element| {
+                    e.id.as_ref()
+                        .map_or_else(|| format!("<{}>", e.tag), |id| format!("#{id}"))
+                };
+                bail!(
+                    "mix-blend-mode on {} cannot be inside {} (overflow: hidden, rotation, a reveal, a wipe, a filter, or a blend mode); move it out of that element",
+                    name(element),
+                    name(ancestor)
+                );
+            }
+            parent = ancestor.parent;
+        }
+    }
+    Ok(())
+}
+
+/// Resting amount of each animatable filter channel: the static `filter` value, else neutral.
+fn filter_base(style: &crate::model::Style) -> [f32; 8] {
+    use crate::model::FilterChannel;
+    let mut base = FilterChannel::ALL.map(FilterChannel::neutral);
+    base[FilterChannel::Blur.index()] = style.filter_blur;
+    for &filter in &style.filter_colors {
+        if let Some(channel) = FilterChannel::of(filter) {
+            base[channel.index()] = FilterChannel::amount(filter);
+        }
+    }
+    base
+}
+
+/// Checks an element's animated filter channels and lists those its static `filter` lacks (they
+/// apply after the static functions, in `FilterChannel::ALL` order).
+fn order_animated_filters(element: &mut crate::model::Element, root: bool) -> Result<()> {
+    use crate::model::FilterChannel;
+    let filter = &mut element.motion.filter;
+    if filter.is_static() {
+        return Ok(());
+    }
+    if root {
+        bail!("filters cannot be animated on the root; animate a full-size container inside it");
+    }
+    for channel in FilterChannel::ALL.into_iter().skip(1) {
+        if !filter.is_animated(channel) {
+            continue;
+        }
+        let listed = element
+            .style
+            .filter_colors
+            .iter()
+            .filter(|&&f| FilterChannel::of(f) == Some(channel))
+            .count();
+        match listed {
+            0 => filter.appended.push(channel),
+            1 => {}
+            _ => bail!(
+                "{} is animated but appears {listed} times in the static filter; list it once",
+                channel.key()
+            ),
+        }
+    }
+    Ok(())
 }

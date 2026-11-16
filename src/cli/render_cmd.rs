@@ -3,7 +3,7 @@
 use super::args::Args;
 use super::project;
 use crate::encode::{encode_native_with_options, lower_priority, EncodeOptions};
-use crate::parse::parse_file;
+use crate::parse::parse_file_with;
 use crate::render::Renderer;
 use anyhow::{anyhow, bail, Context, Result};
 use image::ColorType;
@@ -19,7 +19,8 @@ pub fn write_png(renderer: &mut Renderer<'_>, output: &Path, frame: usize, fps: 
         .with_context(|| format!("could not save {}", output.display()))
 }
 
-/// `render [file] [-o out.mp4|png] [--size 1080p|4k | --scale N] [--fps N] [--quality Q] [--frame N] [--force]`.
+/// `render [file] [-o out.mp4|png] [--size 1080p|4k | --scale N] [--fps N] [--quality Q] [--frame N]
+/// [--variables JSON | --variables-file PATH] [--force]`.
 pub fn run(raw: &[String]) -> Result<()> {
     let args = Args::parse(
         raw,
@@ -32,11 +33,18 @@ pub fn run(raw: &[String]) -> Result<()> {
             "--frame",
             "--audio-bitrate",
             "--quality",
+            "--variables",
+            "--variables-file",
         ],
         &["--force"],
     )?;
     let project = project::resolve(Path::new("."), args.positional.first().map(String::as_str))?;
-    let composition = parse_file(&project.entry)?;
+    let values = super::variables::values(
+        args.value("--variables"),
+        args.value("--variables-file"),
+        &project.variables,
+    )?;
+    let composition = parse_file_with(&project.entry, &values)?;
     let fps = args.number("--fps")?.unwrap_or(project.fps);
     if args.value("--size").is_some() && args.value("--scale").is_some() {
         bail!("choose either --size or --scale");

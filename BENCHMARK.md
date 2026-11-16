@@ -661,3 +661,84 @@ time because drawing dominates (37.7 s of the export is drawing). Both files dec
 The default stays `standard`: the higher presets mostly grow the file (SSIM gains of 0.0003 to 0.0007
 above, none on grain or fast slides), which was not judged worth the size.
 No measurements were made on older PCs or other operating systems.
+
+## Filters, blend modes, root grade, and motion blur (2026-11-16)
+
+New features, so there is no earlier timing to compare against; the numbers below set the baseline and
+show that existing compositions are untouched. All runs: `bench --threads 1`, 1080p, 30 fps, release
+build, three runs each (seconds).
+
+Existing output: PNGs of every example and benchmark composition at frames 0, 20, and 50 (111 frames
+at `--scale 0.5`, plus 66 at full size) and the `glass.html` MP4 are byte-identical to the previous
+build. `glass.html` `--frame 60 --count 20`: 1.511 / 1.586 / 1.540 before, 1.524 / 1.559 / 1.556
+after (within noise; the only change on that path is one extra check per element).
+
+`examples/effects.html` (`--frame 10 --count 20`) with motion blur removed costs 2.623–2.727 s, against
+0.369–0.387 s for the same scene with every filter and blend mode removed. With the first version of
+the effects code, removing single features showed where the time goes: the three blended elements
+(about 1.1 megapixels of layers, each drawn on black and on white) about 78 ms per frame, the
+two-function root grade about 45 ms per frame.
+
+A callgrind profile of frames 10–12 (one thread) guided three exact optimizations; instruction totals:
+
+| Step | Instructions | Change |
+| --- | ---: | ---: |
+| First version | 4.442 G | |
+| Blend loop monomorphized per mode (no indirect call per channel), one division per pixel, `round_to_u8` instead of `round`, prefix of channel-wise grade steps read from per-channel tables, last grade result reused for repeated pixels | 4.051 G | −8.8% |
+| Layer planes filled through iterator zips into zeroed allocations instead of indexed writes | 3.673 G | −17.3% in total |
+
+The grade tables hold the exact float results of the channel-wise steps for each 8-bit input, and a
+unit test compares the table path with the direct float path on every input value, so the output is
+unchanged by these optimizations. Still dominant: drawing gradients twice per layer (black and white
+passes recover premultiplied alpha), which the existing filter blur shares.
+
+Motion blur multiplies drawing by the sample count on frames where something moves: the same 20 frames
+take 16.3–17.0 s with `data-motion-blur-samples="8"` and 34.1–34.5 s with automatic samples (the puck
+travels fast enough to ask for more), against 2.6–2.7 s sharp. Static frames are drawn once.
+
+## Animated filters (2026-11-16)
+
+Same settings as the section above (`bench --threads 1`, 1080p, 30 fps, release build).
+
+Existing output: the 111 half-scale PNGs of every example and benchmark composition (frames 0, 20,
+and 50) and three complete MP4s (`aether-intro-landscape`, `glass`, `premium-promo`, half scale,
+sequential frames with warm caches, including static blur layers) are byte-identical to the build
+before the effects work. `examples/effects.html` frames 0, 10, 18, 30, 60, and 89 are byte-identical to
+the first effects build, so the optimizations below did not change the plane path either. Instruction
+counts for `premium-promo.html` frames 280–282: 3.056 G before, 3.051 G after (the larger
+`FrameState`, with eight filter amounts per element, costs nothing measurable); wall-clock medians of
+five alternating runs differed by up to 6% in either direction, which is noise on this machine.
+
+`examples/filter-motion.html` (`--frame 18 --count 20`: a full-frame scene animating `saturate` and
+`brightness`, a CSS `hue-rotate` loop on a radial orb, and a blurred title focusing in):
+
+| Step | Seconds (three runs) |
+| --- | --- |
+| First animated-filter build | 4.893 / 4.783 / 4.757 |
+| Color-only layers recovered, recolored, and composited in one pass instead of through four `f32` planes (33 MiB per full-frame layer) | 4.339 / 4.434 / 4.438 |
+| Effect layers share the frame's gradient and shadow tile caches, frozen during both passes | 2.526 / 2.568 / 2.629 |
+
+A callgrind profile of the second step put about 45% of instructions in gradient rasterization inside
+the layers: every layer was a fresh `Surface` with empty tile caches, so a full-frame gradient was
+sampled twice per frame (black and white passes). Sharing the caches needs both passes to agree,
+because the cached tile and the direct path may differ by one level; `TileCache::freeze` keeps the
+decisions identical (a unit test replays two passes), and an integration test renders six frames with
+one renderer and with a fresh renderer per frame and finds at most one level of difference, the same
+tolerance as the frame's own cache. Static-blur-only layers keep fresh caches so existing output does
+not change. A test also checks that the single-pass color path and the plane path give identical pixels.
+
+`examples/effects.html` without motion blur (`--frame 10 --count 20`) went from 2.6–2.7 s to
+1.83–2.06 s with the same two changes.
+
+## Composition variables (2026-11-16)
+
+Variables are resolved and their bindings applied once, on the parsed document, before the stylesheet
+is read; nothing in the per-frame path changed. With no `data-composition-variables` the pass is one walk
+over the document that finds no binding attributes, and the root gets no extra custom properties.
+
+Existing output: the same 111 half-scale PNGs (every example and benchmark composition, frames 0, 20,
+and 50, `--scale 0.5`) rendered with this build are byte-identical to the reference set from the build
+before the effects work. Parse cost: `inspect examples/premium-promo.html`, mean of 20 runs, 5 ms with
+the reference build and 4 ms with this one (process start included; the difference is noise).
+`examples/variables.html` renders one 960x540 frame in 0.05 to 0.07 s with its defaults, with
+`examples/variables.json`, and with an inline `--variables` object.

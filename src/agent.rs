@@ -1,6 +1,6 @@
 //! Agent mode: composition checks and the MCP server facade. `zones` holds the safe-zone and caption-zone text checks.
 use crate::model::{Composition, Content};
-use crate::parse::parse_file;
+use crate::parse::{parse_file_with, VariableValues};
 use crate::render::{check_image, svg, Renderer};
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
@@ -12,12 +12,29 @@ pub mod zones;
 pub use mcp::serve;
 
 fn fix_hint(message: &str) -> &'static str {
-    if message.contains("data-hf-reveal") {
+    if message.contains("data-composition-variables")
+        || message.contains("data-var-")
+        || message.contains("data-variable-values")
+        || message.contains("variable values")
+        || message.contains("variables file")
+        || message.starts_with("variable ")
+        || message.contains(": variable ")
+    {
+        "declare data-composition-variables='[{\"id\":\"title\",\"type\":\"string\",\"label\":\"Title\",\"default\":\"Hello\"}]' on <html> or the composition root (types string, number, color, boolean, enum, image, font); bind with var(--id) in CSS, data-var-text, data-var-src (img, video, audio, source), or data-var-if (id, !id, id=value, id!=value); pass values as a JSON object of declared ids with matching types"
+    } else if message.contains("data-hf-reveal") {
         "use data-hf-reveal=from-left|from-right|from-top|from-bottom on a non-root element, with optional data-hf-reveal-at, -duration, and -easing; not with rotate"
     } else if message.contains("data-hf-counter") {
         "use data-hf-counter=<end value> on an empty element, with optional data-hf-counter-from, -duration (0.05 to 10), -delay, -decimals (0 to 6), -prefix, -suffix, -separator, and -easing"
     } else if message.contains("backdrop-filter") {
         "use backdrop-filter: blur(<px>) or none (at most 200px); no other filter functions are supported"
+    } else if message.contains("animated filter") || message.contains("not animatable") {
+        "animate filters with blur, brightness, contrast, saturate, grayscale, sepia, hueRotate, or invert in data-hf-keyframes, or with filter in CSS @keyframes, on a non-root element; list each animated function at most once in the static filter; opacity() and drop-shadow() are not animatable"
+    } else if message.contains("mix-blend-mode") {
+        "use mix-blend-mode: normal|multiply|screen|overlay|darken|lighten|color-dodge|color-burn|hard-light|soft-light|difference|exclusion|plus-lighter on a non-root element that is not inside overflow: hidden, rotation, a reveal, a wipe, or another filter"
+    } else if message.contains("filter") || message.contains("drop-shadow") {
+        "write filter as [blur(<px>)] [brightness|contrast|saturate|grayscale|sepia|invert|opacity(<n or %>)] [hue-rotate(<angle>)] [drop-shadow(x y [blur] color)], in that order; on the root only color functions (except opacity) are allowed"
+    } else if message.contains("data-motion-blur") {
+        "set data-motion-blur=\"on\" on the composition root, with optional data-motion-blur-shutter (degrees, above 0 to 720, default 180) and data-motion-blur-samples (2 to 64; automatic when omitted)"
     } else if message.contains("data-hf-vignette") || message.contains("data-hf-grain") {
         "set data-hf-vignette and data-hf-grain on the composition root to a number between 0 and 1"
     } else if message.contains("data-hf-transition") || message.contains("transition ") {
@@ -27,7 +44,7 @@ fn fix_hint(message: &str) -> &'static str {
     } else if message.contains("data-hf-camera") || message.contains("camera keyframe") {
         "use a JSON array of {at, zoom, x, y, easing} on a non-root container; at in local seconds, strictly increasing; zoom between 0.05 and 50"
     } else if message.contains("data-hf-keyframes") {
-        "use a JSON array with at in local seconds, strictly increasing and within the clip; check the indicated field"
+        "use a JSON array of {at, x, y, opacity, easing} plus optional filter amounts blur (0 to 200 px), brightness, contrast, saturate (0 to 100), grayscale, sepia, invert (0 to 1), and hueRotate (degrees); at in local seconds, strictly increasing and within the clip; check the indicated field"
     } else if message.contains("CSS variable") || message.contains("var()") {
         "define --name on :root or an ancestor, or add a fallback: var(--name, value)"
     } else if message.contains("animation") || message.contains("@keyframes") {
@@ -142,10 +159,50 @@ fn check_audio(c: &Composition) -> Result<Value> {
     Ok(json!({"clips": clips, "peak": mix.peak, "clippedSamples": mix.clipped}))
 }
 
+/// The declared variables with the values in use, for the `check` report.
+fn variables_json(c: &Composition) -> Value {
+    use crate::model::VariableKind;
+    let typed = |kind: VariableKind, text: &str| match kind {
+        VariableKind::Number => text
+            .parse::<f64>()
+            .map_or_else(|_| json!(text), |n| json!(n)),
+        VariableKind::Boolean => json!(text == "true"),
+        _ => json!(text),
+    };
+    let declared: Vec<Value> = c
+        .variables
+        .declared
+        .iter()
+        .map(|v| {
+            json!({
+                "id": v.id,
+                "type": v.kind.name(),
+                "value": typed(v.kind, &v.value),
+                "default": typed(v.kind, &v.default),
+                "overridden": v.overridden,
+                "uses": {"css": v.uses.css, "text": v.uses.text, "src": v.uses.src, "if": v.uses.condition},
+            })
+        })
+        .collect();
+    let unused: Vec<&str> = c
+        .variables
+        .declared
+        .iter()
+        .filter(|v| v.uses == crate::model::VariableUses::default())
+        .map(|v| v.id.as_str())
+        .collect();
+    json!({"declared": declared, "unused": unused, "removedElements": c.variables.removed})
+}
+
 /// Validates the structure, image headers, video sources, and audio files, then renders a test frame.
 pub fn check(path: &Path) -> Value {
+    check_with(path, &VariableValues::new())
+}
+
+/// `check` with `values` for the composition's declared variables.
+pub fn check_with(path: &Path, values: &VariableValues) -> Value {
     let run = || -> Result<Value> {
-        let c = parse_file(path)?;
+        let c = parse_file_with(path, values)?;
         let mut seen = HashSet::new();
         for element in &c.elements {
             match &element.content {
@@ -176,6 +233,23 @@ pub fn check(path: &Path) -> Value {
             .filter(|e| e.parent.is_some() && (e.end - e.start) < c.duration)
             .map(|e| json!({"id": e.id, "tag": e.tag, "start": e.start, "end": e.end, "track": e.track}))
             .collect();
+        let blends = c
+            .elements
+            .iter()
+            .filter(|e| e.style.blend != crate::model::BlendMode::Normal)
+            .count();
+        let filters = c
+            .elements
+            .iter()
+            .filter(|e| !e.style.filter_colors.is_empty() || e.style.drop_shadow.is_some())
+            .count();
+        let effects = json!({
+            "motionBlur": c.motion_blur.map(|m| json!({"shutter": m.shutter, "samples": m.samples.map_or_else(|| json!("auto"), |n| json!(n))})),
+            "rootGrade": c.grade.len(),
+            "colorFilters": filters,
+            "blendModes": blends,
+            "animatedFilters": c.elements.iter().filter(|e| !e.motion.filter.is_static()).count(),
+        });
         let animations: Vec<Value> = c
             .elements
             .iter()
@@ -186,7 +260,7 @@ pub fn check(path: &Path) -> Value {
             })
             .collect();
         Ok(
-            json!({"animations": animations, "ok": true, "width": c.width, "height": c.height, "duration": c.duration, "elements": c.elements.len(), "clips": clips, "audio": audio, "videos": videos}),
+            json!({"animations": animations, "ok": true, "width": c.width, "height": c.height, "duration": c.duration, "elements": c.elements.len(), "clips": clips, "audio": audio, "videos": videos, "effects": effects, "variables": variables_json(&c)}),
         )
     };
     match run() {

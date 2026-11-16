@@ -22,6 +22,10 @@ Inside a project created by `aether-motion init`, `aether.json` supplies the ent
 3. Export video with `aether-motion render <composition.html> --output video.mp4 --fps 30`. Set `--size 1080p` or `--size 4k` for 16:9 or 9:16 outputs; these map to the matching landscape or portrait dimensions. `--size` and `--scale` are alternatives. The native encoder is the default. `--quality draft|standard|high|max` picks the H.264 quantizer (30, 26, 22, 18); the default `standard` suits most deliveries. Higher presets cost about the same CPU and give larger files; use them only when the user asks for it. Use `--quality draft` for small review exports.
 4. Check that the output exists and is non-empty, then inspect the result before reporting completion.
 
+## Templates with variables
+
+When the composition declares `data-composition-variables`, pass values as a JSON object keyed by id: `--variables '{"title":"Q4","accent":"#ff7a45"}'` or `--variables-file values.json` on `check`, `render`, `preview`, `bench`, and `inspect`, `"variables"` in `aether.json` (flags override it id by id), or the `variables` argument of `aether_check`, `aether_write`, `aether_snapshot`, and `aether_render`. Omitted ids keep their defaults; unknown ids and wrong types fail with a `fix`. Read `variables` in the `check` report (`value`, `overridden`, `uses`, `unused`, `removedElements`), and run `check` and a snapshot with every value set you deliver, because values change text length, layout, and safe-zone findings. For batches, render each value file to its own output name.
+
 ## Operational constraints
 
 - The renderer defaults to low process priority and a limited thread count. Preserve those defaults for ordinary exports; use `--threads` when the user requests a different tradeoff.

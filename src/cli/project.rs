@@ -1,6 +1,7 @@
 //! Project configuration (`aether.json`) and entry-file resolution for the short commands.
 
 use crate::encode::Quality;
+use crate::parse::VariableValues;
 use crate::render::OutputSize;
 use anyhow::{anyhow, bail, Context, Result};
 use serde_json::Value;
@@ -18,6 +19,8 @@ pub struct Project {
     /// MP4 quality preset (`"quality"`, default `standard`).
     pub quality: Quality,
     pub out_dir: PathBuf,
+    /// Values for the composition's declared variables (`"variables"`, an object keyed by id).
+    pub variables: VariableValues,
 }
 
 /// Resolves the composition file and settings relative to `dir`.
@@ -55,12 +58,18 @@ pub fn resolve(dir: &Path, file: Option<&str>) -> Result<Project> {
         .context("aether.json: quality")?
         .unwrap_or_default();
     let out_dir = dir.join(config["out"].as_str().unwrap_or("out"));
+    let variables = match &config["variables"] {
+        Value::Null => VariableValues::new(),
+        Value::Object(values) => values.clone(),
+        _ => bail!("{CONFIG}: variables must be an object keyed by variable id"),
+    };
     Ok(Project {
         entry,
         fps,
         size,
         quality,
         out_dir,
+        variables,
     })
 }
 
@@ -98,7 +107,7 @@ mod tests {
         assert!(resolve(&dir, None).unwrap().entry.ends_with("index.html"));
         fs::write(
             dir.join(CONFIG),
-            r#"{"entry":"a.html","fps":60,"size":"4k","out":"dist"}"#,
+            r#"{"entry":"a.html","fps":60,"size":"4k","out":"dist","variables":{"title":"x"}}"#,
         )
         .unwrap();
         let p = resolve(&dir, None).unwrap();
@@ -107,7 +116,10 @@ mod tests {
                 && p.fps == 60
                 && p.size.is_some()
                 && p.out_dir.ends_with("dist")
+                && p.variables["title"] == "x"
         );
+        fs::write(dir.join(CONFIG), r#"{"variables":[1]}"#).unwrap();
+        assert!(resolve(&dir, None).is_err());
         fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -1,4 +1,5 @@
-//! Per-element visual state (alpha, pose, and video frame) sampled at one instant; compared across frames to reuse pixels.
+//! Per-element visual state (alpha, pose, video frame, and animated filter amounts) sampled at one
+//! instant; compared across frames to reuse pixels.
 
 use crate::model::{Content, Element};
 
@@ -12,6 +13,8 @@ pub(in crate::render) struct FrameState {
     pub(in crate::render) reveal: f32,
     /// Source frame of a `<video>`, so a new frame is never mistaken for an unchanged one.
     pub(in crate::render) media: u32,
+    /// Animated `filter` amounts by `FilterChannel::index`; all zero when the filter is static.
+    pub(in crate::render) filters: [f32; 8],
 }
 
 impl FrameState {
@@ -19,7 +22,16 @@ impl FrameState {
         if alpha <= 0.0 {
             return Self::default();
         }
-        let pose = element.motion.pose(time - element.start);
+        let elapsed = time - element.start;
+        let pose = element.motion.pose(elapsed);
+        let motion = &element.motion;
+        let filters = if motion.filter.is_static() {
+            [0.0; 8]
+        } else {
+            motion
+                .filter
+                .eval(elapsed, motion.hold_before, motion.hold_after)
+        };
         Self {
             alpha: alpha * pose.opacity,
             x: pose.x,
@@ -31,6 +43,7 @@ impl FrameState {
                 Content::Video(video) => video.frame_at(time - element.start) as u32,
                 _ => 0,
             },
+            filters,
         }
     }
 }

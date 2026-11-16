@@ -1,7 +1,7 @@
 //! Computes an element's `Style` from the cascade by dispatching each declaration to a property group.
 //!
 //! Groups: `layout` (box position, size, flex, spacing), `text` (font, color, alignment),
-//! `visual` (background, border, shadow, opacity, transform). Each group returns `Ok(false)` for
+//! `visual` (background, border, shadow, opacity, filter, blend mode, transform). Each group returns `Ok(false)` for
 //! properties it does not own, and anything nobody owns is an explicit error.
 
 mod layout;
@@ -29,9 +29,14 @@ pub(in crate::parse) fn style_for(
     node: &NodeRef,
     sheet: &Stylesheet,
     parent_vars: &Vars,
+    root: bool,
 ) -> Result<Resolved> {
     let properties = cascade(node, &sheet.rules)?;
-    let vars = inherit_vars(&properties, parent_vars);
+    let mut vars = inherit_vars(&properties, parent_vars);
+    if root {
+        // Composition variables win over the root's own declarations of the same property.
+        vars.extend(sheet.pinned.iter().map(|(k, v)| (k.clone(), v.clone())));
+    }
     let mut animation = AnimationDecl::default();
     let mut style = Style::default();
     for (key, value) in properties {

@@ -26,6 +26,9 @@ pub(in crate::parse) struct RawFrame {
 pub(in crate::parse) struct Stylesheet {
     pub(in crate::parse) rules: Vec<Rule>,
     pub(in crate::parse) keyframes: HashMap<String, Vec<RawFrame>>,
+    /// `--id` custom properties from composition variables, set on the composition root over any
+    /// declaration of the same name there (descendants may still redefine them).
+    pub(in crate::parse) pinned: Vars,
 }
 
 /// Custom properties (`--name`) visible to an element.

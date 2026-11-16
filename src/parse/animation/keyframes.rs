@@ -1,5 +1,6 @@
-//! `data-hf-keyframes` JSON attribute parsing.
-use crate::model::{Easing, Keyframe};
+//! `data-hf-keyframes` JSON attribute parsing: offsets, opacity, easing, and filter amounts
+//! (`blur`, `brightness`, `contrast`, `saturate`, `grayscale`, `sepia`, `hueRotate`, `invert`).
+use crate::model::{Easing, FilterChannel, Keyframe};
 use crate::parse::animation::timing::parse_keyframe_easing;
 use anyhow::{anyhow, bail, Context, Result};
 use std::collections::BTreeMap;
@@ -16,12 +17,14 @@ pub(in crate::parse) fn parse_keyframes(raw: &str) -> Result<Vec<Keyframe>> {
         y: 0.0,
         opacity: 1.0,
         easing: Easing::Linear,
+        filters: [None; 8],
     };
     let mut keyframes = Vec::with_capacity(frames.len());
     for (index, frame) in frames.into_iter().enumerate() {
         let keyframe = (|| -> Result<Keyframe> {
             for key in frame.keys() {
-                if !matches!(key.as_str(), "at" | "x" | "y" | "opacity" | "easing") {
+                let filter = FilterChannel::ALL.iter().any(|c| c.key() == key);
+                if !filter && !matches!(key.as_str(), "at" | "x" | "y" | "opacity" | "easing") {
                     bail!("unknown field: {key}");
                 }
             }
@@ -54,12 +57,37 @@ pub(in crate::parse) fn parse_keyframes(raw: &str) -> Result<Vec<Keyframe>> {
                         .ok_or_else(|| anyhow!("easing must be a string"))?,
                 )?,
             };
+            let mut filters = [None; 8];
+            for channel in FilterChannel::ALL {
+                let Some(value) = frame.get(channel.key()) else {
+                    continue;
+                };
+                let key = channel.key();
+                let n = value
+                    .as_f64()
+                    .ok_or_else(|| anyhow!("{key} must be a number"))?;
+                let valid = match channel {
+                    FilterChannel::Blur => (0.0..=200.0).contains(&n),
+                    FilterChannel::Grayscale | FilterChannel::Sepia | FilterChannel::Invert => {
+                        (0.0..=1.0).contains(&n)
+                    }
+                    FilterChannel::HueRotate => n.abs() <= 36_000.0,
+                    _ => (0.0..=100.0).contains(&n),
+                };
+                if !valid {
+                    bail!(
+                        "{key} is out of range (blur 0 to 200 px; grayscale, sepia, invert 0 to 1; brightness, contrast, saturate 0 to 100; hueRotate in degrees up to 36000)"
+                    );
+                }
+                filters[channel.index()] = Some(n as f32);
+            }
             Ok(Keyframe {
                 at,
                 x,
                 y,
                 opacity: opacity as f32,
                 easing,
+                filters,
             })
         })()
         .with_context(|| format!("keyframe {}", index + 1))?;

@@ -3,7 +3,7 @@
 use super::args::Args;
 use super::project;
 use super::render_cmd::write_png;
-use crate::parse::parse_file;
+use crate::parse::{parse_file_with, VariableValues};
 use crate::render::Renderer;
 use anyhow::{bail, Result};
 use std::fs;
@@ -15,8 +15,14 @@ use std::time::{Duration, SystemTime};
 const OUTPUT: &str = ".aether/preview.png";
 
 /// Renders the frame at `at` seconds (clamped to the composition) and returns its time.
-fn render_once(entry: &Path, at: f64, fps: u32, out: &Path) -> Result<f64> {
-    let composition = parse_file(entry)?;
+fn render_once(
+    entry: &Path,
+    values: &VariableValues,
+    at: f64,
+    fps: u32,
+    out: &Path,
+) -> Result<f64> {
+    let composition = parse_file_with(entry, values)?;
     let mut renderer = Renderer::new(&composition, 1.0)?;
     let frames = renderer.frame_count(fps);
     let frame = ((at * fps as f64).round() as usize).min(frames.saturating_sub(1));
@@ -49,17 +55,37 @@ fn modified(path: &Path) -> Option<SystemTime> {
     fs::metadata(path).and_then(|m| m.modified()).ok()
 }
 
-/// `preview [file] [--at SECONDS] [--watch] [--no-open]`.
+/// `preview [file] [--at SECONDS] [--variables JSON | --variables-file PATH] [--watch] [--no-open]`.
+///
+/// With `--watch`, edits to the composition or to the variables file trigger a new render.
 pub fn run(raw: &[String]) -> Result<()> {
-    let args = Args::parse(raw, &["--at"], &["--watch", "--no-open"])?;
+    let args = Args::parse(
+        raw,
+        &["--at", "--variables", "--variables-file"],
+        &["--watch", "--no-open"],
+    )?;
     let project = project::resolve(Path::new("."), args.positional.first().map(String::as_str))?;
+    let values = || {
+        super::variables::values(
+            args.value("--variables"),
+            args.value("--variables-file"),
+            &project.variables,
+        )
+    };
+    let watched = || {
+        (
+            modified(&project.entry),
+            args.value("--variables-file")
+                .and_then(|f| modified(Path::new(f))),
+        )
+    };
     let at: f64 = args.number("--at")?.unwrap_or(1.0);
     if at < 0.0 {
         bail!("--at must be 0 or more seconds");
     }
     let out = PathBuf::from(OUTPUT);
     fs::create_dir_all(out.parent().unwrap())?;
-    let time = render_once(&project.entry, at, project.fps, &out)?;
+    let time = render_once(&project.entry, &values()?, at, project.fps, &out)?;
     println!("Preview at {time:.2} s: {}", out.display());
     if !args.has("--no-open") {
         open(&out);
@@ -68,15 +94,17 @@ pub fn run(raw: &[String]) -> Result<()> {
         return Ok(());
     }
     println!("Watching {} (Ctrl-C to stop)", project.entry.display());
-    let mut seen = modified(&project.entry);
+    let mut seen = watched();
     loop {
         sleep(Duration::from_millis(300));
-        let now = modified(&project.entry);
+        let now = watched();
         if now == seen {
             continue;
         }
         seen = now;
-        match render_once(&project.entry, at, project.fps, &out) {
+        match values()
+            .and_then(|values| render_once(&project.entry, &values, at, project.fps, &out))
+        {
             Ok(t) => println!("Updated ({t:.2} s)"),
             Err(e) => println!("Error: {e:#}"),
         }

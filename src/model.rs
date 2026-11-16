@@ -105,6 +105,149 @@ pub struct Shadow {
     pub inset: bool,
 }
 
+/// One CSS `filter` color function, applied to unpremultiplied sRGB values in 0..=1.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ColorFilter {
+    Brightness(f32),
+    Contrast(f32),
+    Saturate(f32),
+    /// Amount in 0..=1.
+    Grayscale(f32),
+    /// Amount in 0..=1.
+    Sepia(f32),
+    /// Angle in degrees.
+    HueRotate(f32),
+    /// Amount in 0..=1.
+    Invert(f32),
+    /// Amount in 0..=1; multiplies alpha.
+    Opacity(f32),
+}
+
+/// A `filter` function whose amount can be animated, in the order used for animated functions that
+/// the static `filter` does not list. `HueRotate` is in degrees and `Blur` in px; the rest are amounts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FilterChannel {
+    Blur,
+    Brightness,
+    Contrast,
+    Saturate,
+    Grayscale,
+    Sepia,
+    HueRotate,
+    Invert,
+}
+
+impl FilterChannel {
+    pub const ALL: [Self; 8] = [
+        Self::Blur,
+        Self::Brightness,
+        Self::Contrast,
+        Self::Saturate,
+        Self::Grayscale,
+        Self::Sepia,
+        Self::HueRotate,
+        Self::Invert,
+    ];
+
+    /// Index into per-channel arrays (`FilterMotion::tracks`, values).
+    pub fn index(self) -> usize {
+        self as usize
+    }
+
+    /// The amount that leaves pixels unchanged.
+    pub fn neutral(self) -> f32 {
+        match self {
+            Self::Brightness | Self::Contrast | Self::Saturate => 1.0,
+            _ => 0.0,
+        }
+    }
+
+    /// Keeps an interpolated amount in the function's valid range (overshooting easings can leave it).
+    pub fn clamp(self, value: f32) -> f32 {
+        match self {
+            Self::Blur => value.clamp(0.0, 200.0),
+            Self::Grayscale | Self::Sepia | Self::Invert => value.clamp(0.0, 1.0),
+            Self::HueRotate => value,
+            Self::Brightness | Self::Contrast | Self::Saturate => value.max(0.0),
+        }
+    }
+
+    /// The channel of a color function; `opacity()` has none (it is not animatable).
+    pub fn of(filter: ColorFilter) -> Option<Self> {
+        Some(match filter {
+            ColorFilter::Brightness(_) => Self::Brightness,
+            ColorFilter::Contrast(_) => Self::Contrast,
+            ColorFilter::Saturate(_) => Self::Saturate,
+            ColorFilter::Grayscale(_) => Self::Grayscale,
+            ColorFilter::Sepia(_) => Self::Sepia,
+            ColorFilter::HueRotate(_) => Self::HueRotate,
+            ColorFilter::Invert(_) => Self::Invert,
+            ColorFilter::Opacity(_) => return None,
+        })
+    }
+
+    /// The amount of a color function (degrees for `hue-rotate`).
+    pub fn amount(filter: ColorFilter) -> f32 {
+        match filter {
+            ColorFilter::Brightness(v)
+            | ColorFilter::Contrast(v)
+            | ColorFilter::Saturate(v)
+            | ColorFilter::Grayscale(v)
+            | ColorFilter::Sepia(v)
+            | ColorFilter::HueRotate(v)
+            | ColorFilter::Invert(v)
+            | ColorFilter::Opacity(v) => v,
+        }
+    }
+
+    /// The color function of this channel with `value`; `None` for `Blur`.
+    pub fn color(self, value: f32) -> Option<ColorFilter> {
+        Some(match self {
+            Self::Blur => return None,
+            Self::Brightness => ColorFilter::Brightness(value),
+            Self::Contrast => ColorFilter::Contrast(value),
+            Self::Saturate => ColorFilter::Saturate(value),
+            Self::Grayscale => ColorFilter::Grayscale(value),
+            Self::Sepia => ColorFilter::Sepia(value),
+            Self::HueRotate => ColorFilter::HueRotate(value),
+            Self::Invert => ColorFilter::Invert(value),
+        })
+    }
+
+    /// The `data-hf-keyframes` field name.
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Blur => "blur",
+            Self::Brightness => "brightness",
+            Self::Contrast => "contrast",
+            Self::Saturate => "saturate",
+            Self::Grayscale => "grayscale",
+            Self::Sepia => "sepia",
+            Self::HueRotate => "hueRotate",
+            Self::Invert => "invert",
+        }
+    }
+}
+
+/// `mix-blend-mode` separable blend functions (W3C Compositing Level 1), plus `plus-lighter`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BlendMode {
+    #[default]
+    Normal,
+    Multiply,
+    Screen,
+    Overlay,
+    Darken,
+    Lighten,
+    ColorDodge,
+    ColorBurn,
+    HardLight,
+    SoftLight,
+    Difference,
+    Exclusion,
+    PlusLighter,
+}
+
 /// `line-height`: a multiple of the font size (unitless) or an absolute size in px.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum LineHeight {
@@ -161,6 +304,12 @@ pub struct Style {
     /// `filter: blur(<px>)` radius (standard deviation) in composition px applied to the whole element
     /// (box, shadows, content, children); 0 means none.
     pub filter_blur: f32,
+    /// `filter` color functions after the optional blur, applied in order; empty means none.
+    pub filter_colors: Vec<ColorFilter>,
+    /// `filter: drop-shadow()`: a shadow of the element's painted shape (alpha), drawn under it.
+    pub drop_shadow: Option<Shadow>,
+    /// `mix-blend-mode`: how the element (with its subtree) combines with what is behind it.
+    pub blend: BlendMode,
     /// Solid border drawn inside the box (border-box sizing); `None` color means white.
     pub border_width: f32,
     pub border_color: Option<Color>,
@@ -299,6 +448,8 @@ pub struct Keyframe {
     pub y: f32,
     pub opacity: f32,
     pub easing: Easing,
+    /// Filter amounts given explicitly at this keyframe, indexed by [`FilterChannel::index`].
+    pub filters: [Option<f32>; 8],
 }
 
 /// Layout-check opt-outs from `data-layout-allow-*` attributes; descendants inherit them when checked.
@@ -335,10 +486,113 @@ pub struct Composition {
     pub vignette: f32,
     /// `data-hf-grain` on the root: film grain amplitude, 0..=1.
     pub grain: f32,
+    /// `filter` color functions on the root: a grade applied to every finished frame.
+    pub grade: Vec<ColorFilter>,
+    /// `data-motion-blur` on the root: shutter settings, or `None` for sharp frames.
+    pub motion_blur: Option<MotionBlur>,
     pub elements: Vec<Element>,
     pub ids: HashMap<String, usize>,
     /// `<audio>` clips in document order; they take no part in layout or painting.
     pub audio: Vec<AudioClip>,
+    /// `data-composition-variables`: the declared variables and the values this parse used.
+    pub variables: Variables,
+}
+
+/// Declared composition variables, already applied to the document before it was parsed.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Variables {
+    pub declared: Vec<Variable>,
+    /// Elements (with their subtrees) removed because their `data-var-if` was false.
+    pub removed: usize,
+}
+
+/// One declared variable with the value in use.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Variable {
+    pub id: String,
+    pub kind: VariableKind,
+    /// The value as text, as `data-var-text` writes it (numbers in shortest decimal form).
+    pub value: String,
+    /// The declared default, in the same form.
+    pub default: String,
+    /// True when a value passed by the caller replaced the default.
+    pub overridden: bool,
+    pub uses: VariableUses,
+}
+
+/// Declared type of a composition variable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VariableKind {
+    String,
+    Number,
+    Color,
+    Boolean,
+    Enum,
+    Image,
+    Font,
+}
+
+impl VariableKind {
+    /// The `type` name used in declarations.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::String => "string",
+            Self::Number => "number",
+            Self::Color => "color",
+            Self::Boolean => "boolean",
+            Self::Enum => "enum",
+            Self::Image => "image",
+            Self::Font => "font",
+        }
+    }
+}
+
+/// How often a variable is referenced, counted before `data-var-if` removes anything.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct VariableUses {
+    /// `var(--id)` references in `<style>` sheets and `style` attributes.
+    pub css: usize,
+    pub text: usize,
+    pub src: usize,
+    pub condition: usize,
+}
+
+/// Shutter for `data-motion-blur`: each output frame averages several instants spread evenly
+/// over a window of `shutter` degrees of one frame, centered on the frame time.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MotionBlur {
+    /// Shutter angle in degrees, in (0, 720]; 360 spans one whole frame interval.
+    pub shutter: f32,
+    /// Sub-frame samples per frame, 2..=64; `None` sizes them to the motion in each frame.
+    pub samples: Option<u32>,
+}
+
+impl MotionBlur {
+    /// Fewest and most samples chosen automatically.
+    pub const AUTO_SAMPLES: (u32, u32) = (8, 64);
+
+    /// `(first, last)` instants of the shutter window for the frame at `time`, clamped like samples.
+    pub fn window(&self, time: f64, fps: u32, duration: f64) -> (f64, f64) {
+        let half = f64::from(self.shutter) / 720.0 / f64::from(fps.max(1));
+        let last = (duration - 1e-6).max(0.0);
+        (
+            (time - half).clamp(0.0, last),
+            (time + half).clamp(0.0, last),
+        )
+    }
+
+    /// `n` sample instants for the frame at `time` (seconds) at `fps`, clamped to `[0, duration)`.
+    pub fn sample_times(&self, time: f64, fps: u32, duration: f64, n: u32) -> Vec<f64> {
+        let window = f64::from(self.shutter) / 360.0 / f64::from(fps.max(1));
+        let n = n.max(1);
+        let last = (duration - 1e-6).max(0.0);
+        (0..n)
+            .map(|i| {
+                let offset = (f64::from(i) + 0.5) / f64::from(n) - 0.5;
+                (time + offset * window).clamp(0.0, last)
+            })
+            .collect()
+    }
 }
 
 /// One `<audio>` clip on the composition timeline. Times are in seconds; the mixer converts
@@ -440,10 +694,41 @@ pub struct Motion {
     pub reveal: Track,
     /// Edge the reveal grows from; `None` means the element is never clipped by a reveal.
     pub wipe: Option<RevealFrom>,
+    /// Animated `filter` amounts.
+    pub filter: FilterMotion,
     /// Hold the first value before the first point (`animation-fill-mode: backwards`).
     pub hold_before: bool,
     /// Hold the last value after the last point (`animation-fill-mode: forwards`).
     pub hold_after: bool,
+}
+
+/// Animated `filter` amounts of one element. A channel with an empty track keeps its static value.
+#[derive(Clone, Debug, Default)]
+pub struct FilterMotion {
+    /// Resting amount of each channel (the static `filter`, or the neutral amount).
+    pub base: [f32; 8],
+    pub tracks: [Track; 8],
+    /// Animated color channels the static `filter` does not list, applied after its functions.
+    pub appended: Vec<FilterChannel>,
+}
+
+impl FilterMotion {
+    pub fn is_static(&self) -> bool {
+        self.tracks.iter().all(|track| track.0.is_empty())
+    }
+
+    pub fn is_animated(&self, channel: FilterChannel) -> bool {
+        !self.tracks[channel.index()].0.is_empty()
+    }
+
+    /// Every channel's amount `elapsed` seconds after the clip start, clamped to its range.
+    pub fn eval(&self, elapsed: f64, hold_before: bool, hold_after: bool) -> [f32; 8] {
+        FilterChannel::ALL.map(|channel| {
+            let i = channel.index();
+            let value = self.tracks[i].eval(elapsed, self.base[i], hold_before, hold_after);
+            channel.clamp(value)
+        })
+    }
 }
 
 impl Motion {
@@ -470,6 +755,7 @@ impl Motion {
         ]
         .iter()
         .all(|track| track.0.is_empty())
+            && self.filter.is_static()
     }
 
     /// Sorted, distinct point times across all channels.
@@ -482,7 +768,8 @@ impl Motion {
             &self.opacity,
             &self.reveal,
         ]
-        .iter()
+        .into_iter()
+        .chain(&self.filter.tracks)
         .flat_map(|track| track.0.iter().map(|point| point.at))
         .collect();
         times.sort_by(f64::total_cmp);

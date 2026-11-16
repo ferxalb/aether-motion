@@ -56,7 +56,9 @@ impl<'a> Renderer<'a> {
             let layer = Surface::filled(lw as u32, lh as u32, k, backdrop);
             let outer = std::mem::replace(&mut self.surface, layer);
             self.layer_depth += 1;
+            self.isolated += 1;
             outcome = outcome.and_then(|()| self.draw_body(idx, shifted, cumulative));
+            self.isolated -= 1;
             self.layer_depth -= 1;
             layers.push(std::mem::replace(&mut self.surface, outer).pixels);
         }
