@@ -41,7 +41,7 @@ jobs:
           mkdir "$name"
           cp LICENSE README.md CHANGELOG.md "$name/"
           mkdir -p "$name/assets/readme"
-          cp assets/readme/{hero,motion-study}.jpg "$name/assets/readme/"
+          cp assets/readme/hero.jpg assets/readme/motion-preview.gif "$name/assets/readme/"
           cp assets/fonts/LICENSE-Roboto.txt "$name/"
           if [ "${{ runner.os }}" = "Windows" ]; then
             cp "target/${{ matrix.target }}/release/aether-motion.exe" "$name/"

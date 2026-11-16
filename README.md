@@ -99,7 +99,10 @@ Define a video as HTML. Data attributes set timing and tracks; `data-hf-*` attri
 AETHER Motion parses the composition, lays it out, and draws every frame with its own software renderer, then encodes H.264 with a built-in encoder. Each frame is a function of time only, so the same input produces the same video on every run. Anything outside the supported subset fails with an explicit error instead of rendering something wrong.
 
 <p align="center">
-  <img src="assets/readme/motion-study.jpg" alt="Illustration of a silver ribbon seen at three points in its rotation" width="800">
+  <img src="assets/readme/motion-preview.gif" alt="A rotating ASCII planet, kinetic typography, and a sequence of reveals on dark feature cards" width="640">
+</p>
+<p align="center">
+  Rendered with AETHER Motion from the <a href="examples/aether-monochrome-promo.html">monochrome promo composition</a>.
 </p>
 
 ## Blocks and Themes
