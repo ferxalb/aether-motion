@@ -3,8 +3,8 @@
 <p align="center"><b>Write HTML. Render video. No browser.</b></p>
 
 <p align="center">
-  <a href="https://github.com/ferxalb/aether-hyperframes/actions/workflows/ci.yml"><img src="https://github.com/ferxalb/aether-hyperframes/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/ferxalb/aether-hyperframes/releases"><img src="https://img.shields.io/github/v/release/ferxalb/aether-hyperframes?style=flat" alt="Release"></a>
+  <a href="https://github.com/ferxalb/aether-motion/actions/workflows/ci.yml"><img src="https://github.com/ferxalb/aether-motion/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/ferxalb/aether-motion/releases"><img src="https://img.shields.io/github/v/release/ferxalb/aether-motion?style=flat" alt="Release"></a>
   <a href="https://skills.sh/ferxalb/aether-motion"><img src="https://skills.sh/b/ferxalb/aether-motion" alt="skills.sh installs"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/built%20with-Rust-orange?logo=rust" alt="Rust">
@@ -17,7 +17,7 @@
   <a href="examples">Examples</a> |
   <a href="AGENTS.md">Composition Reference</a> |
   <a href="#agent-skills">Agent Skills</a> |
-  <a href="https://github.com/ferxalb/aether-hyperframes/releases">Download</a>
+  <a href="https://github.com/ferxalb/aether-motion/releases">Download</a>
 </p>
 
 AETHER Motion is a free, open-source video renderer that turns HTML and CSS compositions into deterministic MP4 videos. It is a single native binary: no headless Chrome, no Node.js, no FFmpeg. It reads the HyperFrames composition format (clips, tracks, and timing as data attributes) and adds native motion: keyframes, camera moves, kinetic type, scene transitions, and glass.
@@ -30,7 +30,7 @@ Using a coding agent? Connect the local MCP server for direct tool access, or in
 npx @aether-motion/cli init my-video    # or: pnpm dlx / bunx / yarn dlx (no install needed)
 ```
 
-With the binary on your `PATH` (`npm i -g @aether-motion/cli`, a [release download](https://github.com/ferxalb/aether-hyperframes/releases), or `cargo install`), the commands are short:
+With the binary on your `PATH` (`npm i -g @aether-motion/cli`, a [release download](https://github.com/ferxalb/aether-motion/releases), or `cargo install`), the commands are short:
 
 ```bash
 aether-motion init my-video   # sample video + agent skills + MCP config, ready to go
@@ -71,10 +71,10 @@ aether-motion render examples/premium-promo.html --output promo.mp4 --size 1080p
 
 ## Install
 
-Download the binary for your system from [Releases](https://github.com/ferxalb/aether-hyperframes/releases) and put `aether-motion` on your `PATH`. Or build it with Rust:
+Download the binary for your system from [Releases](https://github.com/ferxalb/aether-motion/releases) and put `aether-motion` on your `PATH`. Or build it with Rust:
 
 ```bash
-cargo install --git https://github.com/ferxalb/aether-hyperframes
+cargo install --git https://github.com/ferxalb/aether-motion
 ```
 
 Earlier release archives use the executable name `aether-hyperframes`. From a local checkout, run `cargo install --path . --locked` to install `aether-motion` before the next release.
@@ -213,7 +213,7 @@ cargo test --release <test-name>
 
 CI builds and tests on Linux, macOS, and Windows. Read [AGENTS.md](AGENTS.md) for code organization and CPU budget rules before profiling or benchmarking.
 
-- Bugs and feature requests: [GitHub Issues](https://github.com/ferxalb/aether-hyperframes/issues)
+- Bugs and feature requests: [GitHub Issues](https://github.com/ferxalb/aether-motion/issues)
 
 ## License
 

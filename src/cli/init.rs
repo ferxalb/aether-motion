@@ -25,12 +25,20 @@ fn write_file(root: &Path, rel: &str, content: &str, force: bool) -> Result<Step
         fs::create_dir_all(parent)?;
     }
     fs::write(&path, content)?;
-    Ok(if existed { Step::Updated(rel.to_string()) } else { Step::Created(rel.to_string()) })
+    Ok(if existed {
+        Step::Updated(rel.to_string())
+    } else {
+        Step::Created(rel.to_string())
+    })
 }
 
 /// `init [dir] [--template promo|blank] [--no-agent] [--all] [--force]`.
 pub fn run(raw: &[String]) -> Result<()> {
-    let args = Args::parse(raw, &["--template"], &["--no-agent", "--all", "--force", "--yes"])?;
+    let args = Args::parse(
+        raw,
+        &["--template"],
+        &["--no-agent", "--all", "--force", "--yes"],
+    )?;
     let dir = args.positional.first().map_or(".", String::as_str);
     let force = args.has("--force");
     let template = match args.value("--template").unwrap_or("promo") {
@@ -50,15 +58,28 @@ pub fn run(raw: &[String]) -> Result<()> {
     if !args.has("--no-agent") {
         steps.extend(setup::setup_agents(root, args.has("--all"), force)?);
     }
-    println!("Project ready in {}", if dir == "." { "the current directory" } else { dir });
+    println!(
+        "Project ready in {}",
+        if dir == "." {
+            "the current directory"
+        } else {
+            dir
+        }
+    );
     for step in &steps {
         println!("{}", step.line());
     }
     let report = agent::check(&root.join("index.html"));
     if report["ok"] == true {
-        println!("  ok  index.html is valid ({} s, {}x{})", report["duration"], report["width"], report["height"]);
+        println!(
+            "  ok  index.html is valid ({} s, {}x{})",
+            report["duration"], report["width"], report["height"]
+        );
     } else {
-        println!("  !   index.html: {}", report["error"].as_str().unwrap_or("check failed"));
+        println!(
+            "  !   index.html: {}",
+            report["error"].as_str().unwrap_or("check failed")
+        );
     }
     println!("\nNext:");
     if dir != "." {

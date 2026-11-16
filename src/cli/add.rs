@@ -13,7 +13,10 @@ pub fn run(raw: &[String]) -> Result<()> {
         return Ok(());
     }
     if raw[0].starts_with("theme-") {
-        bail!("themes are not inserted automatically; print one with `aether-motion block {}`", raw[0]);
+        bail!(
+            "themes are not inserted automatically; print one with `aether-motion block {}`",
+            raw[0]
+        );
     }
     let html = blocks::run_cli(raw)?;
     let project = project::resolve(Path::new("."), None)?;

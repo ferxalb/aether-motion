@@ -22,7 +22,9 @@ pub struct Project {
 /// Entry order: explicit `file`, `entry` in `aether.json`, `index.html`, the only `*.html` in `dir`.
 pub fn resolve(dir: &Path, file: Option<&str>) -> Result<Project> {
     let config: Value = match fs::read_to_string(dir.join(CONFIG)) {
-        Ok(text) => serde_json::from_str(&text).with_context(|| format!("{CONFIG} is not valid JSON"))?,
+        Ok(text) => {
+            serde_json::from_str(&text).with_context(|| format!("{CONFIG} is not valid JSON"))?
+        }
         Err(_) => Value::Null,
     };
     let entry = match file.or_else(|| config["entry"].as_str()) {
@@ -33,11 +35,23 @@ pub fn resolve(dir: &Path, file: Option<&str>) -> Result<Project> {
         bail!("composition not found: {}", entry.display());
     }
     let fps = config["fps"].as_u64().map_or(Ok(30), |f| {
-        u32::try_from(f).ok().filter(|f| (1..=60).contains(f)).ok_or_else(|| anyhow!("{CONFIG}: fps must be 1 to 60"))
+        u32::try_from(f)
+            .ok()
+            .filter(|f| (1..=60).contains(f))
+            .ok_or_else(|| anyhow!("{CONFIG}: fps must be 1 to 60"))
     })?;
-    let size = config["size"].as_str().map(str::parse).transpose().context("aether.json: size")?;
+    let size = config["size"]
+        .as_str()
+        .map(str::parse)
+        .transpose()
+        .context("aether.json: size")?;
     let out_dir = dir.join(config["out"].as_str().unwrap_or("out"));
-    Ok(Project { entry, fps, size, out_dir })
+    Ok(Project {
+        entry,
+        fps,
+        size,
+        out_dir,
+    })
 }
 
 fn default_entry(dir: &Path) -> Result<PathBuf> {
@@ -72,9 +86,18 @@ mod tests {
         assert!(resolve(&dir, None).is_err());
         fs::write(dir.join("index.html"), "").unwrap();
         assert!(resolve(&dir, None).unwrap().entry.ends_with("index.html"));
-        fs::write(dir.join(CONFIG), r#"{"entry":"a.html","fps":60,"size":"4k","out":"dist"}"#).unwrap();
+        fs::write(
+            dir.join(CONFIG),
+            r#"{"entry":"a.html","fps":60,"size":"4k","out":"dist"}"#,
+        )
+        .unwrap();
         let p = resolve(&dir, None).unwrap();
-        assert!(p.entry.ends_with("a.html") && p.fps == 60 && p.size.is_some() && p.out_dir.ends_with("dist"));
+        assert!(
+            p.entry.ends_with("a.html")
+                && p.fps == 60
+                && p.size.is_some()
+                && p.out_dir.ends_with("dist")
+        );
         fs::remove_dir_all(&dir).unwrap();
     }
 }

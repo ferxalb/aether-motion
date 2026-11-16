@@ -48,7 +48,7 @@ For each of the five packages, open **Settings → Trusted Publisher**, select *
 | Setting | Value |
 | --- | --- |
 | Organization or user | `ferxalb` |
-| Repository | `aether-hyperframes` |
+| Repository | `aether-motion` |
 | Workflow filename | `release.yml` |
 | Environment | Leave empty |
 | Allowed actions | Staged publishing |

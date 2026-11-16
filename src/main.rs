@@ -297,7 +297,12 @@ fn main() -> Result<()> {
             .as_deref()
             .ok_or_else(|| anyhow!("render requires --output"))?;
         match output.extension().and_then(|x| x.to_str()) {
-            Some("png") => aether_motion::cli::render_cmd::write_png(&mut renderer, output, opts.frame.unwrap_or(0), opts.fps)?,
+            Some("png") => aether_motion::cli::render_cmd::write_png(
+                &mut renderer,
+                output,
+                opts.frame.unwrap_or(0),
+                opts.fps,
+            )?,
             Some("mp4") => {
                 if opts.frame.is_some() {
                     bail!("--frame only applies to PNG");

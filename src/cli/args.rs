@@ -29,7 +29,9 @@ impl Args {
         while let Some(arg) = iter.next() {
             let name = canonical(arg);
             if values.contains(&name) {
-                let value = iter.next().ok_or_else(|| anyhow!("missing value for {arg}"))?;
+                let value = iter
+                    .next()
+                    .ok_or_else(|| anyhow!("missing value for {arg}"))?;
                 args.values.insert(name.to_string(), value.clone());
             } else if switches.contains(&name) {
                 args.switches.insert(name.to_string());
@@ -68,7 +70,12 @@ mod tests {
 
     #[test]
     fn parses_values_switches_and_aliases() {
-        let a = Args::parse(&s(&["a.html", "-o", "x.mp4", "-y"]), &["--output"], &["--yes"]).unwrap();
+        let a = Args::parse(
+            &s(&["a.html", "-o", "x.mp4", "-y"]),
+            &["--output"],
+            &["--yes"],
+        )
+        .unwrap();
         assert_eq!(a.positional, ["a.html"]);
         assert_eq!(a.value("--output"), Some("x.mp4"));
         assert!(a.has("--yes"));

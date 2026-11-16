@@ -10,14 +10,38 @@ const TARGETS: [&str; 2] = [".claude/skills", ".agents/skills"];
 
 /// Every bundled skill file as (path under `skills/`, contents).
 pub const FILES: &[(&str, &str)] = &[
-    ("aether-motion/SKILL.md", include_str!("../../skills/aether-motion/SKILL.md")),
-    ("aether-motion/references/composition-contract.md", include_str!("../../skills/aether-motion/references/composition-contract.md")),
-    ("aether-motion-blocks/SKILL.md", include_str!("../../skills/aether-motion-blocks/SKILL.md")),
-    ("aether-motion-cli/SKILL.md", include_str!("../../skills/aether-motion-cli/SKILL.md")),
-    ("aether-motion-import/SKILL.md", include_str!("../../skills/aether-motion-import/SKILL.md")),
-    ("aether-motion-import/references/hyperframes.md", include_str!("../../skills/aether-motion-import/references/hyperframes.md")),
-    ("aether-motion-import/references/remotion.md", include_str!("../../skills/aether-motion-import/references/remotion.md")),
-    ("aether-motion-svg/SKILL.md", include_str!("../../skills/aether-motion-svg/SKILL.md")),
+    (
+        "aether-motion/SKILL.md",
+        include_str!("../../skills/aether-motion/SKILL.md"),
+    ),
+    (
+        "aether-motion/references/composition-contract.md",
+        include_str!("../../skills/aether-motion/references/composition-contract.md"),
+    ),
+    (
+        "aether-motion-blocks/SKILL.md",
+        include_str!("../../skills/aether-motion-blocks/SKILL.md"),
+    ),
+    (
+        "aether-motion-cli/SKILL.md",
+        include_str!("../../skills/aether-motion-cli/SKILL.md"),
+    ),
+    (
+        "aether-motion-import/SKILL.md",
+        include_str!("../../skills/aether-motion-import/SKILL.md"),
+    ),
+    (
+        "aether-motion-import/references/hyperframes.md",
+        include_str!("../../skills/aether-motion-import/references/hyperframes.md"),
+    ),
+    (
+        "aether-motion-import/references/remotion.md",
+        include_str!("../../skills/aether-motion-import/references/remotion.md"),
+    ),
+    (
+        "aether-motion-svg/SKILL.md",
+        include_str!("../../skills/aether-motion-svg/SKILL.md"),
+    ),
 ];
 
 /// Writes the skills under each target; existing files that differ are kept unless `force`.
@@ -39,7 +63,8 @@ pub fn install(root: &Path, force: bool) -> Result<Vec<Step>> {
             if let Some(parent) = path.parent() {
                 fs::create_dir_all(parent)?;
             }
-            fs::write(&path, content).with_context(|| format!("could not write {}", path.display()))?;
+            fs::write(&path, content)
+                .with_context(|| format!("could not write {}", path.display()))?;
         }
         let label = format!("{target}/aether-motion*");
         steps.push(if created + updated > 0 {
@@ -59,7 +84,9 @@ pub fn install(root: &Path, force: bool) -> Result<Vec<Step>> {
 
 /// True when every bundled skill file is present in `root` for the given target.
 pub fn installed(root: &Path, target: &str) -> bool {
-    FILES.iter().all(|(rel, _)| root.join(target).join(rel).exists())
+    FILES
+        .iter()
+        .all(|(rel, _)| root.join(target).join(rel).exists())
 }
 
 pub fn targets() -> &'static [&'static str] {
@@ -76,7 +103,12 @@ mod tests {
             if path.is_dir() {
                 walk(&path, out, base);
             } else {
-                out.push(path.strip_prefix(base).unwrap().to_string_lossy().replace('\\', "/"));
+                out.push(
+                    path.strip_prefix(base)
+                        .unwrap()
+                        .to_string_lossy()
+                        .replace('\\', "/"),
+                );
             }
         }
     }
@@ -97,9 +129,15 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("aether-skills-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         assert!(matches!(install(&dir, false).unwrap()[0], Step::Created(_)));
-        assert!(matches!(install(&dir, false).unwrap()[0], Step::Unchanged(_)));
+        assert!(matches!(
+            install(&dir, false).unwrap()[0],
+            Step::Unchanged(_)
+        ));
         fs::write(dir.join(".claude/skills/aether-motion/SKILL.md"), "mine").unwrap();
-        assert!(matches!(install(&dir, false).unwrap()[0], Step::Skipped(..)));
+        assert!(matches!(
+            install(&dir, false).unwrap()[0],
+            Step::Skipped(..)
+        ));
         assert!(matches!(install(&dir, true).unwrap()[0], Step::Updated(_)));
         fs::remove_dir_all(&dir).unwrap();
     }

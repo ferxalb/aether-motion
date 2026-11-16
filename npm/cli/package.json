@@ -16,9 +16,9 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ferxalb/aether-hyperframes.git"
+    "url": "git+https://github.com/ferxalb/aether-motion.git"
   },
-  "homepage": "https://github.com/ferxalb/aether-hyperframes#readme",
+  "homepage": "https://github.com/ferxalb/aether-motion#readme",
   "keywords": [
     "video",
     "html",

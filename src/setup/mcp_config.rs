@@ -22,9 +22,30 @@ struct Agent {
 }
 
 const AGENTS: [Agent; 3] = [
-    Agent { name: "Claude Code", file: ".mcp.json", key: "mcpServers", marker: ".claude", typed: false, default: true },
-    Agent { name: "Cursor", file: ".cursor/mcp.json", key: "mcpServers", marker: ".cursor", typed: false, default: false },
-    Agent { name: "VS Code", file: ".vscode/mcp.json", key: "servers", marker: ".vscode", typed: true, default: false },
+    Agent {
+        name: "Claude Code",
+        file: ".mcp.json",
+        key: "mcpServers",
+        marker: ".claude",
+        typed: false,
+        default: true,
+    },
+    Agent {
+        name: "Cursor",
+        file: ".cursor/mcp.json",
+        key: "mcpServers",
+        marker: ".cursor",
+        typed: false,
+        default: false,
+    },
+    Agent {
+        name: "VS Code",
+        file: ".vscode/mcp.json",
+        key: "servers",
+        marker: ".vscode",
+        typed: true,
+        default: false,
+    },
 ];
 
 const SERVER: &str = "aether-motion";
@@ -37,7 +58,11 @@ pub const NPM_PACKAGE_ENV: &str = "AETHER_MOTION_NPM_PACKAGE";
 /// `node_modules/.bin` entries are ignored: package runners (`npx`, `pnpm exec`) add them to `PATH`
 /// for the child process only, so an agent starting the MCP server later would not see them.
 pub fn on_path() -> bool {
-    let exe = if cfg!(windows) { "aether-motion.exe" } else { "aether-motion" };
+    let exe = if cfg!(windows) {
+        "aether-motion.exe"
+    } else {
+        "aether-motion"
+    };
     std::env::var_os("PATH").is_some_and(|p| {
         std::env::split_paths(&p)
             .filter(|d| !d.ends_with("node_modules/.bin") && !d.ends_with("node_modules\\.bin"))
@@ -110,14 +135,22 @@ pub fn install(root: &Path, all: bool) -> Result<Vec<Step>> {
         let path = root.join(agent.file);
         let existing = fs::read_to_string(&path).ok();
         let label = format!("{} ({})", agent.file, agent.name);
-        match merge(existing.as_deref().unwrap_or(""), agent.key, entry(agent.typed)) {
+        match merge(
+            existing.as_deref().unwrap_or(""),
+            agent.key,
+            entry(agent.typed),
+        ) {
             Ok(None) => steps.push(Step::Unchanged(label)),
             Ok(Some(text)) => {
                 if let Some(parent) = path.parent() {
                     fs::create_dir_all(parent)?;
                 }
                 fs::write(&path, text)?;
-                steps.push(if existing.is_some() { Step::Updated(label) } else { Step::Created(label) });
+                steps.push(if existing.is_some() {
+                    Step::Updated(label)
+                } else {
+                    Step::Created(label)
+                });
             }
             Err(why) => steps.push(Step::Skipped(label, why)),
         }

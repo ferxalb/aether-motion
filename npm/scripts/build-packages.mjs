@@ -25,7 +25,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const out = resolve(args.out);
 rmSync(out, { recursive: true, force: true });
 
-const repository = { type: "git", url: "git+https://github.com/ferxalb/aether-hyperframes.git" };
+const repository = { type: "git", url: "git+https://github.com/ferxalb/aether-motion.git" };
 const optionalDependencies = {};
 
 for (const p of PLATFORMS) {

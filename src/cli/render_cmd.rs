@@ -23,7 +23,15 @@ pub fn write_png(renderer: &mut Renderer<'_>, output: &Path, frame: usize, fps: 
 pub fn run(raw: &[String]) -> Result<()> {
     let args = Args::parse(
         raw,
-        &["--output", "--size", "--scale", "--fps", "--threads", "--frame", "--audio-bitrate"],
+        &[
+            "--output",
+            "--size",
+            "--scale",
+            "--fps",
+            "--threads",
+            "--frame",
+            "--audio-bitrate",
+        ],
         &["--force"],
     )?;
     let project = project::resolve(Path::new("."), args.positional.first().map(String::as_str))?;
@@ -41,14 +49,23 @@ pub fn run(raw: &[String]) -> Result<()> {
     let mut renderer = match (size, args.number::<f32>("--scale")?) {
         (_, Some(scale)) => Renderer::new(&composition, scale)?,
         // A project size preset only applies to 16:9 / 9:16 compositions; others render natively.
-        (Some(size), None) if args.value("--size").is_some() || size.dimensions(composition.width, composition.height).is_ok() => {
+        (Some(size), None)
+            if args.value("--size").is_some()
+                || size
+                    .dimensions(composition.width, composition.height)
+                    .is_ok() =>
+        {
             Renderer::with_output_size(&composition, size)?
         }
         _ => Renderer::new(&composition, 1.0)?,
     };
     lower_priority();
     let explicit = args.value("--output");
-    let stem = project.entry.file_stem().and_then(|s| s.to_str()).unwrap_or("video");
+    let stem = project
+        .entry
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("video");
     let output = match explicit {
         Some(o) => o.into(),
         None => project.out_dir.join(format!("{stem}.mp4")),
@@ -58,7 +75,10 @@ pub fn run(raw: &[String]) -> Result<()> {
     }
     if output.exists() {
         if explicit.is_some() && !args.has("--force") {
-            bail!("{} already exists; pass --force to replace it", output.display());
+            bail!(
+                "{} already exists; pass --force to replace it",
+                output.display()
+            );
         }
         fs::remove_file(&output)?;
     }
@@ -74,14 +94,27 @@ pub fn run(raw: &[String]) -> Result<()> {
             write_png(&mut renderer, &output, frame, fps)?;
         }
         Some("mp4") => {
-            let threads = args.number("--threads")?.unwrap_or_else(crate::encode::default_threads);
-            let kbps: u32 = args.number("--audio-bitrate")?.unwrap_or(crate::audio::DEFAULT_BITRATE / 1000);
-            println!("Rendering {} -> {} ({w}x{h}, {frames} frames @ {fps} fps)", project.entry.display(), output.display());
+            let threads = args
+                .number("--threads")?
+                .unwrap_or_else(crate::encode::default_threads);
+            let kbps: u32 = args
+                .number("--audio-bitrate")?
+                .unwrap_or(crate::audio::DEFAULT_BITRATE / 1000);
+            println!(
+                "Rendering {} -> {} ({w}x{h}, {frames} frames @ {fps} fps)",
+                project.entry.display(),
+                output.display()
+            );
             encode_native_with_audio(&mut renderer, &output, fps, threads, kbps * 1000)?;
         }
         _ => return Err(anyhow!("output must end in .png or .mp4")),
     }
     let bytes = fs::metadata(&output).map(|m| m.len()).unwrap_or(0);
-    println!("Done: {} ({:.1} MB) in {:.1} s", output.display(), bytes as f64 / 1e6, start.elapsed().as_secs_f64());
+    println!(
+        "Done: {} ({:.1} MB) in {:.1} s",
+        output.display(),
+        bytes as f64 / 1e6,
+        start.elapsed().as_secs_f64()
+    );
     Ok(())
 }
