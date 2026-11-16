@@ -1,0 +1,341 @@
+<!-- A monochrome AETHER launch film with deterministic ASCII planets and a complete native-rendering story. -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>AETHER — Every frame, by design</title>
+  <style>
+    :root {
+      --bg: #030303;
+      --text: #f5f5f5;
+      --muted: #9a9a9a;
+      --accent: #ffffff;
+      --accent-2: #a6a6a6;
+      --on-accent: #050505;
+      --panel: #ffffff12;
+      --line: #ffffff36;
+      --glow-a: #ffffff20;
+      --glow-a-fade: #ffffff00;
+      --glow-b: #aaaaaa18;
+      --glow-b-fade: #ffffff00;
+    }
+
+    #root { background: var(--bg); }
+    .scene { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+    .camera { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+    .scene-kicker { position: absolute; left: 150px; top: 108px; width: 1620px; font-size: 23px; font-weight: 700; letter-spacing: 7px; color: #d9d9d9; text-align: center; }
+    .scene-title { position: absolute; left: 150px; top: 154px; width: 1620px; font-size: 76px; font-weight: 800; color: var(--text); text-align: center; text-shadow: 0 8px 34px #ffffff20; }
+    .scene-subtitle { position: absolute; left: 240px; top: 250px; width: 1440px; font-size: 31px; line-height: 1.25; color: var(--muted); text-align: center; }
+    .micro-label { font-size: 19px; font-weight: 700; letter-spacing: 4px; color: #c5c5c5; }
+    .mono-card { border: 1px solid var(--line); border-radius: 28px; background: #ffffff0c; box-shadow: 0 24px 64px 0 #000000b0; }
+
+    @keyframes orbit-a-spin {
+      from { transform: rotate(-24deg); }
+      to { transform: rotate(336deg); }
+    }
+    @keyframes orbit-b-spin {
+      from { transform: rotate(42deg); }
+      to { transform: rotate(402deg); }
+    }
+    @keyframes planet-spin {
+      from { transform: rotate(-2deg); }
+      to { transform: rotate(358deg); }
+    }
+    @keyframes planet-sweep {
+      0% { transform: translate(0, -105px); opacity: 0; }
+      45% { opacity: 0.65; }
+      100% { transform: translate(0, 105px); opacity: 0; }
+    }
+    @keyframes star-drift {
+      from { transform: translate(-24px, 12px) scale(0.8); opacity: 0.22; }
+      to { transform: translate(24px, -12px) scale(1.2); opacity: 0.9; }
+    }
+    @keyframes pipeline-glint {
+      from { transform: translate(-90px, 0); opacity: 0.2; }
+      to { transform: translate(90px, 0); opacity: 0.95; }
+    }
+
+    .planet-stage { position: absolute; width: 620px; height: 520px; }
+    .planet-left { left: 115px; top: 270px; }
+    .planet-right { left: 1130px; top: 300px; }
+    .planet-orbit-a { position: absolute; left: -36px; top: 153px; width: 690px; height: 212px; border: 2px solid #ffffff59; border-radius: 106px; animation: orbit-a-spin 18s linear 0s infinite; z-index: 1; }
+    .planet-orbit-b { position: absolute; left: -26px; top: 175px; width: 670px; height: 166px; border: 1px solid #ffffff39; border-radius: 83px; animation: orbit-b-spin 25s linear 0s infinite; z-index: 4; }
+    .orbit-moon { position: absolute; left: 324px; top: 7px; width: 36px; height: 36px; font-family: Menlo; font-size: 28px; font-weight: 700; color: #ffffff; text-align: center; text-shadow: 0 0 18px #ffffffa0; }
+    .planet-halo { position: absolute; left: 112px; top: 72px; width: 396px; height: 396px; border-radius: 198px; background: radial-gradient(circle farthest-corner at 42% 36%, #ffffff24, #ffffff00); border: 1px solid #ffffff21; box-shadow: 0 0 70px 0 #ffffff12; z-index: 2; }
+    .planet-core { position: absolute; left: 99px; top: 118px; width: 422px; height: 286px; display: flex; flex-direction: column; align-items: center; justify-content: center; animation: planet-spin 32s linear 0s infinite; z-index: 3; }
+    .planet-row { height: 28px; font-family: Menlo; font-size: 24px; font-weight: 700; line-height: 1; letter-spacing: 1px; text-align: center; white-space: nowrap; text-shadow: 0 0 14px #ffffff33; }
+    .planet-r1 { width: 210px; opacity: 0.54; color: #b9b9b9; }
+    .planet-r2 { width: 280px; opacity: 0.66; color: #d5d5d5; }
+    .planet-r3 { width: 350px; opacity: 0.78; color: #ececec; }
+    .planet-r4 { width: 410px; opacity: 0.9; color: #ffffff; }
+    .planet-r5 { width: 450px; color: #ffffff; }
+    .planet-r6 { width: 450px; color: #ffffff; }
+    .planet-r7 { width: 410px; opacity: 0.9; color: #ffffff; }
+    .planet-r8 { width: 350px; opacity: 0.78; color: #ececec; }
+    .planet-r9 { width: 280px; opacity: 0.66; color: #d5d5d5; }
+    .planet-r10 { width: 210px; opacity: 0.54; color: #b9b9b9; }
+    .planet-scan { position: absolute; left: 130px; top: 258px; width: 360px; height: 2px; background: linear-gradient(to right, #ffffff00, #ffffffbc, #ffffff00); animation: planet-sweep 3.8s ease-in-out 0s infinite; z-index: 5; }
+    .planet-star { position: absolute; font-family: Menlo; font-size: 24px; color: #eeeeee; text-shadow: 0 0 16px #ffffff90; animation: star-drift 3s ease-in-out 0s infinite alternate; }
+    .star-one { left: 32px; top: 82px; }
+    .star-two { left: 562px; top: 385px; animation-delay: 0.8s; }
+    .star-three { left: 92px; top: 410px; animation-delay: 1.4s; }
+    .planet-caption { position: absolute; left: 0; top: 486px; width: 620px; font-size: 18px; font-weight: 700; letter-spacing: 4px; color: #a7a7a7; text-align: center; }
+
+    .system-stack { position: absolute; left: 125px; top: 365px; width: 930px; display: flex; flex-direction: column; gap: 18px; }
+    .system-card { height: 142px; padding: 24px 28px; display: flex; flex-direction: row; align-items: center; gap: 26px; border: 1px solid #ffffff35; border-radius: 24px; background: #ffffff0d; box-shadow: 0 18px 54px 0 #00000080; }
+    .system-index { width: 58px; font-family: Menlo; font-size: 25px; font-weight: 700; color: #ffffff; }
+    .system-copy { display: flex; flex-direction: column; gap: 10px; }
+    .system-title { font-size: 33px; font-weight: 700; color: #f3f3f3; }
+    .system-description { width: 770px; font-size: 23px; line-height: 1.2; color: #a4a4a4; }
+
+    .time-grid { position: absolute; left: 150px; top: 405px; width: 900px; display: flex; flex-direction: row; gap: 18px; }
+    .time-card { width: 282px; height: 245px; padding: 26px; display: flex; flex-direction: column; justify-content: center; gap: 22px; border: 1px solid #ffffff38; border-radius: 24px; background: #ffffff0c; box-shadow: 0 20px 52px 0 #00000090; }
+    .time-value { font-family: Menlo; font-size: 36px; font-weight: 700; color: #ffffff; white-space: nowrap; }
+    .time-note { font-size: 20px; font-weight: 700; letter-spacing: 3px; color: #9c9c9c; }
+    .time-formula { position: absolute; left: 150px; top: 738px; width: 925px; font-family: Menlo; font-size: 30px; line-height: 1.3; color: #d6d6d6; text-align: center; }
+
+    .performance-grid { position: absolute; left: 92px; top: 388px; width: 1736px; display: flex; flex-direction: row; gap: 28px; }
+    .performance-card { width: 550px; height: 370px; padding: 34px; display: flex; flex-direction: column; gap: 22px; border: 1px solid #ffffff36; border-radius: 28px; background: #ffffff0d; box-shadow: 0 24px 70px 0 #000000a0; backdrop-filter: blur(20px); }
+    .performance-index { font-family: Menlo; font-size: 24px; font-weight: 700; color: #8d8d8d; }
+    .performance-title { font-size: 37px; font-weight: 800; color: #f2f2f2; }
+    .performance-copy { font-size: 25px; line-height: 1.32; color: #adadad; }
+    .performance-meter { position: relative; width: 430px; height: 7px; background: #ffffff26; border-radius: 4px; }
+    .performance-meter-fill { position: absolute; left: 0; top: 0; height: 7px; background: linear-gradient(to right, #888888, #ffffff); border-radius: 4px; }
+    .meter-fill-one { width: 380px; }
+    .meter-fill-two { width: 320px; }
+    .meter-fill-three { width: 410px; }
+
+    .pipeline { position: absolute; left: 134px; top: 390px; width: 1652px; height: 164px; display: flex; flex-direction: row; align-items: center; justify-content: space-between; }
+    .pipeline-node { position: relative; width: 285px; height: 150px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; border: 1px solid #ffffff45; border-radius: 24px; background: #ffffff0d; box-shadow: 0 20px 54px 0 #00000088; }
+    .pipeline-index { font-family: Menlo; font-size: 18px; font-weight: 700; letter-spacing: 4px; color: #888888; }
+    .pipeline-name { font-size: 33px; font-weight: 800; letter-spacing: 2px; color: #f3f3f3; }
+    .pipeline-glint { position: absolute; left: 0; top: 72px; width: 285px; height: 2px; background: linear-gradient(to right, #ffffff00, #ffffffbb, #ffffff00); animation: pipeline-glint 2.6s ease-in-out 0s infinite alternate; }
+    .capability-grid { position: absolute; left: 180px; top: 635px; width: 1560px; height: 212px; display: flex; flex-direction: row; gap: 18px; }
+    .capability-column { width: 510px; display: flex; flex-direction: column; gap: 16px; }
+    .capability-chip { height: 92px; padding: 22px 28px; display: flex; flex-direction: row; align-items: center; gap: 18px; border: 1px solid #ffffff2d; border-radius: 18px; background: #ffffff09; }
+    .capability-mark { width: 40px; font-family: Menlo; font-size: 20px; font-weight: 700; color: #ffffff; }
+    .capability-text { font-size: 23px; font-weight: 700; color: #bdbdbd; }
+
+    #hero { position: absolute; left: 700px; top: 0; width: 1160px; height: 1080px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 30px; }
+    .hero-kicker { font-size: 22px; font-weight: 700; letter-spacing: 6px; color: #d5d5d5; text-align: center; }
+    .hero-title { width: 1160px; font-size: 100px; font-weight: 800; color: var(--text); text-align: center; text-shadow: 0 8px 40px #00000099; }
+    .hero-sub { width: 1060px; font-size: 31px; line-height: 1.3; color: var(--muted); text-align: center; }
+    #spec { left: 1260px; top: 395px; width: 520px; height: 310px; background: #ffffff0d; border-color: #ffffff48; box-shadow: 0 24px 64px 0 #000000a0; }
+    .spec-value { font-size: 102px; color: #ffffff; }
+    .spec-label { font-size: 22px; font-weight: 700; letter-spacing: 3px; color: #a0a0a0; }
+    #cta { position: absolute; left: 730px; top: 0; width: 1080px; height: 1080px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 48px; }
+    .cta-title { width: 1080px; font-size: 82px; font-weight: 800; color: #f4f4f4; text-align: center; text-shadow: 0 8px 40px #00000099; }
+    .cta-button { display: flex; padding: 28px 84px; border-radius: 80px; border: 1px solid #ffffffa0; background: linear-gradient(135deg, #ffffff, #bdbdbd); box-shadow: 0 18px 54px 0 #ffffff22; }
+    .cta-label { font-size: 31px; font-weight: 700; color: #050505; }
+    .cta-url { font-size: 22px; letter-spacing: 3px; color: #a7a7a7; text-align: center; }
+  </style>
+</head>
+<body>
+<div id="root" data-composition-id="aether-monochrome-promo" data-width="1920" data-height="1080" data-duration="30" data-hf-vignette="0.24" data-hf-grain="0.012">
+  <!-- Built-in ambient glow block, recolored through the monochrome root variables. -->
+  <style>
+    @keyframes mono-glow-drift {
+      from { transform: translate(-40px, 20px); }
+      to { transform: translate(40px, -20px); }
+    }
+    .mono-glow-a { position: absolute; left: -300px; top: -350px; width: 1400px; height: 1200px; background: radial-gradient(ellipse farthest-side at 50% 50%, var(--glow-a), var(--glow-a-fade)); animation: mono-glow-drift 30s linear 0s 1 both; }
+    .mono-glow-b { position: absolute; left: 900px; top: 250px; width: 1300px; height: 1100px; background: radial-gradient(ellipse farthest-side at 50% 50%, var(--glow-b), var(--glow-b-fade)); animation: mono-glow-drift 30s linear 0s 1 reverse both; }
+  </style>
+  <div class="mono-glow-a"></div>
+  <div class="mono-glow-b"></div>
+
+  <!-- Scene 1: the AETHER hero and a rotating ASCII planet. -->
+  <div id="s1" class="scene" data-start="0" data-duration="5" data-track-index="1" data-hf-fade-in="0.18" data-hf-fade-out="0.18">
+    <div class="camera" data-hf-camera='[{"at":0,"zoom":1},{"at":5,"zoom":1.08,"easing":"ease-in-out-cubic"}]'>
+      <div class="planet-stage planet-left">
+        <div class="planet-orbit-a"><div class="orbit-moon">o</div></div>
+        <div class="planet-orbit-b"></div>
+        <div class="planet-halo"></div>
+        <div class="planet-core">
+          <div class="planet-row planet-r1">..::--==--::..</div>
+          <div class="planet-row planet-r2">.:--==++**++==--:.</div>
+          <div class="planet-row planet-r3">:--==+**####**+==--:</div>
+          <div class="planet-row planet-r4">:-=+**##%%%%##**+=-:</div>
+          <div class="planet-row planet-r5">-=+*##%%@@@@%%##*+=-</div>
+          <div class="planet-row planet-r6">-=+*##%%@@@@%%##*+=-</div>
+          <div class="planet-row planet-r7">:-=+**##%%%%##**+=-:</div>
+          <div class="planet-row planet-r8">:--==+**####**+==--:</div>
+          <div class="planet-row planet-r9">.:--==++**++==--:.</div>
+          <div class="planet-row planet-r10">..::--==--::..</div>
+        </div>
+        <div class="planet-scan"></div>
+        <div class="planet-star star-one">+</div>
+        <div class="planet-star star-two">.</div>
+        <div class="planet-star star-three">*</div>
+        <div class="planet-caption">01 / DETERMINISTIC BY DESIGN</div>
+      </div>
+
+      <!-- Built-in hero-title block, placed beside the planet. -->
+      <style>
+        #hero { left: 700px; width: 1160px; }
+        .hero-kicker { font-size: 22px; color: #d5d5d5; }
+        .hero-title { width: 1160px; font-size: 100px; }
+        .hero-sub { width: 1060px; font-size: 31px; }
+      </style>
+      <div id="hero">
+        <div class="hero-kicker" data-hf-keyframes='[{"at":0,"y":18,"opacity":0},{"at":0.7,"y":0,"opacity":1,"easing":"ease-out-expo"}]'>AETHER HYPERFRAMES</div>
+        <div class="hero-title" data-hf-split="words" data-hf-stagger="0.1" data-hf-split-easing="ease-out-expo">Motion, made native.</div>
+        <div class="hero-sub" data-hf-keyframes='[{"at":0.6,"y":24,"opacity":0},{"at":1.4,"y":0,"opacity":1,"easing":"ease-out-expo"}]'>Deterministic output. Optimized rendering. One complete pipeline.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scene 2: show the motion vocabulary and camera language. -->
+  <div id="s2" class="scene" data-start="5" data-duration="5" data-track-index="2" data-hf-fade-in="0.18" data-hf-fade-out="0.18">
+    <div class="camera" data-hf-camera='[{"at":0,"zoom":1},{"at":5,"zoom":1.06,"x":20,"y":-8,"easing":"ease-in-out-cubic"}]'>
+      <div class="scene-kicker" data-hf-keyframes='[{"at":0,"y":16,"opacity":0},{"at":0.6,"y":0,"opacity":1,"easing":"ease-out-cubic"}]'>A COMPLETE MOTION SYSTEM</div>
+      <div class="scene-title" data-hf-split="words" data-hf-stagger="0.08" data-hf-split-easing="ease-out-expo">A precise visual language.</div>
+      <div class="system-stack">
+        <div class="system-card" data-hf-keyframes='[{"at":0,"y":26,"opacity":0},{"at":0.7,"y":0,"opacity":1,"easing":"ease-out-cubic"}]'>
+          <div class="system-index">01</div>
+          <div class="system-copy"><div class="system-title">Native camera</div><div class="system-description">Pan and zoom across a complete scene with eased motion.</div></div>
+        </div>
+        <div class="system-card system-card-two" data-hf-keyframes='[{"at":0.15,"y":26,"opacity":0},{"at":0.85,"y":0,"opacity":1,"easing":"ease-out-cubic"}]'>
+          <div class="system-index">02</div>
+          <div class="system-copy"><div class="system-title">Kinetic type</div><div class="system-description">Reveal words or letters with staggered, timed entrances.</div></div>
+        </div>
+        <div class="system-card system-card-three" data-hf-keyframes='[{"at":0.3,"y":26,"opacity":0},{"at":1,"y":0,"opacity":1,"easing":"ease-out-cubic"}]'>
+          <div class="system-index">03</div>
+          <div class="system-copy"><div class="system-title">Transitions and reveals</div><div class="system-description">Join scenes, sweep in panels, and control every beat.</div></div>
+        </div>
+      </div>
+      <div class="planet-stage planet-right">
+        <div class="planet-orbit-a"><div class="orbit-moon">o</div></div>
+        <div class="planet-orbit-b"></div>
+        <div class="planet-halo"></div>
+        <div class="planet-core">
+          <div class="planet-row planet-r1">..::--==--::..</div><div class="planet-row planet-r2">.:--==++**++==--:.</div>
+          <div class="planet-row planet-r3">:--==+**####**+==--:</div><div class="planet-row planet-r4">:-=+**##%%%%##**+=-:</div>
+          <div class="planet-row planet-r5">-=+*##%%@@@@%%##*+=-</div><div class="planet-row planet-r6">-=+*##%%@@@@%%##*+=-</div>
+          <div class="planet-row planet-r7">:-=+**##%%%%##**+=-:</div><div class="planet-row planet-r8">:--==+**####**+==--:</div>
+          <div class="planet-row planet-r9">.:--==++**++==--:.</div><div class="planet-row planet-r10">..::--==--::..</div>
+        </div>
+        <div class="planet-scan"></div><div class="planet-star star-one">+</div><div class="planet-star star-two">.</div><div class="planet-star star-three">*</div>
+        <div class="planet-caption">MOTION THAT STAYS ON THE TIMELINE</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scene 3: deterministic sampling and a supported 60 FPS target. -->
+  <div id="s3" class="scene" data-start="10" data-duration="5" data-track-index="3" data-hf-fade-in="0.18" data-hf-fade-out="0.18">
+    <div class="camera" data-hf-camera='[{"at":0,"zoom":1.04},{"at":5,"zoom":1,"easing":"ease-in-out-cubic"}]'>
+      <div class="scene-kicker" data-hf-keyframes='[{"at":0,"y":16,"opacity":0},{"at":0.6,"y":0,"opacity":1,"easing":"ease-out-cubic"}]'>FRAME DETERMINISM</div>
+      <div class="scene-title" data-hf-split="words" data-hf-stagger="0.08" data-hf-split-easing="ease-out-expo">Same inputs. Same frame.</div>
+      <div class="scene-subtitle">Time is explicit. Motion is sampled exactly where you ask.</div>
+      <div class="time-grid">
+        <div class="time-card" data-hf-keyframes='[{"at":0,"y":24,"opacity":0},{"at":0.7,"y":0,"opacity":1,"easing":"ease-out-cubic"}]'><div class="time-note">SAMPLE 001</div><div class="time-value">T = 1.000s</div><div class="time-note">FRAME 060</div></div>
+        <div class="time-card" data-hf-keyframes='[{"at":0.12,"y":24,"opacity":0},{"at":0.82,"y":0,"opacity":1,"easing":"ease-out-cubic"}]'><div class="time-note">SAMPLE 002</div><div class="time-value">T = 1.017s</div><div class="time-note">FRAME 061</div></div>
+        <div class="time-card" data-hf-keyframes='[{"at":0.24,"y":24,"opacity":0},{"at":0.94,"y":0,"opacity":1,"easing":"ease-out-cubic"}]'><div class="time-note">SAMPLE 003</div><div class="time-value">T = 1.033s</div><div class="time-note">FRAME 062</div></div>
+      </div>
+      <div class="time-formula" data-hf-keyframes='[{"at":0.6,"opacity":0},{"at":1.4,"opacity":1,"easing":"ease-out-cubic"}]'>time + inputs = pixels</div>
+
+      <!-- Built-in counter-card block, recolored for the monochrome palette. -->
+      <style>
+        @keyframes spec-in { from { transform: translate(0, 40px); opacity: 0; } to { transform: translate(0, 0); opacity: 1; } }
+        #spec { left: 1260px; top: 395px; width: 520px; height: 310px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; border-radius: 30px; background: #ffffff0d; border: 1px solid #ffffff48; box-shadow: 0 24px 64px 0 #000000a0; animation: spec-in 0.8s ease-out 0.2s 1 both; }
+        .spec-value { font-size: 102px; font-weight: 800; color: #ffffff; text-align: center; }
+        .spec-label { font-size: 22px; font-weight: 700; letter-spacing: 3px; color: #a0a0a0; text-align: center; }
+      </style>
+      <div id="spec">
+        <div class="spec-value" data-hf-counter="60" data-hf-counter-from="0" data-hf-counter-duration="1.8" data-hf-counter-delay="0.3" data-hf-counter-decimals="0" data-hf-counter-prefix="" data-hf-counter-suffix=" FPS"></div>
+        <div class="spec-label">NATIVE MOTION</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scene 4: explain concrete rendering optimizations without inventing benchmark claims. -->
+  <div id="s4" class="scene" data-start="15" data-duration="5" data-track-index="4" data-hf-fade-in="0.18" data-hf-fade-out="0.18">
+    <div class="camera" data-hf-camera='[{"at":0,"zoom":1},{"at":5,"zoom":1.04,"easing":"ease-out-cubic"}]'>
+      <div class="scene-kicker" data-hf-keyframes='[{"at":0,"opacity":0},{"at":0.5,"opacity":1,"easing":"ease-out-cubic"}]'>AN OPTIMIZED RENDER PATH</div>
+      <div class="scene-title" data-hf-split="words" data-hf-stagger="0.08" data-hf-split-easing="ease-out-expo">Less waste between frames.</div>
+      <div class="scene-subtitle">Purpose-built caching, blur scaling, and responsive CPU scheduling.</div>
+      <div class="performance-grid">
+        <div class="performance-card" data-hf-keyframes='[{"at":0,"y":26,"opacity":0},{"at":0.8,"y":0,"opacity":1,"easing":"ease-out-cubic"}]'>
+          <div class="performance-index">01 / TILE CACHE</div><div class="performance-title">Paint once.</div>
+          <div class="performance-copy">Repeated gradients and soft shadows reuse cached paint tiles.</div>
+          <div class="performance-meter"><div class="performance-meter-fill meter-fill-one" data-hf-reveal="from-left" data-hf-reveal-duration="1.1"></div></div>
+        </div>
+        <div class="performance-card performance-two" data-hf-keyframes='[{"at":0.15,"y":26,"opacity":0},{"at":0.95,"y":0,"opacity":1,"easing":"ease-out-cubic"}]'>
+          <div class="performance-index">02 / ADAPTIVE BLUR</div><div class="performance-title">Scale the heavy pass.</div>
+          <div class="performance-copy">Wide backdrop blur runs on a reduced copy, then scales back smoothly.</div>
+          <div class="performance-meter"><div class="performance-meter-fill meter-fill-two" data-hf-reveal="from-left" data-hf-reveal-delay="0.2" data-hf-reveal-duration="1.1"></div></div>
+        </div>
+        <div class="performance-card performance-three" data-hf-keyframes='[{"at":0.3,"y":26,"opacity":0},{"at":1.1,"y":0,"opacity":1,"easing":"ease-out-cubic"}]'>
+          <div class="performance-index">03 / CPU PRIORITY</div><div class="performance-title">Keep work responsive.</div>
+          <div class="performance-copy">Low-priority rendering and bounded worker defaults leave room for the rest of your machine.</div>
+          <div class="performance-meter"><div class="performance-meter-fill meter-fill-three" data-hf-reveal="from-left" data-hf-reveal-delay="0.4" data-hf-reveal-duration="1.1"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scene 5: connect supported authoring, motion, and export features into one pipeline. -->
+  <div id="s5" class="scene" data-start="20" data-duration="5" data-track-index="5" data-hf-fade-in="0.18" data-hf-fade-out="0.18">
+    <div class="camera" data-hf-camera='[{"at":0,"zoom":1.03},{"at":5,"zoom":1,"easing":"ease-out-cubic"}]'>
+      <div class="scene-kicker" data-hf-keyframes='[{"at":0,"opacity":0},{"at":0.5,"opacity":1,"easing":"ease-out-cubic"}]'>ONE PIPELINE, END TO END</div>
+      <div class="scene-title" data-hf-split="words" data-hf-stagger="0.08" data-hf-split-easing="ease-out-expo">From HTML to native MP4.</div>
+      <div class="scene-subtitle">Compose, animate, render, and encode on a single deterministic timeline.</div>
+      <div class="pipeline">
+        <div class="pipeline-node" data-hf-keyframes='[{"at":0,"y":22,"opacity":0},{"at":0.65,"y":0,"opacity":1,"easing":"ease-out-cubic"}]'><div class="pipeline-index">01 / AUTHOR</div><div class="pipeline-name">HTML</div><div class="pipeline-glint"></div></div>
+        <div class="pipeline-node" data-hf-keyframes='[{"at":0.12,"y":22,"opacity":0},{"at":0.77,"y":0,"opacity":1,"easing":"ease-out-cubic"}]'><div class="pipeline-index">02 / SCHEDULE</div><div class="pipeline-name">TIMELINE</div><div class="pipeline-glint"></div></div>
+        <div class="pipeline-node" data-hf-keyframes='[{"at":0.24,"y":22,"opacity":0},{"at":0.89,"y":0,"opacity":1,"easing":"ease-out-cubic"}]'><div class="pipeline-index">03 / MOVE</div><div class="pipeline-name">MOTION</div><div class="pipeline-glint"></div></div>
+        <div class="pipeline-node" data-hf-keyframes='[{"at":0.36,"y":22,"opacity":0},{"at":1.01,"y":0,"opacity":1,"easing":"ease-out-cubic"}]'><div class="pipeline-index">04 / DRAW</div><div class="pipeline-name">RASTER</div><div class="pipeline-glint"></div></div>
+        <div class="pipeline-node" data-hf-keyframes='[{"at":0.48,"y":22,"opacity":0},{"at":1.13,"y":0,"opacity":1,"easing":"ease-out-cubic"}]'><div class="pipeline-index">05 / DELIVER</div><div class="pipeline-name">H.264 MP4</div><div class="pipeline-glint"></div></div>
+      </div>
+      <div class="capability-grid">
+        <div class="capability-column">
+          <div class="capability-chip"><div class="capability-mark">A1</div><div class="capability-text">Kinetic type and counters</div></div>
+          <div class="capability-chip"><div class="capability-mark">A2</div><div class="capability-text">16:9 and 9:16 compositions</div></div>
+        </div>
+        <div class="capability-column">
+          <div class="capability-chip"><div class="capability-mark">B1</div><div class="capability-text">Cameras, transitions, and reveals</div></div>
+          <div class="capability-chip"><div class="capability-mark">B2</div><div class="capability-text">1080p and 4K output</div></div>
+        </div>
+        <div class="capability-column">
+          <div class="capability-chip"><div class="capability-mark">C1</div><div class="capability-text">Glass, shadows, and filters</div></div>
+          <div class="capability-chip"><div class="capability-mark">C2</div><div class="capability-text">One native MP4 sample per frame</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scene 6: close on the ASCII planet and built-in call-to-action block. -->
+  <div id="s6" class="scene" data-start="25" data-duration="5" data-track-index="6" data-hf-fade-in="0.18" data-hf-fade-out="0.18">
+    <div class="camera" data-hf-camera='[{"at":0,"zoom":1.04},{"at":5,"zoom":1,"easing":"ease-out-cubic"}]'>
+      <div class="planet-stage planet-left">
+        <div class="planet-orbit-a"><div class="orbit-moon">o</div></div><div class="planet-orbit-b"></div><div class="planet-halo"></div>
+        <div class="planet-core">
+          <div class="planet-row planet-r1">..::--==--::..</div><div class="planet-row planet-r2">.:--==++**++==--:.</div>
+          <div class="planet-row planet-r3">:--==+**####**+==--:</div><div class="planet-row planet-r4">:-=+**##%%%%##**+=-:</div>
+          <div class="planet-row planet-r5">-=+*##%%@@@@%%##*+=-</div><div class="planet-row planet-r6">-=+*##%%@@@@%%##*+=-</div>
+          <div class="planet-row planet-r7">:-=+**##%%%%##**+=-:</div><div class="planet-row planet-r8">:--==+**####**+==--:</div>
+          <div class="planet-row planet-r9">.:--==++**++==--:.</div><div class="planet-row planet-r10">..::--==--::..</div>
+        </div>
+        <div class="planet-scan"></div><div class="planet-star star-one">+</div><div class="planet-star star-two">.</div><div class="planet-star star-three">*</div>
+        <div class="planet-caption">AETHER / HYPERFRAMES</div>
+      </div>
+
+      <!-- Built-in cta block, recolored and positioned beside the final planet. -->
+      <style>
+        @keyframes cta-pop { from { transform: translate(0, 30px) scale(0.85); opacity: 0; } to { transform: translate(0, 0) scale(1); opacity: 1; } }
+        #cta { left: 730px; width: 1080px; }
+        .cta-title { width: 1080px; font-size: 82px; color: #f4f4f4; }
+        .cta-button { border: 1px solid #ffffffa0; background: linear-gradient(135deg, #ffffff, #bdbdbd); box-shadow: 0 18px 54px 0 #ffffff22; animation: cta-pop 0.8s ease-out 0.9s 1 both; }
+        .cta-label { font-size: 31px; color: #050505; }
+        .cta-url { font-size: 22px; color: #a7a7a7; }
+      </style>
+      <div id="cta">
+        <div class="cta-title" data-hf-split="words" data-hf-stagger="0.1" data-hf-split-easing="ease-out-expo">Your next frame starts here</div>
+        <div class="cta-button"><div class="cta-label">Make the next frame</div></div>
+        <div class="cta-url">DETERMINISTIC / NATIVE / COMPLETE</div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

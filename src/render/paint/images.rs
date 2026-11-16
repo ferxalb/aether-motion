@@ -67,7 +67,9 @@ impl<'a> Renderer<'a> {
                 }
                 _ => return Err(anyhow!("unsupported object-fit: {fit}")),
             };
-            while self.image_cache_bytes + bytes > CACHE_LIMIT {
+            while bytes > CACHE_LIMIT.saturating_sub(self.image_cache_bytes)
+                || self.images.len() >= 4096
+            {
                 if let Some(oldest) = self.image_order.pop_front() {
                     if let Some(old) = self.images.remove(&oldest) {
                         self.image_cache_bytes -= old.pixels.as_raw().len()
@@ -176,5 +178,52 @@ impl<'a> Renderer<'a> {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parse::parse_file;
+
+    #[test]
+    fn tiny_images_cannot_grow_metadata_past_the_entry_limit() {
+        let stem =
+            std::env::temp_dir().join(format!("aether-image-cache-limit-{}", std::process::id()));
+        let path = stem.with_extension("png");
+        let html = stem.with_extension("html");
+        RgbaImage::from_pixel(1, 1, Rgba([255, 255, 255, 255]))
+            .save(&path)
+            .unwrap();
+        std::fs::write(&html,r#"<main data-composition-id="test" data-width="8" data-height="8" data-duration="1"></main>"#).unwrap();
+        let composition = parse_file(&html).unwrap();
+        let mut renderer = Renderer::new(&composition, 1.0).unwrap();
+        for width in 1..=4096 {
+            let key = (path.as_path(), width, 1, "fill");
+            renderer.images.insert(
+                key,
+                CachedImage {
+                    pixels: RgbaImage::new(1, 1),
+                    opaque: true,
+                    rows: Vec::new(),
+                },
+            );
+            renderer.image_order.push_back(key);
+            renderer.image_cache_bytes += 4;
+        }
+        let key = (path.as_path(), 4097, 1, "fill");
+        renderer.cache_image(&key).unwrap();
+        assert_eq!(renderer.images.len(), 4096);
+        assert_eq!(renderer.image_order.len(), 4096);
+        assert!(!renderer
+            .images
+            .contains_key(&(path.as_path(), 1, 1, "fill")));
+        assert!(renderer.images.contains_key(&key));
+        assert_eq!(
+            renderer.image_cache_bytes,
+            4095 * 4 + 4097 * 4 + std::mem::size_of::<(u32, u32, bool)>()
+        );
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_file(html).unwrap();
     }
 }

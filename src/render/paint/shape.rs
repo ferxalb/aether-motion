@@ -1,4 +1,6 @@
-//! Distance, error-function, and gaussian edge helpers shared by border and shadow painting.
+//! Distance, error-function, and size-checked Gaussian edge helpers shared by border and shadow painting.
+
+use anyhow::{bail, Result};
 
 /// Signed distance from `(x, y)` to a rounded rectangle; negative inside.
 pub(in crate::render) fn rounded_distance(
@@ -48,7 +50,19 @@ impl GaussianEdge {
     const STEPS_PER_PX: f32 = 16.0;
 
     /// Builds the profile for a blur of standard deviation `sigma` (px); tiny sigmas give a hard edge.
-    pub fn new(sigma: f32) -> Self {
+    pub fn new(sigma: f32) -> Result<Self> {
+        const MAX_PROFILE_BYTES: usize = 16 * 1024 * 1024;
+        if !sigma.is_finite() || sigma < 0.0 {
+            bail!("shadow blur has an invalid pixel radius; reduce its scale");
+        }
+        let samples = (sigma * 3.0 * 2.0 * Self::STEPS_PER_PX).ceil() as usize;
+        if samples
+            .checked_add(2)
+            .and_then(|n| n.checked_mul(std::mem::size_of::<f32>()))
+            .is_none_or(|bytes| bytes > MAX_PROFILE_BYTES)
+        {
+            bail!("shadow blur profile exceeds 16 MiB; reduce its blur or scale");
+        }
         let tail = sigma * 3.0;
         let table = if sigma < 0.01 {
             Vec::new()
@@ -61,7 +75,7 @@ impl GaussianEdge {
                 })
                 .collect()
         };
-        Self { tail, table }
+        Ok(Self { tail, table })
     }
 
     /// Coverage in 0..=1 at signed `distance` from the edge (negative inside the shape).
@@ -78,5 +92,19 @@ impl GaussianEdge {
             let fraction = position - i as f32;
             self.table[i] + (self.table[i + 1] - self.table[i]) * fraction
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn oversized_and_nonfinite_profiles_fail_before_allocation() {
+        for sigma in [f32::MAX, f32::INFINITY, f32::NAN, -1.0] {
+            assert!(GaussianEdge::new(sigma).is_err());
+        }
+        assert!(GaussianEdge::new(0.0).is_ok());
+        assert!(GaussianEdge::new(200.0).is_ok());
     }
 }

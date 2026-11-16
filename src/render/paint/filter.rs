@@ -10,11 +10,15 @@ use crate::render::geometry::{clip_pixels, Rect};
 use crate::render::paint::backdrop::{blur_plane, box_radius};
 use crate::render::paint::Surface;
 use crate::render::Renderer;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 
 /// Pixels of padding around the element so the blur can spread past its box (three box passes).
-fn reach(box_r: usize) -> i32 {
-    3 * box_r as i32 + 1
+fn reach(box_r: usize) -> Result<i32> {
+    box_r
+        .checked_mul(3)
+        .and_then(|n| n.checked_add(1))
+        .and_then(|n| i32::try_from(n).ok())
+        .ok_or_else(|| anyhow::anyhow!("filter: blur reach is too large; use --scale"))
 }
 
 impl<'a> Renderer<'a> {
@@ -31,27 +35,36 @@ impl<'a> Renderer<'a> {
             return self.draw_posed(idx, rect, cumulative);
         }
         let k = self.scale;
-        let pad = reach(box_r);
+        let pad = reach(box_r)?;
         // Shadows can extend past the box, so pad generously; stay near the frame to bound memory.
-        let own = self.shadow_reach(idx, cumulative);
-        let margin = pad + own;
+        let own = self.shadow_reach(idx, cumulative)?;
+        let margin = pad
+            .checked_add(own)
+            .ok_or_else(|| anyhow::anyhow!("filter: blur margin is too large; use --scale"))?;
         let (sw, sh) = (self.surface.width as i32, self.surface.height as i32);
+        let max_x = sw
+            .checked_add(pad)
+            .ok_or_else(|| anyhow::anyhow!("filter layer width is too large"))?;
+        let max_y = sh
+            .checked_add(pad)
+            .ok_or_else(|| anyhow::anyhow!("filter layer height is too large"))?;
+        let edge = |value: f32| {
+            crate::render::allocation::pixel_edge(value, "filter: blur").map(i64::from)
+        };
         let wanted = [
-            ((rect.x * k).floor() as i32 - margin).max(-pad),
-            ((rect.y * k).floor() as i32 - margin).max(-pad),
-            (((rect.x + rect.w) * k).ceil() as i32 + margin).min(sw + pad),
-            (((rect.y + rect.h) * k).ceil() as i32 + margin).min(sh + pad),
+            (edge((rect.x * k).floor())? - i64::from(margin)).max(-i64::from(pad)) as i32,
+            (edge((rect.y * k).floor())? - i64::from(margin)).max(-i64::from(pad)) as i32,
+            (edge(((rect.x + rect.w) * k).ceil())? + i64::from(margin)).min(i64::from(max_x))
+                as i32,
+            (edge(((rect.y + rect.h) * k).ceil())? + i64::from(margin)).min(i64::from(max_y))
+                as i32,
         ];
         let [x0, y0, x1, y1] = wanted;
         if x1 <= x0 || y1 <= y0 {
             return Ok(());
         }
-        let (lw, lh) = ((x1 - x0) as usize, (y1 - y0) as usize);
-        if lw.saturating_mul(lh).saturating_mul(4) > 128 * 1024 * 1024 {
-            return Err(anyhow!(
-                "filter: blur needs a layer over 128 MiB; use --scale"
-            ));
-        }
+        let (lw, lh) =
+            crate::render::allocation::layer_dimensions([x0, y0, x1, y1], "filter: blur")?;
         let (ox, oy) = (x0 as f32 / k, y0 as f32 / k);
         let shifted = Rect {
             x: rect.x - ox,
@@ -110,19 +123,26 @@ impl<'a> Renderer<'a> {
     }
 
     /// Largest distance in px that an outer `box-shadow` of `idx` reaches past its box.
-    fn shadow_reach(&self, idx: usize, cumulative: f32) -> i32 {
+    fn shadow_reach(&self, idx: usize, cumulative: f32) -> Result<i32> {
         let k = self.scale * cumulative;
-        self.composition.elements[idx]
+        let mut reach = 0;
+        for s in self.composition.elements[idx]
             .style
             .shadows
             .iter()
             .filter(|s| !s.inset)
-            .map(|s| {
-                let offset = s.x.abs().max(s.y.abs());
-                ((offset + s.spread.max(0.0) + s.blur * 1.5) * k).ceil() as i32 + 1
-            })
-            .max()
-            .unwrap_or(0)
+        {
+            let offset = s.x.abs().max(s.y.abs());
+            let value = crate::render::allocation::pixel_edge(
+                ((offset + s.spread.max(0.0) + s.blur * 1.5) * k).ceil(),
+                "box-shadow",
+            )?;
+            let value = value
+                .checked_add(1)
+                .ok_or_else(|| anyhow::anyhow!("box-shadow reach is too large"))?;
+            reach = reach.max(value);
+        }
+        Ok(reach)
     }
 }
 
@@ -132,7 +152,8 @@ mod tests {
 
     #[test]
     fn reach_covers_three_box_passes() {
-        assert_eq!(reach(0), 1);
-        assert_eq!(reach(5), 16);
+        assert_eq!(reach(0).unwrap(), 1);
+        assert_eq!(reach(5).unwrap(), 16);
+        assert!(reach(usize::MAX).is_err());
     }
 }

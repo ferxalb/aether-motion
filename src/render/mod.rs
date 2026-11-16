@@ -1,8 +1,10 @@
 //! Software renderer: turns a parsed composition into RGBA frames, one pure function of time.
 //!
 //! Submodules: `draw` (scene traversal), `layout` (flex sizing and placement), `paint` (the `Surface`, fills, gradients, rotation and `overflow` layers),
-//! `text` (fonts, measurement, glyph painting), `geometry` and `frame_state` (shared small types).
+//! `text` (fonts, measurement, glyph painting), `allocation` (checked buffer sizes),
+//! `geometry` and `frame_state` (shared small types).
 
+mod allocation;
 mod draw;
 mod frame_state;
 mod geometry;
@@ -142,13 +144,7 @@ impl<'a> Renderer<'a> {
         if width == 0 || height == 0 {
             return Err(anyhow!("scale is too small"));
         }
-        let size = (width as usize)
-            .checked_mul(height as usize)
-            .and_then(|n| n.checked_mul(4))
-            .ok_or_else(|| anyhow!("dimensions are too large"))?;
-        if size > 128 * 1024 * 1024 {
-            return Err(anyhow!("frame requires more than 128 MiB; use --scale"));
-        }
+        allocation::rgba_bytes(width as usize, height as usize, "frame")?;
         let fonts = shared_fonts.map_or_else(
             || {
                 FontStore::new(

@@ -1,0 +1,452 @@
+{
+  "settings": {
+    "output": "1920x1080",
+    "fps": [
+      30,
+      60
+    ],
+    "threads": 1,
+    "duration_seconds": 2,
+    "mp4_runs": "one before/after correctness pair per scene and fps; not a performance estimate",
+    "drawing_runs": "three alternating before/after pairs of 20 frames starting at one second"
+  },
+  "limits": {
+    "tile_entries_per_cache": 4096,
+    "image_entries": 4096,
+    "text_run_entries": 4096,
+    "rgba_bytes_per_buffer": 134217728,
+    "gaussian_profile_bytes": 16777216,
+    "total_process_memory_bounded": false
+  },
+  "tests": {
+    "initial_render_unit": {
+      "passed": 58,
+      "seconds": 0.05
+    },
+    "filter_blur": {
+      "passed": 5,
+      "seconds": 0
+    },
+    "image_spans": {
+      "passed": 1,
+      "seconds": 0
+    },
+    "inset_shadow": {
+      "passed": 3,
+      "seconds": 0
+    },
+    "native": {
+      "passed": 22,
+      "seconds": 0.7
+    },
+    "overflow": {
+      "passed": 6,
+      "seconds": 0
+    },
+    "render_limits": {
+      "passed": 1,
+      "seconds": 0
+    },
+    "post_inline_gradient": {
+      "passed": 3,
+      "seconds": 0
+    },
+    "final_shadow": {
+      "passed": 3,
+      "seconds": 0,
+      "includes_new_zero_size_mask_test": true
+    }
+  },
+  "initial_drawing_regression_seconds": {
+    "30": {
+      "before": [
+        0.481,
+        0.478,
+        0.472
+      ],
+      "after": [
+        0.559,
+        0.546,
+        0.539
+      ]
+    },
+    "60": {
+      "before": [
+        0.488,
+        0.484,
+        0.486
+      ],
+      "after": [
+        0.554,
+        0.555,
+        0.556
+      ]
+    }
+  },
+  "post_inline_drawing_seconds": {
+    "30": {
+      "before": [
+        0.481,
+        0.484,
+        0.473
+      ],
+      "after": [
+        0.495,
+        0.486,
+        0.491
+      ]
+    },
+    "60": {
+      "before": [
+        0.473,
+        0.476,
+        0.479
+      ],
+      "after": [
+        0.489,
+        0.494,
+        0.493
+      ]
+    }
+  },
+  "initial_mp4_comparisons": {
+    "fractional-glows:30": {
+      "before": {
+        "seconds": 1.494,
+        "bytes": 25816,
+        "samples": 60,
+        "sha256": "1049103283a598eb322a1fdfe717dc9490d1e2725f557c9b70e0bb34d3c71fa7"
+      },
+      "after": {
+        "seconds": 1.473,
+        "bytes": 25816,
+        "samples": 60,
+        "sha256": "1049103283a598eb322a1fdfe717dc9490d1e2725f557c9b70e0bb34d3c71fa7"
+      }
+    },
+    "fractional-glows:60": {
+      "before": {
+        "seconds": 5.557,
+        "bytes": 28238,
+        "samples": 120,
+        "sha256": "ad4e3c5b5171b8427dc212d2d4e8147376a0082ef371808fb4d608962a8fa7c4"
+      },
+      "after": {
+        "seconds": 5.46,
+        "bytes": 28238,
+        "samples": 120,
+        "sha256": "ad4e3c5b5171b8427dc212d2d4e8147376a0082ef371808fb4d608962a8fa7c4"
+      }
+    },
+    "half-opacity-glows:30": {
+      "before": {
+        "seconds": 1.496,
+        "bytes": 23574,
+        "samples": 60,
+        "sha256": "0242e9ce08ea74e17620d08f49f3904b59b0435d292cfc57c010c33e775cd6c0"
+      },
+      "after": {
+        "seconds": 1.695,
+        "bytes": 23574,
+        "samples": 60,
+        "sha256": "0242e9ce08ea74e17620d08f49f3904b59b0435d292cfc57c010c33e775cd6c0"
+      }
+    },
+    "half-opacity-glows:60": {
+      "before": {
+        "seconds": 2.645,
+        "bytes": 26259,
+        "samples": 120,
+        "sha256": "9ab8cae8f549ceb6dc87cd457ad27019b6e63f16edaeb7c0e433343b42b588b6"
+      },
+      "after": {
+        "seconds": 3.113,
+        "bytes": 26259,
+        "samples": 120,
+        "sha256": "9ab8cae8f549ceb6dc87cd457ad27019b6e63f16edaeb7c0e433343b42b588b6"
+      }
+    },
+    "animated-shadow:30": {
+      "before": {
+        "seconds": 1.254,
+        "bytes": 90936,
+        "samples": 60,
+        "sha256": "f21578e9e5c5d7c8ea7c671714c590c3f848ba2953f075f7ec958bdce6289acf"
+      },
+      "after": {
+        "seconds": 1.244,
+        "bytes": 90936,
+        "samples": 60,
+        "sha256": "f21578e9e5c5d7c8ea7c671714c590c3f848ba2953f075f7ec958bdce6289acf"
+      }
+    },
+    "animated-shadow:60": {
+      "before": {
+        "seconds": 2.437,
+        "bytes": 152220,
+        "samples": 120,
+        "sha256": "38dd30b783d8de5df588de7c5103e95e052744fcb4a56fd2d47166b03fbfdd2b"
+      },
+      "after": {
+        "seconds": 2.397,
+        "bytes": 152220,
+        "samples": 120,
+        "sha256": "38dd30b783d8de5df588de7c5103e95e052744fcb4a56fd2d47166b03fbfdd2b"
+      }
+    },
+    "rounded-inset:30": {
+      "before": {
+        "seconds": 0.995,
+        "bytes": 39291,
+        "samples": 60,
+        "sha256": "8006636f9e1f719302335f73d80885e551d47ec817261d958d58b4683649e595"
+      },
+      "after": {
+        "seconds": 0.994,
+        "bytes": 39291,
+        "samples": 60,
+        "sha256": "8006636f9e1f719302335f73d80885e551d47ec817261d958d58b4683649e595"
+      }
+    },
+    "rounded-inset:60": {
+      "before": {
+        "seconds": 1.897,
+        "bytes": 44759,
+        "samples": 120,
+        "sha256": "32c2d1618276f3423af7847beba7cda38bb166d6777fe45597891d350929e506"
+      },
+      "after": {
+        "seconds": 1.883,
+        "bytes": 44759,
+        "samples": 120,
+        "sha256": "32c2d1618276f3423af7847beba7cda38bb166d6777fe45597891d350929e506"
+      }
+    },
+    "layer-reuse:30": {
+      "before": {
+        "seconds": 4.244,
+        "bytes": 56756,
+        "samples": 60,
+        "sha256": "1ffb673414a4d3e0f8413e4dca5d91963648d7724f2cce03c08fa1cc2879fe37"
+      },
+      "after": {
+        "seconds": 4.268,
+        "bytes": 56756,
+        "samples": 60,
+        "sha256": "1ffb673414a4d3e0f8413e4dca5d91963648d7724f2cce03c08fa1cc2879fe37"
+      }
+    },
+    "layer-reuse:60": {
+      "before": {
+        "seconds": 9.124,
+        "bytes": 91640,
+        "samples": 120,
+        "sha256": "11b7c1f34571e481c247e95bc711e770d43ea065cd94f4029d1dddf3e6ec6b93"
+      },
+      "after": {
+        "seconds": 8.959,
+        "bytes": 91640,
+        "samples": 120,
+        "sha256": "11b7c1f34571e481c247e95bc711e770d43ea065cd94f4029d1dddf3e6ec6b93"
+      }
+    },
+    "translucent-image:30": {
+      "before": {
+        "seconds": 0.883,
+        "bytes": 35659,
+        "samples": 60,
+        "sha256": "e36355dfb165a3d6c7f6072ae380be096c9e640c17c140a9885abb150f35157f"
+      },
+      "after": {
+        "seconds": 0.873,
+        "bytes": 35659,
+        "samples": 60,
+        "sha256": "e36355dfb165a3d6c7f6072ae380be096c9e640c17c140a9885abb150f35157f"
+      }
+    },
+    "translucent-image:60": {
+      "before": {
+        "seconds": 1.67,
+        "bytes": 56031,
+        "samples": 120,
+        "sha256": "f093e2219c4ea1674fe82a943d25251301ca69688f69836a8ecffc3987189745"
+      },
+      "after": {
+        "seconds": 1.829,
+        "bytes": 56031,
+        "samples": 120,
+        "sha256": "f093e2219c4ea1674fe82a943d25251301ca69688f69836a8ecffc3987189745"
+      }
+    }
+  },
+  "final_mp4_comparisons": {
+    "fractional-glows:30": {
+      "before": {
+        "seconds": 1.494,
+        "bytes": 25816,
+        "samples": 60,
+        "sha256": "1049103283a598eb322a1fdfe717dc9490d1e2725f557c9b70e0bb34d3c71fa7"
+      },
+      "after": {
+        "seconds": 1.473,
+        "bytes": 25816,
+        "samples": 60,
+        "sha256": "1049103283a598eb322a1fdfe717dc9490d1e2725f557c9b70e0bb34d3c71fa7"
+      }
+    },
+    "fractional-glows:60": {
+      "before": {
+        "seconds": 5.557,
+        "bytes": 28238,
+        "samples": 120,
+        "sha256": "ad4e3c5b5171b8427dc212d2d4e8147376a0082ef371808fb4d608962a8fa7c4"
+      },
+      "after": {
+        "seconds": 5.46,
+        "bytes": 28238,
+        "samples": 120,
+        "sha256": "ad4e3c5b5171b8427dc212d2d4e8147376a0082ef371808fb4d608962a8fa7c4"
+      }
+    },
+    "half-opacity-glows:30": {
+      "before": {
+        "seconds": 1.55,
+        "bytes": 23574,
+        "samples": 60,
+        "sha256": "0242e9ce08ea74e17620d08f49f3904b59b0435d292cfc57c010c33e775cd6c0"
+      },
+      "after": {
+        "seconds": 1.543,
+        "bytes": 23574,
+        "samples": 60,
+        "sha256": "0242e9ce08ea74e17620d08f49f3904b59b0435d292cfc57c010c33e775cd6c0"
+      }
+    },
+    "half-opacity-glows:60": {
+      "before": {
+        "seconds": 2.684,
+        "bytes": 26259,
+        "samples": 120,
+        "sha256": "9ab8cae8f549ceb6dc87cd457ad27019b6e63f16edaeb7c0e433343b42b588b6"
+      },
+      "after": {
+        "seconds": 2.72,
+        "bytes": 26259,
+        "samples": 120,
+        "sha256": "9ab8cae8f549ceb6dc87cd457ad27019b6e63f16edaeb7c0e433343b42b588b6"
+      }
+    },
+    "animated-shadow:30": {
+      "before": {
+        "seconds": 1.383,
+        "bytes": 90936,
+        "samples": 60,
+        "sha256": "f21578e9e5c5d7c8ea7c671714c590c3f848ba2953f075f7ec958bdce6289acf"
+      },
+      "after": {
+        "seconds": 1.375,
+        "bytes": 90936,
+        "samples": 60,
+        "sha256": "f21578e9e5c5d7c8ea7c671714c590c3f848ba2953f075f7ec958bdce6289acf"
+      }
+    },
+    "animated-shadow:60": {
+      "before": {
+        "seconds": 2.641,
+        "bytes": 152220,
+        "samples": 120,
+        "sha256": "38dd30b783d8de5df588de7c5103e95e052744fcb4a56fd2d47166b03fbfdd2b"
+      },
+      "after": {
+        "seconds": 2.556,
+        "bytes": 152220,
+        "samples": 120,
+        "sha256": "38dd30b783d8de5df588de7c5103e95e052744fcb4a56fd2d47166b03fbfdd2b"
+      }
+    },
+    "rounded-inset:30": {
+      "before": {
+        "seconds": 0.995,
+        "bytes": 39291,
+        "samples": 60,
+        "sha256": "8006636f9e1f719302335f73d80885e551d47ec817261d958d58b4683649e595"
+      },
+      "after": {
+        "seconds": 0.994,
+        "bytes": 39291,
+        "samples": 60,
+        "sha256": "8006636f9e1f719302335f73d80885e551d47ec817261d958d58b4683649e595"
+      }
+    },
+    "rounded-inset:60": {
+      "before": {
+        "seconds": 1.897,
+        "bytes": 44759,
+        "samples": 120,
+        "sha256": "32c2d1618276f3423af7847beba7cda38bb166d6777fe45597891d350929e506"
+      },
+      "after": {
+        "seconds": 1.883,
+        "bytes": 44759,
+        "samples": 120,
+        "sha256": "32c2d1618276f3423af7847beba7cda38bb166d6777fe45597891d350929e506"
+      }
+    },
+    "layer-reuse:30": {
+      "before": {
+        "seconds": 4.244,
+        "bytes": 56756,
+        "samples": 60,
+        "sha256": "1ffb673414a4d3e0f8413e4dca5d91963648d7724f2cce03c08fa1cc2879fe37"
+      },
+      "after": {
+        "seconds": 4.268,
+        "bytes": 56756,
+        "samples": 60,
+        "sha256": "1ffb673414a4d3e0f8413e4dca5d91963648d7724f2cce03c08fa1cc2879fe37"
+      }
+    },
+    "layer-reuse:60": {
+      "before": {
+        "seconds": 9.124,
+        "bytes": 91640,
+        "samples": 120,
+        "sha256": "11b7c1f34571e481c247e95bc711e770d43ea065cd94f4029d1dddf3e6ec6b93"
+      },
+      "after": {
+        "seconds": 8.959,
+        "bytes": 91640,
+        "samples": 120,
+        "sha256": "11b7c1f34571e481c247e95bc711e770d43ea065cd94f4029d1dddf3e6ec6b93"
+      }
+    },
+    "translucent-image:30": {
+      "before": {
+        "seconds": 0.883,
+        "bytes": 35659,
+        "samples": 60,
+        "sha256": "e36355dfb165a3d6c7f6072ae380be096c9e640c17c140a9885abb150f35157f"
+      },
+      "after": {
+        "seconds": 0.873,
+        "bytes": 35659,
+        "samples": 60,
+        "sha256": "e36355dfb165a3d6c7f6072ae380be096c9e640c17c140a9885abb150f35157f"
+      }
+    },
+    "translucent-image:60": {
+      "before": {
+        "seconds": 1.67,
+        "bytes": 56031,
+        "samples": 120,
+        "sha256": "f093e2219c4ea1674fe82a943d25251301ca69688f69836a8ecffc3987189745"
+      },
+      "after": {
+        "seconds": 1.829,
+        "bytes": 56031,
+        "samples": 120,
+        "sha256": "f093e2219c4ea1674fe82a943d25251301ca69688f69836a8ecffc3987189745"
+      }
+    }
+  }
+}

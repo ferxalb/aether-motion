@@ -13,6 +13,7 @@ use crate::model::{Gradient, GradientKind, LinearDirection, Stop};
 use crate::render::geometry::{clip_pixels, Rect};
 use crate::render::paint::surface::Surface;
 use crate::render::paint::tile_cache::TileCache;
+use anyhow::Result;
 
 /// 4x4 Bayer matrix, mapped to thresholds in (-0.5, 0.5).
 const BAYER: [[f32; 4]; 4] = [
@@ -44,6 +45,7 @@ fn blend_full_opacity(dest: &mut [[u8; 4]], source: &[[u16; 4]], first: usize, y
 }
 
 /// Quarter opacities keep every intermediate float result exactly representable in 24 bits.
+#[inline(always)]
 fn blend_quarter_opacity(
     dest: &mut [[u8; 4]],
     source: &[[u16; 4]],
@@ -227,24 +229,30 @@ impl Surface {
         gradient: &Gradient,
         alpha: f32,
         radius: f32,
-    ) {
+    ) -> Result<()> {
         let (edges, radius) = self.fill_edges(rect, radius);
         let [x0, y0, x1, y1] = edges;
         let Some(bounds) = clip_pixels((self.width, self.height), x0, y0, x1, y1) else {
-            return;
+            return Ok(());
         };
         self.mark_painted(bounds);
         let width = self.width as usize;
         if radius == 0.0 {
-            let (w, h) = ((x1 - x0) as usize, (y1 - y0) as usize);
+            let (w, h) = (
+                (i64::from(x1) - i64::from(x0)) as usize,
+                (i64::from(y1) - i64::from(y0)) as usize,
+            );
             if alpha <= 0.0 {
-                return;
+                return Ok(());
             }
             let key = (gradient as *const Gradient as usize, w, h);
-            if let Some(tile) = self
-                .gradient_cache
-                .get_or_build(key, w * h * 8, || Tile::build(gradient, w, h))
-            {
+            if let Some(tile) = self.gradient_cache.get_or_build(
+                key,
+                w.checked_mul(h)
+                    .and_then(|n| n.checked_mul(8))
+                    .unwrap_or(usize::MAX),
+                || Tile::build(gradient, w, h),
+            )? {
                 let alpha = alpha.clamp(0.0, 1.0);
                 for y in bounds.y0..bounds.y1 {
                     let ty = (y as i32 - y0) as usize;
@@ -292,7 +300,7 @@ impl Surface {
                         }
                     }
                 }
-                return;
+                return Ok(());
             }
         }
         let float_edges = edges.map(|edge| edge as f32);
@@ -320,6 +328,7 @@ impl Surface {
                 dest[3] = 255;
             }
         }
+        Ok(())
     }
 }
 
@@ -471,13 +480,17 @@ mod tests {
         };
         let mut cached = Surface::filled(64, 48, 1.0, Color::BLACK);
         for x in [-30.0, -29.0, -26.5] {
-            cached.fill_gradient_general(rect(x), &gradient, 0.8, 0.0);
+            cached
+                .fill_gradient_general(rect(x), &gradient, 0.8, 0.0)
+                .unwrap();
         }
         // Direct drawing of all three on a cache-less surface each time.
         let mut expected = Surface::filled(64, 48, 1.0, Color::BLACK);
         for x in [-30.0, -29.0, -26.5] {
             expected.gradient_cache = GradientCache::default();
-            expected.fill_gradient_general(rect(x), &gradient, 0.8, 0.0);
+            expected
+                .fill_gradient_general(rect(x), &gradient, 0.8, 0.0)
+                .unwrap();
         }
         let worst = cached
             .pixels

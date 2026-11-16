@@ -7,7 +7,7 @@ use crate::model::Color;
 use crate::render::geometry::{clip_pixels, Rect};
 use crate::render::paint::Surface;
 use crate::render::Renderer;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 
 /// Recovers premultiplied RGBA from one drawing made on black and again on white.
 ///
@@ -57,11 +57,7 @@ impl<'a> Renderer<'a> {
             return Ok(());
         };
         let (lw, lh) = (bounds.x1 - bounds.x0, bounds.y1 - bounds.y0);
-        if lw.saturating_mul(lh).saturating_mul(4) > 128 * 1024 * 1024 {
-            return Err(anyhow!(
-                "overflow: hidden needs a layer over 128 MiB; use --scale"
-            ));
-        }
+        crate::render::allocation::rgba_bytes(lw, lh, "overflow: hidden")?;
         // The layer's origin is the clipped box corner, so layout coordinates shift by that corner.
         let (ox, oy) = (bounds.x0 as f32 / k, bounds.y0 as f32 / k);
         let shift = |r: Rect| Rect {

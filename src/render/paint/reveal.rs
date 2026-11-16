@@ -7,7 +7,7 @@ use crate::model::{Color, RevealFrom};
 use crate::render::geometry::{clip_pixels, Rect};
 use crate::render::paint::Surface;
 use crate::render::Renderer;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 
 /// Share (0..=1) of pixel `p` that lies inside `[lo, hi]` along one axis.
 fn span_coverage(p: usize, lo: f32, hi: f32) -> f32 {
@@ -51,9 +51,7 @@ impl<'a> Renderer<'a> {
             return Ok(());
         };
         let (lw, lh) = (bounds.x1 - bounds.x0, bounds.y1 - bounds.y0);
-        if lw.saturating_mul(lh).saturating_mul(4) > 128 * 1024 * 1024 {
-            return Err(anyhow!("a reveal needs a layer over 128 MiB; use --scale"));
-        }
+        crate::render::allocation::rgba_bytes(lw, lh, "reveal")?;
         // The layer's origin is the clipped box corner, so layout coordinates shift by that corner.
         let shifted = Rect {
             x: rect.x - bounds.x0 as f32 / k,

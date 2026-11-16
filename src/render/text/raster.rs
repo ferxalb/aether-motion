@@ -156,7 +156,9 @@ impl<'a> Renderer<'a> {
                 .map(|glyph| std::mem::size_of::<Glyph>() + glyph.coverage.len())
                 .sum::<usize>()
                 + prepared.shadow.as_ref().map_or(0, ShadowMask::bytes);
-            if self.text_cache_bytes.saturating_add(bytes) <= 32 * 1024 * 1024 {
+            if self.text_runs.len() < 4096
+                && self.text_cache_bytes.saturating_add(bytes) <= 32 * 1024 * 1024
+            {
                 self.text_cache_bytes += bytes;
                 self.text_runs.entry(key).or_insert(prepared)
             } else {
@@ -251,6 +253,55 @@ fn paint_line(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn empty_run_entries_cannot_bypass_the_metadata_limit() {
+        let path = std::env::temp_dir().join(format!(
+            "aether-text-cache-limit-{}.html",
+            std::process::id()
+        ));
+        std::fs::write(&path,r#"<main data-composition-id="test" data-width="16" data-height="16" data-duration="1"><div style="font-size:8px">A</div></main>"#).unwrap();
+        let composition = crate::parse::parse_file(&path).unwrap();
+        let idx = composition
+            .elements
+            .iter()
+            .position(|e| matches!(e.content, Content::Text(_)))
+            .unwrap();
+        let mut renderer = Renderer::new(&composition, 1.0).unwrap();
+        for n in 0..4096 {
+            renderer.text_runs.insert(
+                (usize::MAX, n, 0, 0),
+                TextRun {
+                    glyphs: Vec::new(),
+                    lines: Vec::new(),
+                    size: 1.0,
+                    line_height: 1.0,
+                    color: Color::WHITE,
+                    center_x: false,
+                    center_y: false,
+                    right: false,
+                    shadow: None,
+                },
+            );
+        }
+        renderer
+            .draw_text(
+                idx,
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 16.0,
+                    h: 16.0,
+                },
+                1.0,
+                1.0,
+            )
+            .unwrap();
+        assert_eq!(renderer.text_runs.len(), 4096);
+        assert_eq!(renderer.text_cache_bytes, 0);
+        assert!(renderer.surface.painted.is_some());
+        std::fs::remove_file(path).unwrap();
+    }
 
     #[test]
     fn clipped_glyph_rows_match_coordinate_blending() {

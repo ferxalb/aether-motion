@@ -4,7 +4,7 @@ use crate::model::{Color, Content};
 use crate::render::geometry::{clip_pixels, Rect};
 use crate::render::paint::Surface;
 use crate::render::Renderer;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 
 impl<'a> Renderer<'a> {
     /// Renders the subtree on its own surface and composites it rotated around the box center.
@@ -30,16 +30,20 @@ impl<'a> Renderer<'a> {
             _ => 0.0,
         };
         let reach = box_reach.max(text_reach) + 2.0;
-        let x0 = (rect.x * k - reach).floor() as i32;
-        let y0 = (rect.y * k - reach).floor() as i32;
-        let x1 = ((rect.x + rect.w) * k + reach).ceil() as i32;
-        let y1 = ((rect.y + rect.h) * k + reach).ceil() as i32;
-        let (lw, lh) = ((x1 - x0) as usize, (y1 - y0) as usize);
-        if lw.saturating_mul(lh).saturating_mul(4) > 128 * 1024 * 1024 {
-            return Err(anyhow!(
-                "rotated element needs a layer over 128 MiB; use --scale"
-            ));
-        }
+        let x0 =
+            crate::render::allocation::pixel_edge((rect.x * k - reach).floor(), "rotated element")?;
+        let y0 =
+            crate::render::allocation::pixel_edge((rect.y * k - reach).floor(), "rotated element")?;
+        let x1 = crate::render::allocation::pixel_edge(
+            ((rect.x + rect.w) * k + reach).ceil(),
+            "rotated element",
+        )?;
+        let y1 = crate::render::allocation::pixel_edge(
+            ((rect.y + rect.h) * k + reach).ceil(),
+            "rotated element",
+        )?;
+        let (lw, lh) =
+            crate::render::allocation::layer_dimensions([x0, y0, x1, y1], "rotated element")?;
         let shifted = Rect {
             x: rect.x - x0 as f32 / k,
             y: rect.y - y0 as f32 / k,

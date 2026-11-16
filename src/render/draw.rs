@@ -109,7 +109,7 @@ impl<'a> Renderer<'a> {
         // The first shadow of the list sits on top, so paint from the last one backwards.
         for &shadow in element.style.shadows.iter().rev().filter(|s| !s.inset) {
             self.surface
-                .draw_shadow(rect, radius, shadow, alpha, cumulative);
+                .draw_shadow(rect, radius, shadow, alpha, cumulative)?;
         }
         if element.style.backdrop_blur > 0.0 {
             let sigma = element.style.backdrop_blur * cumulative * self.surface.scale;
@@ -132,7 +132,7 @@ impl<'a> Renderer<'a> {
             }
             Some(Background::Gradient(ref gradient)) => {
                 self.surface
-                    .fill_gradient_general(rect, gradient, alpha, radius);
+                    .fill_gradient_general(rect, gradient, alpha, radius)?;
             }
             None => {}
         }
@@ -147,7 +147,7 @@ impl<'a> Renderer<'a> {
         let inner_radius = (radius - border).max(0.0);
         for &shadow in element.style.shadows.iter().rev().filter(|s| s.inset) {
             self.surface
-                .draw_inset_shadow(padding_box, inner_radius, shadow, alpha, cumulative);
+                .draw_inset_shadow(padding_box, inner_radius, shadow, alpha, cumulative)?;
         }
         if border > 0.0 {
             let color = element.style.border_color.unwrap_or(Color::WHITE);

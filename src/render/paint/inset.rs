@@ -8,6 +8,7 @@ use crate::model::{Color, Shadow};
 use crate::render::geometry::{clip_pixels, Rect};
 use crate::render::paint::shape::{rounded_distance, GaussianEdge};
 use crate::render::paint::surface::Surface;
+use anyhow::Result;
 
 /// A conservative central strip at least the blur reach inside the rounded hole.
 /// The extra pixel also covers the hard-edge profile and floating-point boundaries.
@@ -33,11 +34,11 @@ impl Surface {
         shadow: Shadow,
         alpha: f32,
         zoom: f32,
-    ) {
+    ) -> Result<()> {
         let k = self.scale;
         let unit = zoom * k;
         let spread = shadow.spread * unit;
-        let edge = GaussianEdge::new(shadow.blur * unit / 2.0);
+        let edge = GaussianEdge::new(shadow.blur * unit / 2.0)?;
         let element = [
             rect.x * k,
             rect.y * k,
@@ -51,7 +52,7 @@ impl Surface {
             element[2].ceil() as i32,
             element[3].ceil() as i32,
         ) else {
-            return;
+            return Ok(());
         };
         // The hole is the box moved by the offset and shrunk by the spread (grown if negative).
         let hole = [
@@ -65,7 +66,7 @@ impl Surface {
         let hole_radius = (element_radius - spread).max(0.0);
         let strength = alpha * f32::from(shadow.color.a) / 255.0;
         if strength <= 0.0 {
-            return;
+            return Ok(());
         }
         self.mark_painted(bounds);
         let blend_color = Color {
@@ -109,6 +110,7 @@ impl Surface {
                 x += 1;
             }
         }
+        Ok(())
     }
 }
 
@@ -148,7 +150,7 @@ mod tests {
             for radius in [0.0, 4.0, 30.0, 90.0, 200.0] {
                 for sigma in [0.0, 0.005, 0.01, 2.0, 12.0, 40.0] {
                     let hole = [origin, 3.25, origin + 240.0, 183.75];
-                    let edge = GaussianEdge::new(sigma);
+                    let edge = GaussianEdge::new(sigma).unwrap();
                     for y in 0..190 {
                         let py = y as f32 + 0.5;
                         if let Some((first, last)) = curved_zero_span(hole, radius, edge.tail, py) {
@@ -167,7 +169,9 @@ mod tests {
     #[test]
     fn a_hard_inset_shadow_darkens_the_side_opposite_to_its_offset() {
         let mut surface = white_surface();
-        surface.draw_inset_shadow(BOX, 0.0, shadow(6.0, 0.0, 0.0, 0.0), 1.0, 1.0);
+        surface
+            .draw_inset_shadow(BOX, 0.0, shadow(6.0, 0.0, 0.0, 0.0), 1.0, 1.0)
+            .unwrap();
         // A +6px x offset exposes a 6px band on the left edge only.
         assert_eq!(gray(&surface, 12, 30), 0);
         assert_eq!(gray(&surface, 15, 30), 0);
@@ -180,7 +184,9 @@ mod tests {
     #[test]
     fn a_blurred_zero_offset_shadow_fades_from_every_edge() {
         let mut surface = white_surface();
-        surface.draw_inset_shadow(BOX, 0.0, shadow(0.0, 0.0, 10.0, 0.0), 1.0, 1.0);
+        surface
+            .draw_inset_shadow(BOX, 0.0, shadow(0.0, 0.0, 10.0, 0.0), 1.0, 1.0)
+            .unwrap();
         let (edge, mid, center) = (
             gray(&surface, 10, 30),
             gray(&surface, 14, 30),
@@ -194,20 +200,27 @@ mod tests {
     #[test]
     fn spread_thickens_the_band_and_alpha_scales_it() {
         let mut thin = white_surface();
-        thin.draw_inset_shadow(BOX, 0.0, shadow(0.0, 0.0, 0.0, 2.0), 1.0, 1.0);
+        thin.draw_inset_shadow(BOX, 0.0, shadow(0.0, 0.0, 0.0, 2.0), 1.0, 1.0)
+            .unwrap();
         let mut thick = white_surface();
-        thick.draw_inset_shadow(BOX, 0.0, shadow(0.0, 0.0, 0.0, 6.0), 1.0, 1.0);
+        thick
+            .draw_inset_shadow(BOX, 0.0, shadow(0.0, 0.0, 0.0, 6.0), 1.0, 1.0)
+            .unwrap();
         assert_eq!(gray(&thin, 13, 30), 255);
         assert_eq!(gray(&thick, 13, 30), 0);
         let mut faint = white_surface();
-        faint.draw_inset_shadow(BOX, 0.0, shadow(0.0, 0.0, 0.0, 6.0), 0.5, 1.0);
+        faint
+            .draw_inset_shadow(BOX, 0.0, shadow(0.0, 0.0, 0.0, 6.0), 0.5, 1.0)
+            .unwrap();
         assert!((120..136).contains(&gray(&faint, 13, 30)));
     }
 
     #[test]
     fn an_oversized_spread_fills_the_whole_box() {
         let mut surface = white_surface();
-        surface.draw_inset_shadow(BOX, 0.0, shadow(0.0, 0.0, 0.0, 25.0), 1.0, 1.0);
+        surface
+            .draw_inset_shadow(BOX, 0.0, shadow(0.0, 0.0, 0.0, 25.0), 1.0, 1.0)
+            .unwrap();
         assert_eq!(gray(&surface, 30, 30), 0);
         assert_eq!(gray(&surface, 5, 30), 255);
     }
@@ -215,7 +228,9 @@ mod tests {
     #[test]
     fn rounded_corners_clip_the_shadow() {
         let mut surface = white_surface();
-        surface.draw_inset_shadow(BOX, 20.0, shadow(0.0, 0.0, 0.0, 3.0), 1.0, 1.0);
+        surface
+            .draw_inset_shadow(BOX, 20.0, shadow(0.0, 0.0, 0.0, 3.0), 1.0, 1.0)
+            .unwrap();
         // The box is a circle, so its corner pixel is outside the shape and stays untouched.
         assert_eq!(gray(&surface, 10, 10), 255);
         assert_eq!(gray(&surface, 11, 30), 0);
@@ -225,7 +240,8 @@ mod tests {
     fn the_shadow_is_deterministic_and_follows_zoom() {
         let draw = |zoom: f32| {
             let mut s = white_surface();
-            s.draw_inset_shadow(BOX, 4.0, shadow(2.0, 3.0, 8.0, 1.0), 0.8, zoom);
+            s.draw_inset_shadow(BOX, 4.0, shadow(2.0, 3.0, 8.0, 1.0), 0.8, zoom)
+                .unwrap();
             s.pixels
         };
         assert_eq!(draw(1.0), draw(1.0));

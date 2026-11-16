@@ -10,6 +10,7 @@ use crate::render::geometry::{clip_pixels, PixelRect, Rect};
 use crate::render::paint::shape::{rounded_distance, GaussianEdge};
 use crate::render::paint::surface::Surface;
 use crate::render::paint::tile_cache::TileCache;
+use anyhow::Result;
 
 /// Pixels at or above this blur radius (sigma) take the cached-mask path.
 const MIN_CACHED_SIGMA: f32 = 2.0;
@@ -29,10 +30,22 @@ pub(in crate::render) struct ShadowTile {
 pub(in crate::render) type ShadowCache = TileCache<[u32; 7], ShadowTile>;
 
 impl ShadowTile {
-    fn build(size: (i32, i32), element_radius: f32, cast_radius: f32, cast: [f32; 4], edge: &GaussianEdge) -> Self {
+    fn build(
+        size: (i32, i32),
+        element_radius: f32,
+        cast_radius: f32,
+        cast: [f32; 4],
+        edge: &GaussianEdge,
+    ) -> Self {
         let reach = edge.tail.ceil() + 1.0;
-        let (x0, y0) = ((cast[0] - reach).floor() as i32, (cast[1] - reach).floor() as i32);
-        let (x1, y1) = ((cast[2] + reach).ceil() as i32, (cast[3] + reach).ceil() as i32);
+        let (x0, y0) = (
+            (cast[0] - reach).floor() as i32,
+            (cast[1] - reach).floor() as i32,
+        );
+        let (x1, y1) = (
+            (cast[2] + reach).ceil() as i32,
+            (cast[3] + reach).ceil() as i32,
+        );
         let (width, height) = ((x1 - x0) as usize, (y1 - y0) as usize);
         let element = [0.0, 0.0, size.0 as f32, size.1 as f32];
         let mut mask = vec![0u16; width * height];
@@ -51,7 +64,13 @@ impl ShadowTile {
             }
             spans.push(Self::row_spans(row));
         }
-        Self { x0, y0, width, mask, spans }
+        Self {
+            x0,
+            y0,
+            width,
+            mask,
+            spans,
+        }
     }
 
     /// Painted range of a row, split around its longest empty run (the hidden card interior).
@@ -76,7 +95,12 @@ impl ShadowTile {
         if best.1 - best.0 < 16 {
             [first as u32, last as u32, 0, 0]
         } else {
-            [first as u32, (first + best.0) as u32, (first + best.1) as u32, last as u32]
+            [
+                first as u32,
+                (first + best.0) as u32,
+                (first + best.1) as u32,
+                last as u32,
+            ]
         }
     }
 }
@@ -95,11 +119,11 @@ impl Surface {
         let stride = w as usize;
         let rgb = [color.r, color.g, color.b].map(f32::from);
         for (j, spans) in tile.spans.iter().enumerate() {
-            let y = oy + tile.y0 + j as i32;
-            if y < 0 || y >= h {
+            let y = i64::from(oy) + i64::from(tile.y0) + j as i64;
+            if y < 0 || y >= i64::from(h) {
                 continue;
             }
-            let base = (ox + tile.x0) as i64;
+            let base = i64::from(ox) + i64::from(tile.x0);
             let mask = &tile.mask[j * tile.width..(j + 1) * tile.width];
             for pair in [[spans[0], spans[1]], [spans[2], spans[3]]] {
                 let lo = (base + pair[0] as i64).max(0);
@@ -108,8 +132,8 @@ impl Surface {
                     continue;
                 }
                 let first = (lo - base) as usize;
-                let dest = &mut pixels
-                    [(y as usize * stride + lo as usize) * 4..(y as usize * stride + hi as usize) * 4];
+                let dest = &mut pixels[(y as usize * stride + lo as usize) * 4
+                    ..(y as usize * stride + hi as usize) * 4];
                 for (pixel, &m) in dest.as_chunks_mut::<4>().0.iter_mut().zip(&mask[first..]) {
                     let a = f32::from(m) * k;
                     if a > 0.002 {
@@ -131,7 +155,7 @@ impl Surface {
         shadow: Shadow,
         alpha: f32,
         zoom: f32,
-    ) {
+    ) -> Result<()> {
         let k = self.scale;
         let unit = zoom * k;
         let spread = shadow.spread * unit;
@@ -148,11 +172,11 @@ impl Surface {
             element[2] + shadow.x * unit + spread,
             element[3] + shadow.y * unit + spread,
         ];
-        let edge = GaussianEdge::new(sigma);
+        let edge = GaussianEdge::new(sigma)?;
         if sigma >= MIN_CACHED_SIGMA {
             let strength = alpha * f32::from(shadow.color.a) / 255.0;
             if strength <= 0.0 {
-                return;
+                return Ok(());
             }
             let size = (
                 (element[2] - element[0]).round() as i32,
@@ -160,7 +184,12 @@ impl Surface {
             );
             let origin = (element[0].round() as i32, element[1].round() as i32);
             let (sx, sy) = (shadow.x * unit, shadow.y * unit);
-            let cast = [-spread + sx, -spread + sy, size.0 as f32 + spread + sx, size.1 as f32 + spread + sy];
+            let cast = [
+                -spread + sx,
+                -spread + sy,
+                size.0 as f32 + spread + sx,
+                size.1 as f32 + spread + sy,
+            ];
             let (element_radius, cast_radius) = (radius * k, (radius * k + spread).max(0.0));
             let key = [
                 size.0 as u32,
@@ -172,30 +201,46 @@ impl Surface {
                 sy.to_bits(),
             ];
             let reach = edge.tail.ceil() + 1.0;
-            let cost = ((cast[2] - cast[0] + 2.0 * reach + 2.0) * (cast[3] - cast[1] + 2.0 * reach + 2.0)) as usize * 2;
+            let cost = ((cast[2] - cast[0] + 2.0 * reach + 2.0)
+                * (cast[3] - cast[1] + 2.0 * reach + 2.0)) as usize;
+            let cost = cost.checked_mul(2).unwrap_or(usize::MAX);
             let (width, height) = (self.width, self.height);
-            if let Some(tile) = self.shadow_cache.get_or_build(key, cost, || {
-                ShadowTile::build(size, element_radius, cast_radius, cast, &edge)
-            }) {
+            // A strongly negative spread can collapse the mask rectangle. The direct
+            // path remains valid, but constructing a tile would cast negative lengths
+            // to usize. Such a tile must never reach the allocation builder.
+            let valid_mask = (cast[2] + reach).ceil() >= (cast[0] - reach).floor()
+                && (cast[3] + reach).ceil() >= (cast[1] - reach).floor();
+            let tile = if valid_mask {
+                self.shadow_cache.get_or_build(key, cost, || {
+                    ShadowTile::build(size, element_radius, cast_radius, cast, &edge)
+                })?
+            } else {
+                None
+            };
+            if let Some(tile) = tile {
+                let tx = i64::from(origin.0) + i64::from(tile.x0);
+                let ty = i64::from(origin.1) + i64::from(tile.y0);
                 let touched = PixelRect {
-                    x0: (origin.0 + tile.x0).max(0) as usize,
-                    y0: (origin.1 + tile.y0).max(0) as usize,
-                    x1: ((origin.0 + tile.x0 + tile.width as i32).max(0) as usize).min(width as usize),
-                    y1: ((origin.1 + tile.y0 + tile.spans.len() as i32).max(0) as usize)
-                        .min(height as usize),
+                    x0: tx.clamp(0, i64::from(width)) as usize,
+                    y0: ty.clamp(0, i64::from(height)) as usize,
+                    x1: (tx + tile.width as i64).clamp(0, i64::from(width)) as usize,
+                    y1: (ty + tile.spans.len() as i64).clamp(0, i64::from(height)) as usize,
                 };
                 Self::blend_shadow_tile(
                     &mut self.pixels,
                     (width as i32, height as i32),
                     tile,
                     origin,
-                    Color { a: 255, ..shadow.color },
+                    Color {
+                        a: 255,
+                        ..shadow.color
+                    },
                     strength,
                 );
                 if touched.x0 < touched.x1 && touched.y0 < touched.y1 {
                     self.mark_painted(touched);
                 }
-                return;
+                return Ok(());
             }
         }
         let tail = edge.tail;
@@ -207,7 +252,7 @@ impl Surface {
             (cast[2] + reach).ceil() as i32,
             (cast[3] + reach).ceil() as i32,
         ) else {
-            return;
+            return Ok(());
         };
         self.mark_painted(bounds);
         let cast_radius = (radius * k + spread).max(0.0);
@@ -252,6 +297,7 @@ impl Surface {
                 x += 1;
             }
         }
+        Ok(())
     }
 }
 
@@ -260,24 +306,91 @@ mod tests {
     use super::*;
 
     #[test]
+    fn zero_size_shadow_masks_remain_valid_empty_tiles() {
+        let edge = GaussianEdge::new(2.0).unwrap();
+        let tile = ShadowTile::build((16, 16), 0.0, 0.0, [15.0, 15.0, 1.0, 1.0], &edge);
+        assert_eq!(tile.width, 0);
+        assert!(tile.mask.is_empty());
+        assert!(tile.spans.is_empty());
+    }
+
+    #[test]
+    fn collapsed_negative_spread_never_builds_a_negative_size_mask() {
+        let mut surface = Surface::filled(32, 32, 1.0, Color::BLACK);
+        let shadow = Shadow {
+            x: 0.0,
+            y: 0.0,
+            blur: 24.0,
+            spread: -100.0,
+            color: Color::WHITE,
+            inset: false,
+        };
+        let rect = Rect {
+            x: 8.0,
+            y: 8.0,
+            w: 16.0,
+            h: 16.0,
+        };
+        for _ in 0..3 {
+            surface.draw_shadow(rect, 0.0, shadow, 1.0, 1.0).unwrap();
+        }
+        assert!(surface
+            .pixels
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .all(|p| *p == [0, 0, 0, 255]));
+    }
+
+    #[test]
     fn cached_mask_matches_direct_drawing_closely() {
         let shadow = Shadow {
             x: 0.0,
             y: 8.0,
             blur: 24.0,
             spread: 0.0,
-            color: Color { r: 0, g: 0, b: 0, a: 200 },
+            color: Color {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 200,
+            },
             inset: false,
         };
-        let rect = Rect { x: 20.0, y: 14.0, w: 60.0, h: 40.0 };
-        let mut cached = Surface::filled(120, 100, 1.0, Color { r: 90, g: 120, b: 200, a: 255 });
+        let rect = Rect {
+            x: 20.0,
+            y: 14.0,
+            w: 60.0,
+            h: 40.0,
+        };
+        let mut cached = Surface::filled(
+            120,
+            100,
+            1.0,
+            Color {
+                r: 90,
+                g: 120,
+                b: 200,
+                a: 255,
+            },
+        );
         for _ in 0..3 {
-            cached.draw_shadow(rect, 10.0, shadow, 0.9, 1.0);
+            cached.draw_shadow(rect, 10.0, shadow, 0.9, 1.0).unwrap();
         }
-        let mut direct = Surface::filled(120, 100, 1.0, Color { r: 90, g: 120, b: 200, a: 255 });
+        let mut direct = Surface::filled(
+            120,
+            100,
+            1.0,
+            Color {
+                r: 90,
+                g: 120,
+                b: 200,
+                a: 255,
+            },
+        );
         for _ in 0..3 {
             direct.shadow_cache = Default::default();
-            direct.draw_shadow(rect, 10.0, shadow, 0.9, 1.0);
+            direct.draw_shadow(rect, 10.0, shadow, 0.9, 1.0).unwrap();
         }
         // Drawing three times on one surface also reaches the cached path from the second call on;
         // a cache reset before each call keeps `direct` on the uncached (first sighting) path.

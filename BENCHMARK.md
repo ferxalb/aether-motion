@@ -458,3 +458,67 @@ These figures apply to synthetic workloads, not all compositions. No resolution,
 quality, noise, blur, dithering, or encoder setting was reduced. Rendering speed
 is separate from the exported video's frame rate; sustained realtime rendering
 and performance on older PCs were not established.
+
+## Cache metadata and checked-allocation stability
+
+This change adds resource checks without changing rendering quality or encoder
+settings. [Validation records](benchmarks/stability-validation-results.json)
+preserve the before/after files' hashes, sample counts, output sizes, single
+export times, targeted test results, and drawing regression measurements.
+
+- Gradient and outer-shadow caches cap all keys at 4,096 each, including Seen
+  and Direct entries. Exhaustion produces an explicit error, without evicting
+  existing tiles or silently changing the cached/direct drawing decisions.
+  An existing Seen entry can still be promoted at the cap. Oversized tile costs
+  cannot wrap the budget arithmetic or invoke the allocation builder.
+- Fitted-image caches use their existing FIFO eviction at 4,096 entries; text
+  runs prepare uncached results after 4,096 entries. This bounds metadata even
+  for tiny images or runs with no glyph bytes. Text-layout block keys were
+  already capped; their quantization slack now uses saturating addition.
+- `render/allocation.rs` centralizes checked RGBA multiplication and coordinate
+  conversion. The existing 128 MiB per-frame/per-layer byte limit is preserved.
+  Rotated/filter layer extents subtract in i64 before conversion to usize.
+  Filter reach and margins use checked arithmetic; extreme and nonfinite
+  layer coordinates return errors before allocating.
+- Gaussian shadow-edge profiles reject invalid radii or profiles over 16 MiB
+  before building the table. Shadow compositing uses widened offset arithmetic.
+  Strongly negative spread cannot cast a negative mask dimension to usize;
+  zero-sized masks remain eligible for their original empty cached tile.
+
+The initial rendering-domain run passed 58 unit tests; selected filter, image,
+inset-shadow, native, overflow, and extreme-size integration suites passed
+38 tests. Tests cover key exhaustion, preserved existing slots, oversized cost
+arithmetic, image/text entry caps, extreme layer geometry, invalid shadow
+profiles, and negative spread. Native tests include exact 30/60 fps cadence
+at 1080p and 4K and deterministic parallel segments.
+
+An export-time variation prompted a focused drawing check on half-opacity
+glows: 20 frames at 1080p, one thread, starting at one second, three alternating
+pairs at each fps. Before enforcing inlining of the exact integer quarter-
+opacity blend, baseline/new runs were 0.481 / 0.478 / 0.472 versus
+0.559 / 0.546 / 0.539 s at 30 fps, and 0.488 / 0.484 / 0.486 versus
+0.554 / 0.555 / 0.556 s at 60 fps. After the inline annotation, baseline/new
+runs were 0.481 / 0.484 / 0.473 versus 0.495 / 0.486 / 0.491 s at 30 fps,
+and 0.473 / 0.476 / 0.479 versus 0.489 / 0.494 / 0.493 s at 60 fps. The
+remaining median differences (2.1% and 3.6%) are within the measurement noise
+threshold; no performance improvement is claimed. All three gradient tests
+passed again, and both half-opacity MP4 comparisons remained byte-identical.
+
+Six two-second scenes (fractional glows, half-opacity glows, outer shadows,
+inset shadows, nested layers, and mixed-alpha images) passed composition
+checking. Their complete native MP4s were byte-identical to the pre-change
+binary at both 30 and 60 fps: 12 comparison pairs, at 1080p with one worker.
+Container inspection verified 60/120 samples, one tick per sample, matching
+fps timescale, and two-second duration. Single export timings are retained
+in the raw records for completeness and do not establish a speed difference.
+
+These bounds apply to individual resources and cache entry counts, not total
+process memory. Allocation failure under system-wide memory pressure and
+performance on older PCs were not validated.
+
+A final boundary review retained zero-sized shadow masks as valid empty tiles
+while rejecting only negative mask dimensions from the tile builder. All three
+shadow tests passed afterward, including a new empty-mask regression test;
+both 30/60 fps outer-shadow MP4 comparisons passed again. The nested-layer
+midpoint was visually inspected at 1080p/60 fps. The final set comprises 97
+distinct selected tests across the initial run and the additional boundary test.
