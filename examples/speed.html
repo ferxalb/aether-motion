@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+<head>
+<!-- Variable speed: the same clip at 1x (left) and through a speed ramp (right), with a pad whose
+     sound ends in a tape stop. Render: aether-motion render examples/speed.html --output speed.mp4 -->
+<style>
+  :root { --bg: #0b1020; --text: #f4f6ff; --muted: #8b95b8; --accent: #7aa2ff; --accent-2: #4be0b8; }
+  .panel { top: 300px; width: 840px; height: 473px; border-radius: 24px; overflow: hidden; object-fit: cover;
+           box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45); }
+  #normal { left: 80px; }
+  #ramped { left: 1000px; }
+  .tag { top: 805px; width: 840px; font-size: 34px; font-weight: 600; text-align: center; color: var(--text); }
+  .note { top: 860px; width: 840px; font-size: 26px; text-align: center; color: var(--muted); }
+  #tag-normal, #note-normal { left: 80px; }
+  #tag-ramped, #note-ramped { left: 1000px; color: var(--accent-2); }
+  #note-ramped { color: var(--muted); }
+  #title { left: 0; top: 120px; width: 1920px; font-size: 72px; font-weight: bold; color: var(--text); text-align: center; }
+  #sub { left: 0; top: 215px; width: 1920px; font-size: 30px; color: var(--accent); text-align: center; }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="speed-demo" data-width="1920" data-height="1080" data-duration="6" style="background: var(--bg)">
+  <div id="title" class="clip" data-start="0" data-duration="6" data-track-index="2" data-hf-fade-in="0.4">Slow motion and speed ramps</div>
+  <div id="sub" class="clip" data-start="0.2" data-duration="5.8" data-track-index="2" data-hf-fade-in="0.4">data-hf-speed and data-hf-speed-ramp on video and audio</div>
+
+  <!-- Reference: the source at its own speed. -->
+  <video id="normal" class="clip panel" src="video/clip.mp4" muted loop data-start="0" data-duration="6" data-track-index="1"></video>
+  <!-- 1x, eased down to 0.25x slow motion, held, then eased up to 2x. -->
+  <video id="ramped" class="clip panel" src="video/clip.mp4" muted loop data-start="0" data-duration="6" data-track-index="1"
+         data-hf-speed-ramp='[{"at":0.8,"speed":1},{"at":1.8,"speed":0.25,"easing":"ease-in-out-cubic"},{"at":3.6,"speed":0.25},{"at":4.4,"speed":2,"easing":"ease-in-cubic"}]'></video>
+
+  <div id="tag-normal" class="clip tag" data-start="0" data-duration="6" data-track-index="2">1x</div>
+  <div id="note-normal" class="clip note" data-start="0" data-duration="6" data-track-index="2">source speed</div>
+  <div id="tag-ramped" class="clip tag" data-start="0" data-duration="6" data-track-index="2">1x to 0.25x to 2x</div>
+  <div id="note-ramped" class="clip note" data-start="0" data-duration="6" data-track-index="2">data-hf-speed-ramp, eased</div>
+
+  <!-- The pad plays at 1x, then winds down to a stop like tape (pitch follows the rate). -->
+  <audio id="pad" src="audio/pad.wav" data-start="0" data-duration="6" data-hf-loop="true" data-volume="0.8" data-hf-fade-in="0.4"
+         data-hf-speed-ramp='[{"at":4.2,"speed":1},{"at":5.8,"speed":0,"easing":"ease-out-cubic"}]'></audio>
+  <!-- A ping at half speed: an octave lower and twice as long. -->
+  <audio id="ping" src="audio/ping.wav" data-start="2" data-volume="0.7" data-hf-speed="0.5"></audio>
+</div>
+</body>
+</html>

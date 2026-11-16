@@ -4,10 +4,13 @@
 //! Attributes: `src` (or one `<source src>` child; `poster`, `autoplay`, `controls`, `preload`, and
 //! `playsinline` are accepted and have no effect, since a render always plays from the start), `data-media-start` (seconds into the source, default 0), `loop` or
 //! `data-hf-loop` (repeat the source; `data-duration` is then required), `muted`, `data-volume`
-//! (0 to 8), and `data-hf-fade-in`/`data-hf-fade-out`. Unless `muted`, the source's audio track
-//! becomes an `AudioClip` that plays with the clip, trimmed by `data-media-start`.
+//! (0 to 8), `data-hf-fade-in`/`data-hf-fade-out`, and `data-hf-speed` or `data-hf-speed-ramp`
+//! (see `parse/speed.rs`). Unless `muted`, the source's audio track becomes an `AudioClip` that
+//! plays with the clip, trimmed by `data-media-start`, at the same speed as the picture, and loops
+//! over the whole source like the picture.
 use crate::model::{AudioClip, VideoSource};
 use crate::parse::html::{attr, number};
+use crate::parse::speed::parse_speed;
 use crate::video::VideoIndex;
 use anyhow::{anyhow, bail, Result};
 use kuchiki::NodeRef;
@@ -19,7 +22,8 @@ const MAX_VOLUME: f64 = 8.0;
 
 pub(in crate::parse) struct ParsedVideo {
     pub(in crate::parse) source: VideoSource,
-    /// Source length left after `data-media-start`, the clip length when `data-duration` is absent.
+    /// Clip time that plays the source left after `data-media-start` at the clip's speed: the clip
+    /// length when `data-duration` is absent.
     pub(in crate::parse) default_duration: f64,
     /// The source's own sound, when it has an audio track and the element is not `muted`. Its
     /// `start` and `duration` are filled in from the clip.
@@ -81,6 +85,18 @@ pub(in crate::parse) fn parse_video(
     if looped && !has_duration {
         bail!("a looping <video> requires data-duration");
     }
+    let speed = parse_speed(node)?;
+    let remaining = index.duration - media_start;
+    let default_duration = match &speed {
+        None => remaining,
+        Some(curve) => match curve.time_for(remaining) {
+            Some(time) => time,
+            None if has_duration => 0.0,
+            None => {
+                bail!("this speed ramp ends at speed 0 before the source ends; set data-duration")
+            }
+        },
+    };
     let audio = if index.has_audio && !flag(node, "muted")? {
         let seconds = |name: &str| -> Result<f64> {
             Ok(attr(node, name)
@@ -105,17 +121,20 @@ pub(in crate::parse) fn parse_video(
             fade_in: seconds("data-hf-fade-in")?,
             fade_out: seconds("data-hf-fade-out")?,
             looped,
+            loop_from: 0.0,
+            speed: speed.clone(),
         })
     } else {
         None
     };
     Ok(ParsedVideo {
-        default_duration: index.duration - media_start,
+        default_duration,
         source: VideoSource {
             path,
             media_start,
             looped,
             audio: audio.is_some(),
+            speed,
             index: Arc::new(index),
         },
         audio,

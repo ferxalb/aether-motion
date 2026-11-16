@@ -348,13 +348,25 @@ pub struct VideoSource {
     pub looped: bool,
     /// The source's audio track is mixed with the clip (it has one and the element is not `muted`).
     pub audio: bool,
+    /// `data-hf-speed` or `data-hf-speed-ramp`; `None` plays at 1x.
+    pub speed: Option<std::sync::Arc<crate::speed::SpeedCurve>>,
     pub index: std::sync::Arc<crate::video::VideoIndex>,
 }
 
 impl VideoSource {
+    /// Seconds into the source shown `local` seconds after the clip starts, before looping.
+    pub fn media_time(&self, local: f64) -> f64 {
+        let local = local.max(0.0);
+        self.media_start
+            + match &self.speed {
+                Some(curve) => curve.media(local),
+                None => local,
+            }
+    }
+
     /// Display frame shown `local` seconds after the clip starts.
     pub fn frame_at(&self, local: f64) -> usize {
-        let mut media = self.media_start + local.max(0.0);
+        let mut media = self.media_time(local);
         if self.looped && self.index.duration > 0.0 {
             media = media.rem_euclid(self.index.duration);
         }
@@ -613,8 +625,13 @@ pub struct AudioClip {
     pub volume: f32,
     pub fade_in: f64,
     pub fade_out: f64,
-    /// `data-hf-loop`: repeat the trimmed source to fill `duration`.
+    /// `data-hf-loop`: repeat the source to fill `duration`.
     pub looped: bool,
+    /// Source seconds where each loop pass restarts: the trim for `<audio>`, and 0 for a video's
+    /// sound, so it wraps exactly like the picture (which loops over the whole source).
+    pub loop_from: f64,
+    /// `data-hf-speed` or `data-hf-speed-ramp` (varispeed: pitch follows the rate); `None` is 1x.
+    pub speed: Option<std::sync::Arc<crate::speed::SpeedCurve>>,
 }
 
 /// Edge a reveal grows from: `Left` uncovers the element starting at its left edge, and so on.

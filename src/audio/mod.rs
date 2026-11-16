@@ -1,5 +1,5 @@
 //! Audio for compositions: `<audio>` clips are decoded (`decode`), converted to 48 kHz
-//! (`resample`), mixed sample-accurately onto one stereo timeline (`mix`), encoded to AAC-LC
+//! (`resample`), read at variable speed when a clip sets one (`varispeed`), mixed sample-accurately onto one stereo timeline (`mix`), encoded to AAC-LC
 //! (`aac`), and attached to the MP4 with the edit list that trims encoder delay (`mux`).
 //!
 //! `build_track` is the facade used by the encoder and by `check`.
@@ -9,6 +9,7 @@ pub mod decode;
 pub mod mix;
 pub mod mux;
 pub mod resample;
+mod varispeed;
 
 use crate::model::Composition;
 use anyhow::Result;

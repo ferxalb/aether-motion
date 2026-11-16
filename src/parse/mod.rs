@@ -2,7 +2,7 @@
 //!
 //! `parse_file` (and `parse_file_with`, which takes variable values) is the facade. Submodules: `html` (node helpers), `css` (stylesheet, selectors, cascade,
 //! variables), `values` (value parsers), `style` (property groups into `Style`), `animation`
-//! (CSS animation, `data-hf-keyframes`, and `data-hf-camera` into motion tracks), `split` (`data-hf-split` kinetic text), `audio` (`<audio>` clips for the mixer), `captions` (`data-hf-captions` timed captions from a transcript), `counter` (`data-hf-counter` animated numbers; `data-hf-reveal` lives in `animation/reveal.rs`), `transition` (`data-hf-transition` scene transitions), `variables` (`data-composition-variables` declarations and their `data-var-*` bindings, applied to the DOM first), `tree` (DOM walk), `timeline` (`data-start`).
+//! (CSS animation, `data-hf-keyframes`, and `data-hf-camera` into motion tracks), `split` (`data-hf-split` kinetic text), `audio` (`<audio>` clips for the mixer), `speed` (`data-hf-speed` and `data-hf-speed-ramp` on `<video>` and `<audio>`), `captions` (`data-hf-captions` timed captions from a transcript), `counter` (`data-hf-counter` animated numbers; `data-hf-reveal` lives in `animation/reveal.rs`), `transition` (`data-hf-transition` scene transitions), `variables` (`data-composition-variables` declarations and their `data-var-*` bindings, applied to the DOM first), `tree` (DOM walk), `timeline` (`data-start`).
 
 mod animation;
 mod audio;
@@ -10,6 +10,7 @@ mod captions;
 mod counter;
 mod css;
 mod html;
+mod speed;
 mod split;
 mod style;
 mod timeline;

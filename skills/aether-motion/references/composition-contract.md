@@ -36,6 +36,8 @@ CSS animation is limited to the documented transform, opacity, and timing-functi
 
 Use relative paths to local PNG, JPEG, WebP, or SVG images. SVG (file or inline `<svg>`) needs an explicit width and height, is rasterized at the target size, and must be static: no `<text>`, SMIL, scripts, `<foreignObject>`, or external references. `<audio>` supports local WAV, FLAC, Ogg Vorbis, and MP3 sources, with documented timing, trim, loop, volume, and fades. Audio mixing uses the native encoder; `--encoder ffmpeg` rejects compositions containing `<audio>`. Keep the checked audio peak at or below 1.0 to avoid clamping.
 
+For slow motion, fast forward, or speed ramps on `<video>` or `<audio>`, use `data-hf-speed="0.5"` (0.05 to 16) or `data-hf-speed-ramp='[{"at":0,"speed":1},{"at":1,"speed":0.25,"easing":"ease-in-out-cubic"}]'` (rates 0 to 16, `at` from the clip start, strictly increasing; at least one keyframe must have a nonzero speed, so an all-zero ramp is rejected even with `data-duration`; a ramp ending at 0 freezes and needs `data-duration`). `data-media-start` and `data-hf-trim-start` are source-time offsets (2 skips two source seconds at any speed); `data-duration` and fades are clip time, never the `playbackRate` property. A video's sound follows its picture; pitch follows the rate. Smooth slow motion needs a high-frame-rate source because frames repeat rather than interpolate. Check `videos[].speed`/`mediaEnd` and `audio.clips[].mediaSeconds`, then snapshot the start, the slowest point, and the end of the ramp. See `examples/speed.html`.
+
 ## Source of truth
 
 For the exact supported gradients, shadows, text layout, clipping, CSS properties, motion options, and errors, consult the repository's `AGENTS.md` and `limits.md`.

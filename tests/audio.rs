@@ -271,3 +271,69 @@ fn a_missing_audio_file_is_an_explicit_render_error() {
     assert!(format!("{error:#}").contains("nope.wav"), "{error:#}");
     assert!(!dir.join("out.mp4").exists());
 }
+
+#[test]
+fn half_speed_moves_a_burst_to_twice_its_time_in_the_mp4() {
+    let dir = scratch("audio-speed");
+    // A 10 ms burst 0.4 s into the file plays 0.8 s in at half speed.
+    write_wav(
+        &dir.join("burst.wav"),
+        48_000,
+        1,
+        &burst(48_000, 1.0, 19_200, 480),
+    );
+    let html = composition(
+        &dir,
+        "<audio src='burst.wav' data-start='0' data-hf-speed='0.5'></audio>",
+        2,
+    );
+    let report = aether_motion::agent::check(&html);
+    assert_eq!(report["ok"], true, "{report}");
+    let clip = &report["audio"]["clips"][0];
+    assert!(
+        (clip["end"].as_f64().unwrap() - 2.0).abs() < 1e-6,
+        "{report}"
+    );
+    assert!(
+        (clip["mediaSeconds"].as_f64().unwrap() - 1.0).abs() < 1e-6,
+        "{report}"
+    );
+
+    let output = dir.join("out.mp4");
+    render(&html, &output, 30, 1);
+    let decoded = decode_audio(&output);
+    let expected = frames_for(0.8) as f64;
+    let found = centroid(&decoded[..frames_for(1.5)]);
+    assert!(
+        (found - expected).abs() < 8.0,
+        "burst center at sample {found:.1}, expected {expected}"
+    );
+    // The 2 kHz tone drops an octave: count zero crossings across the stretched burst.
+    let window = &decoded[frames_for(0.79)..frames_for(0.81)];
+    let crossings = window
+        .windows(2)
+        .filter(|w| (w[0] < 0) != (w[1] < 0))
+        .count();
+    // 20 ms at 1 kHz is 40 crossings (at 2 kHz it would be 80).
+    assert!((30..=50).contains(&crossings), "{crossings} zero crossings");
+}
+
+#[test]
+fn speed_ramped_audio_is_identical_for_any_thread_count() {
+    let dir = scratch("audio-speed-determinism");
+    write_wav(
+        &dir.join("burst.wav"),
+        48_000,
+        1,
+        &burst(48_000, 1.0, 24_000, 4800),
+    );
+    let html = composition(
+        &dir,
+        r#"<audio src='burst.wav' data-duration='2' data-hf-loop='true' data-hf-speed-ramp='[{"at":0,"speed":3},{"at":1,"speed":0.3,"easing":"ease-in-out-cubic"}]'></audio>"#,
+        2,
+    );
+    let (one, four) = (dir.join("one.mp4"), dir.join("four.mp4"));
+    render(&html, &one, 25, 1);
+    render(&html, &four, 25, 4);
+    assert_eq!(std::fs::read(&one).unwrap(), std::fs::read(&four).unwrap());
+}
