@@ -729,3 +729,16 @@ not change. A test also checks that the single-pass color path and the plane pat
 
 `examples/effects.html` without motion blur (`--frame 10 --count 20`) went from 2.6–2.7 s to
 1.83–2.06 s with the same two changes.
+
+## Composition variables (2026-11-16)
+
+Variables are resolved and their bindings applied once, on the parsed document, before the stylesheet
+is read; nothing in the per-frame path changed. With no `data-composition-variables` the pass is one walk
+over the document that finds no binding attributes, and the root gets no extra custom properties.
+
+Existing output: the same 111 half-scale PNGs (every example and benchmark composition, frames 0, 20,
+and 50, `--scale 0.5`) rendered with this build are byte-identical to the reference set from the build
+before the effects work. Parse cost: `inspect examples/premium-promo.html`, mean of 20 runs, 5 ms with
+the reference build and 4 ms with this one (process start included; the difference is noise).
+`examples/variables.html` renders one 960x540 frame in 0.05 to 0.07 s with its defaults, with
+`examples/variables.json`, and with an inline `--variables` object.

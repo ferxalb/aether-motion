@@ -1,6 +1,6 @@
 //! Agent mode: composition checks and the MCP server facade. `zones` holds the safe-zone and caption-zone text checks.
 use crate::model::{Composition, Content};
-use crate::parse::parse_file;
+use crate::parse::{parse_file_with, VariableValues};
 use crate::render::{check_image, svg, Renderer};
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
@@ -12,7 +12,16 @@ pub mod zones;
 pub use mcp::serve;
 
 fn fix_hint(message: &str) -> &'static str {
-    if message.contains("data-hf-reveal") {
+    if message.contains("data-composition-variables")
+        || message.contains("data-var-")
+        || message.contains("data-variable-values")
+        || message.contains("variable values")
+        || message.contains("variables file")
+        || message.starts_with("variable ")
+        || message.contains(": variable ")
+    {
+        "declare data-composition-variables='[{\"id\":\"title\",\"type\":\"string\",\"label\":\"Title\",\"default\":\"Hello\"}]' on <html> or the composition root (types string, number, color, boolean, enum, image, font); bind with var(--id) in CSS, data-var-text, data-var-src (img, video, audio, source), or data-var-if (id, !id, id=value, id!=value); pass values as a JSON object of declared ids with matching types"
+    } else if message.contains("data-hf-reveal") {
         "use data-hf-reveal=from-left|from-right|from-top|from-bottom on a non-root element, with optional data-hf-reveal-at, -duration, and -easing; not with rotate"
     } else if message.contains("data-hf-counter") {
         "use data-hf-counter=<end value> on an empty element, with optional data-hf-counter-from, -duration (0.05 to 10), -delay, -decimals (0 to 6), -prefix, -suffix, -separator, and -easing"
@@ -150,10 +159,50 @@ fn check_audio(c: &Composition) -> Result<Value> {
     Ok(json!({"clips": clips, "peak": mix.peak, "clippedSamples": mix.clipped}))
 }
 
+/// The declared variables with the values in use, for the `check` report.
+fn variables_json(c: &Composition) -> Value {
+    use crate::model::VariableKind;
+    let typed = |kind: VariableKind, text: &str| match kind {
+        VariableKind::Number => text
+            .parse::<f64>()
+            .map_or_else(|_| json!(text), |n| json!(n)),
+        VariableKind::Boolean => json!(text == "true"),
+        _ => json!(text),
+    };
+    let declared: Vec<Value> = c
+        .variables
+        .declared
+        .iter()
+        .map(|v| {
+            json!({
+                "id": v.id,
+                "type": v.kind.name(),
+                "value": typed(v.kind, &v.value),
+                "default": typed(v.kind, &v.default),
+                "overridden": v.overridden,
+                "uses": {"css": v.uses.css, "text": v.uses.text, "src": v.uses.src, "if": v.uses.condition},
+            })
+        })
+        .collect();
+    let unused: Vec<&str> = c
+        .variables
+        .declared
+        .iter()
+        .filter(|v| v.uses == crate::model::VariableUses::default())
+        .map(|v| v.id.as_str())
+        .collect();
+    json!({"declared": declared, "unused": unused, "removedElements": c.variables.removed})
+}
+
 /// Validates the structure, image headers, video sources, and audio files, then renders a test frame.
 pub fn check(path: &Path) -> Value {
+    check_with(path, &VariableValues::new())
+}
+
+/// `check` with `values` for the composition's declared variables.
+pub fn check_with(path: &Path, values: &VariableValues) -> Value {
     let run = || -> Result<Value> {
-        let c = parse_file(path)?;
+        let c = parse_file_with(path, values)?;
         let mut seen = HashSet::new();
         for element in &c.elements {
             match &element.content {
@@ -211,7 +260,7 @@ pub fn check(path: &Path) -> Value {
             })
             .collect();
         Ok(
-            json!({"animations": animations, "ok": true, "width": c.width, "height": c.height, "duration": c.duration, "elements": c.elements.len(), "clips": clips, "audio": audio, "videos": videos, "effects": effects}),
+            json!({"animations": animations, "ok": true, "width": c.width, "height": c.height, "duration": c.duration, "elements": c.elements.len(), "clips": clips, "audio": audio, "videos": videos, "effects": effects, "variables": variables_json(&c)}),
         )
     };
     match run() {

@@ -87,7 +87,8 @@ pub(in crate::parse) fn walk(
         mut style,
         vars,
         animation,
-    } = style_for(node, sheet, vars).with_context(|| format!("styles for <{tag}>"))?;
+    } = style_for(node, sheet, vars, parent.is_none())
+        .with_context(|| format!("styles for <{tag}>"))?;
     let start_expr = attr(node, "data-start");
     let duration = attr(node, "data-duration")
         .map(|s| number(&s, "data-duration"))

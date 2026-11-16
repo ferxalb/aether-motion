@@ -4,6 +4,7 @@
 //! Zone flags: `--safe-zone tiktok|reels|shorts|standard|off` (comma list allowed; default is the
 //! three platform zones on 9:16 frames and `standard` elsewhere), `--caption-zone "x0=..;y0=..;x1=..;y1=.."`
 //! (optional `severity=error`), `--samples N` (default 9 midpoints), `--at t1,t2`, and `--strict`.
+//! `--variables JSON` or `--variables-file PATH` check the composition with those variable values.
 //! Exit codes: 0 success, 1 the composition is invalid or a gating finding exists, 2 usage error.
 //! Safe-zone findings are warnings and never fail, even with `--strict`.
 
@@ -18,7 +19,14 @@ use std::path::Path;
 pub fn run(raw: &[String]) -> Result<i32> {
     let parsed = Args::parse(
         raw,
-        &["--safe-zone", "--caption-zone", "--samples", "--at"],
+        &[
+            "--safe-zone",
+            "--caption-zone",
+            "--samples",
+            "--at",
+            "--variables",
+            "--variables-file",
+        ],
         &["--json", "--strict"],
     );
     let args = match parsed {
@@ -26,7 +34,16 @@ pub fn run(raw: &[String]) -> Result<i32> {
         Err(error) => return usage(error),
     };
     let project = project::resolve(Path::new("."), args.positional.first().map(String::as_str))?;
-    let mut report = agent::check(&project.entry);
+    // Values that cannot be read are usage errors; values the composition rejects fail the check.
+    let values = match super::variables::values(
+        args.value("--variables"),
+        args.value("--variables-file"),
+        &project.variables,
+    ) {
+        Ok(values) => values,
+        Err(error) => return usage(error),
+    };
+    let mut report = agent::check_with(&project.entry, &values);
     let ok = report["ok"] == true;
     let mut exit = i32::from(!ok);
     let mut lines: Vec<String> = Vec::new();
@@ -44,6 +61,7 @@ pub fn run(raw: &[String]) -> Result<i32> {
                 None => Vec::new(),
             };
             Ok(zones::ZoneRequest {
+                variables: Some(&values),
                 safe_zone: args.value("--safe-zone"),
                 caption_zone: args.value("--caption-zone"),
                 samples: args.number::<usize>("--samples")?,

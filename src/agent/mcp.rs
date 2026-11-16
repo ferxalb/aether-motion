@@ -1,7 +1,7 @@
 //! MCP stdio server for the current stateless protocol and legacy clients.
 use crate::encode::{encode_native_with_options, EncodeOptions};
 use crate::model::Composition;
-use crate::parse::parse_file;
+use crate::parse::{parse_file_with, VariableValues};
 use crate::render::Renderer;
 use anyhow::{anyhow, Result};
 use image::{ColorType, ImageFormat};
@@ -56,8 +56,19 @@ fn renderer_for<'a>(composition: &'a Composition, args: &Value) -> Result<Render
     Renderer::new(composition, scale)
 }
 
+/// The optional `variables` argument: values for the composition's declared variables.
+fn variables_arg(args: &Value) -> Result<VariableValues> {
+    match args.get("variables") {
+        None | Some(Value::Null) => Ok(VariableValues::new()),
+        Some(Value::Object(values)) => Ok(values.clone()),
+        Some(_) => Err(anyhow!(
+            "variables must be an object keyed by variable id, such as {{\"title\": \"Q4\"}}"
+        )),
+    }
+}
+
 fn snapshot(path: &Path, time: f64, args: &Value) -> Result<Value> {
-    let composition = parse_file(path)?;
+    let composition = parse_file_with(path, &variables_arg(args)?)?;
     let mut renderer = renderer_for(&composition, args)?;
     let (width, height) = renderer.dimensions();
     let pixels = renderer.render_at(time)?;
@@ -81,19 +92,22 @@ fn text(value: impl Into<String>) -> Value {
 
 fn tools() -> Value {
     let path = json!({"type": "string", "description": "Path to the .html composition"});
+    let variables = json!({"type": "object", "description": "Values for variables declared in data-composition-variables, keyed by id (for example {\"title\": \"Q4\", \"accent\": \"#ff3366\"}); omitted ids keep their defaults. Unknown ids and values of the wrong type are errors."});
     json!([
         {"name": "aether_guide", "description": "Format contract and work loop. Read it before writing a composition.", "inputSchema": {"type": "object", "properties": {}}},
-        {"name": "aether_write", "description": "Write an HTML composition and validate it; the response is the same report as aether_check, including layout.findings. Do not overwrite unless overwrite=true.", "inputSchema": {"type": "object", "properties": {"path": path, "html": {"type": "string"}, "overwrite": {"type": "boolean"}, "safeZone": {"type": "string"}, "captionZone": {"type": "string"}, "samples": {"type": "integer", "minimum": 1, "maximum": 200}, "at": {"type": "array", "items": {"type": "number"}}}, "required": ["path", "html"]}},
+        {"name": "aether_write", "description": "Write an HTML composition and validate it; the response is the same report as aether_check, including layout.findings. Do not overwrite unless overwrite=true.", "inputSchema": {"type": "object", "properties": {"path": path, "html": {"type": "string"}, "overwrite": {"type": "boolean"}, "variables": variables, "safeZone": {"type": "string"}, "captionZone": {"type": "string"}, "samples": {"type": "integer", "minimum": 1, "maximum": 200}, "at": {"type": "array", "items": {"type": "number"}}}, "required": ["path", "html"]}},
         {"name": "aether_block", "description": "List ready-made blocks and themes, or render one as HTML to paste into a composition. Without name it returns the catalog with parameters and defaults.", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "params": {"type": "object", "additionalProperties": {"type": "string"}}}}},
-        {"name": "aether_check", "description": "Validate the composition; return JSON with an error and fix on failure. On success it also probes text and returns layout.findings: outside_safe_zone warnings (TikTok, Reels, Shorts on 9:16 frames; 10% margins on other frames) and, with captionZone, caption_zone_collision. Opt out with data-layout-allow-safe-zone or data-layout-allow-caption-zone.", "inputSchema": {"type": "object", "properties": {"path": path, "safeZone": {"type": "string", "description": "tiktok, reels, shorts, standard (comma list), or off. Default: all platform zones on 9:16, standard otherwise."}, "captionZone": {"type": "string", "description": "Fractional band, for example x0=0;y0=0.7;x1=1;y1=1 (optional ;severity=error)"}, "samples": {"type": "integer", "minimum": 1, "maximum": 200, "description": "Midpoint sample count (default 9)"}, "at": {"type": "array", "items": {"type": "number"}, "description": "Exact sample times in seconds, instead of samples"}}, "required": ["path"]}},
-        {"name": "aether_snapshot", "description": "Render the exact second t (0 <= t < duration) and return a PNG.", "inputSchema": {"type": "object", "properties": {"path": path, "t": {"type": "number"}, "scale": {"type": "number"}, "size": {"type": "string", "enum": ["1080p", "4k"]}}, "required": ["path"]}},
-        {"name": "aether_render", "description": "Render to MP4 (native H.264). Does not overwrite existing outputs.", "inputSchema": {"type": "object", "properties": {"path": path, "output": {"type": "string"}, "fps": {"type": "integer", "minimum": 1, "maximum": 60}, "threads": {"type": "integer", "minimum": 1, "maximum": 64}, "scale": {"type": "number"}, "size": {"type": "string", "enum": ["1080p", "4k"]}, "audioBitrate": {"type": "integer", "minimum": 64, "maximum": 320, "description": "AAC bitrate in kbit/s for compositions with <audio> (default 192)"}, "quality": {"type": "string", "enum": ["draft", "standard", "high", "max"], "description": "H.264 quality preset: fixed quantizer 30, 26, 22, or 18 (default standard); lower quantizers give larger files at about the same CPU cost"}}, "required": ["path", "output"]}}
+        {"name": "aether_check", "description": "Validate the composition; return JSON with an error and fix on failure. On success it also probes text and returns layout.findings: outside_safe_zone warnings (TikTok, Reels, Shorts on 9:16 frames; 10% margins on other frames) and, with captionZone, caption_zone_collision. Opt out with data-layout-allow-safe-zone or data-layout-allow-caption-zone.", "inputSchema": {"type": "object", "properties": {"path": path, "variables": variables, "safeZone": {"type": "string", "description": "tiktok, reels, shorts, standard (comma list), or off. Default: all platform zones on 9:16, standard otherwise."}, "captionZone": {"type": "string", "description": "Fractional band, for example x0=0;y0=0.7;x1=1;y1=1 (optional ;severity=error)"}, "samples": {"type": "integer", "minimum": 1, "maximum": 200, "description": "Midpoint sample count (default 9)"}, "at": {"type": "array", "items": {"type": "number"}, "description": "Exact sample times in seconds, instead of samples"}}, "required": ["path"]}},
+        {"name": "aether_snapshot", "description": "Render the exact second t (0 <= t < duration) and return a PNG.", "inputSchema": {"type": "object", "properties": {"path": path, "t": {"type": "number"}, "variables": variables, "scale": {"type": "number"}, "size": {"type": "string", "enum": ["1080p", "4k"]}}, "required": ["path"]}},
+        {"name": "aether_render", "description": "Render to MP4 (native H.264). Does not overwrite existing outputs.", "inputSchema": {"type": "object", "properties": {"path": path, "output": {"type": "string"}, "variables": variables, "fps": {"type": "integer", "minimum": 1, "maximum": 60}, "threads": {"type": "integer", "minimum": 1, "maximum": 64}, "scale": {"type": "number"}, "size": {"type": "string", "enum": ["1080p", "4k"]}, "audioBitrate": {"type": "integer", "minimum": 64, "maximum": 320, "description": "AAC bitrate in kbit/s for compositions with <audio> (default 192)"}, "quality": {"type": "string", "enum": ["draft", "standard", "high", "max"], "description": "H.264 quality preset: fixed quantizer 30, 26, 22, or 18 (default standard); lower quantizers give larger files at about the same CPU cost"}}, "required": ["path", "output"]}}
     ])
 }
 
-/// Structural check plus the optional zone probe (`safeZone`, `captionZone`, `samples`, `at`).
+/// Structural check plus the optional zone probe (`safeZone`, `captionZone`, `samples`, `at`),
+/// with the optional `variables` values.
 fn checked(path: &Path, args: &Value) -> Result<Value> {
-    let mut report = crate::agent::check(path);
+    let variables = variables_arg(args)?;
+    let mut report = crate::agent::check_with(path, &variables);
     let at = match args.get("at") {
         None => Vec::new(),
         Some(list) => list
@@ -110,6 +124,7 @@ fn checked(path: &Path, args: &Value) -> Result<Value> {
         ),
     };
     let request = crate::agent::zones::ZoneRequest {
+        variables: Some(&variables),
         safe_zone: args.get("safeZone").and_then(Value::as_str),
         caption_zone: args.get("captionZone").and_then(Value::as_str),
         samples,
@@ -184,8 +199,9 @@ fn call(name: &str, args: &Value) -> Result<Value> {
                 .map(str::parse)
                 .transpose()?
                 .unwrap_or_default();
+            let variables = variables_arg(args)?;
             crate::encode::lower_priority();
-            let composition = parse_file(path)?;
+            let composition = parse_file_with(path, &variables)?;
             let mut renderer = renderer_for(&composition, args)?;
             let started = std::time::Instant::now();
             match output.extension().and_then(|extension| extension.to_str()) {
@@ -455,4 +471,36 @@ pub fn serve() -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn variables_argument_reaches_check_and_rejects_non_objects() {
+        let dir = std::env::temp_dir().join(format!("aether-mcp-vars-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("v.html");
+        std::fs::write(
+            &path,
+            r#"<div data-composition-id="v" data-width="64" data-height="64" data-duration="1" data-composition-variables='[{"id":"title","type":"string","label":"Title","default":"A"}]'><div data-var-text="title" style="font-size:10px">x</div></div>"#,
+        )
+        .unwrap();
+        let args = json!({"path": path, "variables": {"title": "B"}, "safeZone": "off"});
+        let report: Value =
+            match call("aether_check", &args).unwrap()["content"][0]["text"].as_str() {
+                Some(text) => serde_json::from_str(text).unwrap(),
+                None => panic!("text content"),
+            };
+        assert_eq!(report["ok"], true, "{report}");
+        assert_eq!(report["variables"]["declared"][0]["value"], "B");
+        assert!(variables_arg(&json!({"variables": "title=B"})).is_err());
+        let snapshot = call(
+            "aether_snapshot",
+            &json!({"path": path, "variables": {"title": 1}}),
+        );
+        assert!(format!("{:#}", snapshot.unwrap_err()).contains("must be a string"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

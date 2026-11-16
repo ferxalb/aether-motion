@@ -16,6 +16,7 @@ Official references: [Composition](https://www.remotion.dev/docs/composition), [
 | Remotion source | AETHER Motion approach |
 | --- | --- |
 | Static React/HTML content and fixed props | Rebuild as ordinary supported HTML, text, CSS, and local assets. Use separate elements for independently timed parts. |
+| `defaultProps`, `inputProps`, or a props schema | Declare each prop as a composition variable in `data-composition-variables` (string, number, color, boolean, enum, image, font) with its default, bind it with `var(--id)`, `data-var-text`, `data-var-src`, or `data-var-if`, and pass render values with `--variables` or the MCP `variables` argument. Props that drive arbitrary logic, arrays, or nested objects have no direct equivalent. |
 | `<Track>` | Use AETHER `data-track-index` values for paint/timeline order; preserve overlapping clips on separate visual tracks as required. A track label has no direct equivalent. |
 | `<Series>` or sequential timed clips | Resolve each child's start by accumulating preceding durations in frames, then divide by FPS. |
 | `<Sequence from durationInFrames>` | Convert its start and duration from frames to seconds; account for parent and nested offsets before writing clip timing. |

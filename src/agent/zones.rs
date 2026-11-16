@@ -13,7 +13,7 @@
 //! Opt out with `data-layout-allow-safe-zone` / `data-layout-allow-caption-zone` on the text or any
 //! ancestor.
 use crate::model::Composition;
-use crate::parse::parse_file;
+use crate::parse::{parse_file_with, VariableValues};
 use crate::render::Renderer;
 use anyhow::{anyhow, bail, Result};
 use serde_json::{json, Value};
@@ -193,6 +193,8 @@ pub fn sample_times(duration: f64, samples: usize, at: &[f64]) -> Result<Vec<f64
 /// Raw zone-check inputs shared by the CLI flags and the `aether_check` arguments.
 #[derive(Clone, Debug, Default)]
 pub struct ZoneRequest<'a> {
+    /// Values for the composition's declared variables, as in the structural check (`None`: defaults).
+    pub variables: Option<&'a VariableValues>,
     pub safe_zone: Option<&'a str>,
     pub caption_zone: Option<&'a str>,
     pub samples: Option<usize>,
@@ -235,7 +237,9 @@ pub fn attach(
     let Some(options) = request.plan(width, height, duration)? else {
         return Ok(None);
     };
-    let outcome = check_zones(path, &options)?;
+    let defaults = VariableValues::new();
+    let variables = request.variables.unwrap_or(&defaults);
+    let outcome = check_zones_with(path, &options, variables)?;
     report["layout"] = json!({
         "findings": outcome.findings,
         "truncated": outcome.truncated,
@@ -352,7 +356,16 @@ fn box_json(rect: [f32; 4]) -> Value {
 
 /// Probes the composition at `options.times` and reports zone findings.
 pub fn check_zones(path: &Path, options: &ZoneOptions) -> Result<ZoneReport> {
-    let c = parse_file(path)?;
+    check_zones_with(path, options, &VariableValues::new())
+}
+
+/// `check_zones` with `variables` for the composition's declared variables.
+pub fn check_zones_with(
+    path: &Path,
+    options: &ZoneOptions,
+    variables: &VariableValues,
+) -> Result<ZoneReport> {
+    let c = parse_file_with(path, variables)?;
     let (w, h) = (c.width as f32, c.height as f32);
     let mut report = ZoneReport {
         times: options.times.clone(),

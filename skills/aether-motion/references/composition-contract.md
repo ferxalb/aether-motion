@@ -20,6 +20,10 @@ The composition root declares `data-composition-id`, `data-width`, `data-height`
 
 Use supported elements (`div`, text, local PNG, JPEG, WebP, or SVG images, and inline static `<svg>`), inline styles or type/class/ID selectors, and documented CSS properties only. Layout dimensions accept pixels or percentages. Flex layout is available for centered and grouped content; do not rely on full browser layout behavior.
 
+## Templates
+
+To render one composition with different text, colors, sizes, or assets, declare typed variables on `<html>` or the root: `data-composition-variables='[{"id":"title","type":"string","label":"Title","default":"Launch day"},{"id":"accent","type":"color","label":"Accent","default":"#4be0b8"}]'` (types `string`, `number`, `color`, `boolean`, `enum`, `image`, `font`; `id`, `type`, `label`, and a typed `default` are required). Use them with `var(--accent)` in CSS (set on the root, over `:root` declarations; a number with `unit: "px"` arrives as `48px`), `data-var-text="title"` (the element's own text; child elements stay), `data-var-src="logo"` (on `img`, `video`, `audio`, `source`), and `data-var-if="showBadge"`, `"!showBadge"`, or `"layout=left"` (removes the element, or a `<style>`, when false). Values are passed per render as a JSON object (`--variables`, `--variables-file`, `aether.json` `"variables"`, or the MCP `variables` argument). Every mistake is an explicit error. Check and snapshot each value set. See `examples/variables.html`.
+
 ## Deterministic motion
 
 Use the native motion attributes for keyframes, camera moves, split text, reveals, counters, captions (`data-hf-captions` with a local `.json`, `.srt`, or `.vtt` transcript; times are seconds from the clip start; see AGENTS.md for options), and scene transitions. Keyframe times are seconds relative to the element's resolved start and must increase strictly within the clip duration. Keep all animation seekable from time alone: no `<script>`, timers, network, `Date.now()`, or unseeded randomness.

@@ -25,6 +25,13 @@ CLI/MCP output may still change between minor releases.
 - `check` reports `effects` (motion blur settings, root grade, color filters, blend modes, and animated
   filters).
 - `examples/effects.html` and `examples/filter-motion.html`.
+- Composition variables: typed declarations in `data-composition-variables` (`string`, `number`, `color`,
+  `boolean`, `enum`, `image`, `font`), bound with `var(--id)` in CSS, `data-var-text`, `data-var-src`, and
+  `data-var-if`. Values come from `--variables` or `--variables-file` (`render`, `preview`, `check`,
+  `bench`, `inspect`), `"variables"` in `aether.json`, or the `variables` argument of `aether_check`,
+  `aether_write`, `aether_snapshot`, and `aether_render`. Unknown ids, wrong types, and out-of-range values
+  are errors. `check` reports `variables` (values, defaults, uses, unused ids, removed elements). See
+  `examples/variables.html`.
 
 ### Changed
 

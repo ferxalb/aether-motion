@@ -1,8 +1,8 @@
 //! HTML/CSS parser: turns a composition file into the `model` types, rejecting unsupported features explicitly.
 //!
-//! `parse_file` is the facade. Submodules: `html` (node helpers), `css` (stylesheet, selectors, cascade,
+//! `parse_file` (and `parse_file_with`, which takes variable values) is the facade. Submodules: `html` (node helpers), `css` (stylesheet, selectors, cascade,
 //! variables), `values` (value parsers), `style` (property groups into `Style`), `animation`
-//! (CSS animation, `data-hf-keyframes`, and `data-hf-camera` into motion tracks), `split` (`data-hf-split` kinetic text), `audio` (`<audio>` clips for the mixer), `captions` (`data-hf-captions` timed captions from a transcript), `counter` (`data-hf-counter` animated numbers; `data-hf-reveal` lives in `animation/reveal.rs`), `transition` (`data-hf-transition` scene transitions), `tree` (DOM walk), `timeline` (`data-start`).
+//! (CSS animation, `data-hf-keyframes`, and `data-hf-camera` into motion tracks), `split` (`data-hf-split` kinetic text), `audio` (`<audio>` clips for the mixer), `captions` (`data-hf-captions` timed captions from a transcript), `counter` (`data-hf-counter` animated numbers; `data-hf-reveal` lives in `animation/reveal.rs`), `transition` (`data-hf-transition` scene transitions), `variables` (`data-composition-variables` declarations and their `data-var-*` bindings, applied to the DOM first), `tree` (DOM walk), `timeline` (`data-start`).
 
 mod animation;
 mod audio;
@@ -16,9 +16,11 @@ mod timeline;
 mod transition;
 mod tree;
 mod values;
+mod variables;
 mod video;
 
 pub use values::color::parse_color;
+pub use variables::{read_values_file, values_from_json, VariableValues};
 
 use crate::model::{Background, BlendMode, Color, Composition, Content, MotionBlur};
 use animation::camera::motion_from_camera;
@@ -37,7 +39,13 @@ use timeline::{resolve_audio_start, resolve_start};
 use transition::apply_transitions;
 use tree::walk;
 
+/// Parses a composition with every variable at its declared default.
 pub fn parse_file(path: &Path) -> Result<Composition> {
+    parse_file_with(path, &VariableValues::new())
+}
+
+/// Parses a composition with `values` for its declared variables (`data-composition-variables`).
+pub fn parse_file_with(path: &Path, values: &VariableValues) -> Result<Composition> {
     let html =
         fs::read_to_string(path).with_context(|| format!("could not read {}", path.display()))?;
     let document = kuchiki::parse_html().one(html);
@@ -65,19 +73,6 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
     if width == 0 || height == 0 || width > 8192 || height > 8192 {
         bail!("dimensions are outside 1..8192");
     }
-    let mut sheet = Stylesheet::default();
-    for node in document
-        .select("style")
-        .map_err(|_| anyhow!("error selecting CSS"))?
-    {
-        parse_css(&node.text_contents(), &mut sheet)?;
-    }
-    // Custom properties declared on `:root` (the <html> element) inherit into the composition.
-    let mut root_vars = Vars::new();
-    if let Ok(html) = document.select_first("html") {
-        let properties = cascade(html.as_node(), &sheet.rules)?;
-        root_vars = inherit_vars(&properties, &root_vars);
-    }
     let root = if metadata
         .as_node()
         .as_element()
@@ -91,6 +86,24 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
     } else {
         metadata.as_node().clone()
     };
+    // Variables rewrite the document (text, sources, removed elements) before anything reads it.
+    let applied = variables::apply(&document, metadata.as_node(), &root, values)?;
+    let mut sheet = Stylesheet {
+        pinned: applied.pinned,
+        ..Stylesheet::default()
+    };
+    for node in document
+        .select("style")
+        .map_err(|_| anyhow!("error selecting CSS"))?
+    {
+        parse_css(&node.text_contents(), &mut sheet)?;
+    }
+    // Custom properties declared on `:root` (the <html> element) inherit into the composition.
+    let mut root_vars = Vars::new();
+    if let Ok(html) = document.select_first("html") {
+        let properties = cascade(html.as_node(), &sheet.rules)?;
+        root_vars = inherit_vars(&properties, &root_vars);
+    }
     let base = path.parent().unwrap_or_else(|| Path::new("."));
     let mut pending = Vec::new();
     let mut pending_audio = Vec::new();
@@ -299,6 +312,7 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
         elements,
         ids,
         audio,
+        variables: applied.report,
     })
 }
 

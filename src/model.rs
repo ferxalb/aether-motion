@@ -494,6 +494,67 @@ pub struct Composition {
     pub ids: HashMap<String, usize>,
     /// `<audio>` clips in document order; they take no part in layout or painting.
     pub audio: Vec<AudioClip>,
+    /// `data-composition-variables`: the declared variables and the values this parse used.
+    pub variables: Variables,
+}
+
+/// Declared composition variables, already applied to the document before it was parsed.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Variables {
+    pub declared: Vec<Variable>,
+    /// Elements (with their subtrees) removed because their `data-var-if` was false.
+    pub removed: usize,
+}
+
+/// One declared variable with the value in use.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Variable {
+    pub id: String,
+    pub kind: VariableKind,
+    /// The value as text, as `data-var-text` writes it (numbers in shortest decimal form).
+    pub value: String,
+    /// The declared default, in the same form.
+    pub default: String,
+    /// True when a value passed by the caller replaced the default.
+    pub overridden: bool,
+    pub uses: VariableUses,
+}
+
+/// Declared type of a composition variable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VariableKind {
+    String,
+    Number,
+    Color,
+    Boolean,
+    Enum,
+    Image,
+    Font,
+}
+
+impl VariableKind {
+    /// The `type` name used in declarations.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::String => "string",
+            Self::Number => "number",
+            Self::Color => "color",
+            Self::Boolean => "boolean",
+            Self::Enum => "enum",
+            Self::Image => "image",
+            Self::Font => "font",
+        }
+    }
+}
+
+/// How often a variable is referenced, counted before `data-var-if` removes anything.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct VariableUses {
+    /// `var(--id)` references in `<style>` sheets and `style` attributes.
+    pub css: usize,
+    pub text: usize,
+    pub src: usize,
+    pub condition: usize,
 }
 
 /// Shutter for `data-motion-blur`: each output frame averages several instants spread evenly
