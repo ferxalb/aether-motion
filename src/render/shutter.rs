@@ -151,7 +151,10 @@ mod tests {
         };
         let hidden = FrameState::default();
         let rest = [at(10.0, 0.0)];
-        assert!(!moves(&[vec![at(10.0, 0.0)], vec![faded], vec![hidden]], &rest));
+        assert!(!moves(
+            &[vec![at(10.0, 0.0)], vec![faded], vec![hidden]],
+            &rest
+        ));
         assert!(moves(&[vec![at(10.0, 0.0)], vec![at(10.0, 5.0)]], &rest));
     }
 
