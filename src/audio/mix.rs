@@ -150,6 +150,16 @@ fn add_clip(
         );
     }
     let available = source.frames() - trim;
+    // Loop passes restart at `loop_from` (never after the trim) and run to the source end.
+    let loop_start = frames_for(clip.loop_from).min(trim);
+    let loop_span = source.frames() - loop_start;
+    let wrap = |position: f64| {
+        if clip.looped && position >= source.frames() as f64 {
+            loop_start as f64 + (position - loop_start as f64) % loop_span as f64
+        } else {
+            position
+        }
+    };
     let rate = f64::from(SAMPLE_RATE);
     let length = match (clip.duration, &clip.speed) {
         (Some(duration), _) => frames_for(clip.start + duration).saturating_sub(start),
@@ -188,13 +198,17 @@ fn add_clip(
     };
     if let Some(curve) = &clip.speed {
         let varispeed = varispeed.expect("the mixer builds a varispeed reader for speed clips");
+        // Without a loop, the kernel never reads before the trim or past the source end.
         let edge = if clip.looped {
             Edge::Wrap {
-                start: trim,
-                length: available,
+                start: loop_start,
+                length: loop_span,
             }
         } else {
-            Edge::Silence
+            Edge::Window {
+                start: trim,
+                end: source.frames(),
+            }
         };
         for k in 0..length {
             let t = k as f64 / rate;
@@ -202,17 +216,12 @@ fn add_clip(
             if !clip.looped && media >= available as f64 {
                 break;
             }
-            let offset = if clip.looped {
-                media % available as f64
-            } else {
-                media
-            };
             let speed = curve.speed(t);
             let gain = fade(k) * (speed / SILENT_BELOW).min(1.0);
             let (l, r) = varispeed.sample(
                 &source.channels[0],
                 right_plane,
-                trim as f64 + offset,
+                wrap(trim as f64 + media),
                 speed,
                 edge,
             );
@@ -232,7 +241,7 @@ fn add_clip(
     }
     for k in 0..length {
         let index = if clip.looped {
-            trim + k % available
+            wrap((trim + k) as f64) as usize
         } else if k < available {
             trim + k
         } else {
@@ -272,6 +281,7 @@ mod tests {
             fade_in: 0.0,
             fade_out: 0.0,
             looped: false,
+            loop_from: 0.0,
             speed: None,
         }
     }
@@ -341,6 +351,7 @@ mod tests {
         let mut c = clip();
         c.looped = true;
         c.trim = 1.0 / 48_000.0;
+        c.loop_from = c.trim;
         c.duration = Some(7.0 / 48_000.0);
         let (out, _) = run(&c, &source(vec![9.0, 1.0, 2.0, 3.0]), 48_000);
         assert_eq!(&out[..8], &[1.0, 2.0, 3.0, 1.0, 2.0, 3.0, 1.0, 0.0]);
@@ -413,6 +424,32 @@ mod tests {
         assert!((report.media_seconds - 0.025).abs() < 1e-9);
         assert!((out[100] - 0.5).abs() < 1e-4);
         assert_eq!(out[3000], 0.0, "frozen sound is silent");
+    }
+
+    #[test]
+    fn a_video_sound_loop_restarts_at_the_source_start_like_the_picture() {
+        let mut c = clip();
+        c.looped = true;
+        c.trim = 2.0 / 48_000.0;
+        c.loop_from = 0.0;
+        c.duration = Some(6.0 / 48_000.0);
+        let (out, _) = run(&c, &source(vec![9.0, 1.0, 2.0, 3.0]), 48_000);
+        assert_eq!(&out[..7], &[2.0, 3.0, 9.0, 1.0, 2.0, 3.0, 0.0]);
+    }
+
+    #[test]
+    fn speed_reads_never_reach_before_the_trim() {
+        // An impulse right before the trim must not leak into the interpolated output.
+        let mut samples = vec![0.0_f32; 4800];
+        samples[2399] = 1.0;
+        let mut c = clip();
+        c.trim = 0.05;
+        c.duration = Some(0.01);
+        c.speed = Some(std::sync::Arc::new(
+            crate::speed::SpeedCurve::constant(0.5).unwrap(),
+        ));
+        let (out, _) = run(&c, &source(samples), 48_000);
+        assert!(out.iter().all(|s| *s == 0.0), "leaked {:?}", &out[..8]);
     }
 
     #[test]

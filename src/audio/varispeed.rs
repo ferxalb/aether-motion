@@ -25,8 +25,8 @@ pub(super) struct Varispeed {
 /// How source indices outside the played region are read.
 #[derive(Clone, Copy)]
 pub(super) enum Edge {
-    /// Outside the source is silence.
-    Silence,
+    /// Indices outside `start..end` are silence (the trimmed source when it does not loop).
+    Window { start: usize, end: usize },
     /// Indices wrap inside `start..start + length` (a looped clip).
     Wrap { start: usize, length: usize },
 }
@@ -116,7 +116,9 @@ impl Varispeed {
 
 fn resolve(j: i64, frames: usize, edge: Edge) -> Option<usize> {
     match edge {
-        Edge::Silence => (j >= 0 && (j as usize) < frames).then_some(j as usize),
+        Edge::Window { start, end } => {
+            (j >= start as i64 && j < end.min(frames) as i64).then_some(j as usize)
+        }
         Edge::Wrap { start, length } => {
             let offset = (j - start as i64).rem_euclid(length as i64) as usize;
             Some(start + offset)
@@ -133,7 +135,16 @@ mod tests {
         let v = Varispeed::new();
         let plane: Vec<f32> = (0..200).map(|i| (i as f32 * 0.3).sin()).collect();
         for pos in [40usize, 41, 100] {
-            let (l, r) = v.sample(&plane, &plane, pos as f64, 1.0, Edge::Silence);
+            let (l, r) = v.sample(
+                &plane,
+                &plane,
+                pos as f64,
+                1.0,
+                Edge::Window {
+                    start: 0,
+                    end: plane.len(),
+                },
+            );
             assert!((l - plane[pos]).abs() < 1e-3, "pos {pos}");
             assert_eq!(l, r);
         }
@@ -145,7 +156,16 @@ mod tests {
         let plane = vec![0.5_f32; 4000];
         for speed in [0.1, 0.5, 1.0, 2.5, 8.0] {
             for pos in [1000.0, 1000.25, 1999.75] {
-                let (l, _) = v.sample(&plane, &plane, pos, speed, Edge::Silence);
+                let (l, _) = v.sample(
+                    &plane,
+                    &plane,
+                    pos,
+                    speed,
+                    Edge::Window {
+                        start: 0,
+                        end: plane.len(),
+                    },
+                );
                 assert!((l - 0.5).abs() < 1e-5, "speed {speed} pos {pos}: {l}");
             }
         }

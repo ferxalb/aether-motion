@@ -66,6 +66,7 @@ pub(in crate::parse) fn parse_audio(
                 fade_in,
                 fade_out,
                 looped,
+                loop_from: seconds("data-hf-trim-start")?.unwrap_or(0.0),
                 speed: parse_speed(node)?,
             },
             start_expr: attr(node, "data-start"),

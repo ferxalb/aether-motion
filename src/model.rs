@@ -625,8 +625,11 @@ pub struct AudioClip {
     pub volume: f32,
     pub fade_in: f64,
     pub fade_out: f64,
-    /// `data-hf-loop`: repeat the trimmed source to fill `duration`.
+    /// `data-hf-loop`: repeat the source to fill `duration`.
     pub looped: bool,
+    /// Source seconds where each loop pass restarts: the trim for `<audio>`, and 0 for a video's
+    /// sound, so it wraps exactly like the picture (which loops over the whole source).
+    pub loop_from: f64,
     /// `data-hf-speed` or `data-hf-speed-ramp` (varispeed: pitch follows the rate); `None` is 1x.
     pub speed: Option<std::sync::Arc<crate::speed::SpeedCurve>>,
 }

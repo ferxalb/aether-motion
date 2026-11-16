@@ -6,7 +6,8 @@
 //! `data-hf-loop` (repeat the source; `data-duration` is then required), `muted`, `data-volume`
 //! (0 to 8), `data-hf-fade-in`/`data-hf-fade-out`, and `data-hf-speed` or `data-hf-speed-ramp`
 //! (see `parse/speed.rs`). Unless `muted`, the source's audio track becomes an `AudioClip` that
-//! plays with the clip, trimmed by `data-media-start`, at the same speed as the picture.
+//! plays with the clip, trimmed by `data-media-start`, at the same speed as the picture, and loops
+//! over the whole source like the picture.
 use crate::model::{AudioClip, VideoSource};
 use crate::parse::html::{attr, number};
 use crate::parse::speed::parse_speed;
@@ -120,6 +121,7 @@ pub(in crate::parse) fn parse_video(
             fade_in: seconds("data-hf-fade-in")?,
             fade_out: seconds("data-hf-fade-out")?,
             looped,
+            loop_from: 0.0,
             speed: speed.clone(),
         })
     } else {
