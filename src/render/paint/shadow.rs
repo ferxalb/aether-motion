@@ -205,7 +205,7 @@ impl Surface {
             let reach = edge.tail.ceil() + 1.0;
             let cost = ((cast[2] - cast[0] + 2.0 * reach + 2.0)
                 * (cast[3] - cast[1] + 2.0 * reach + 2.0)) as usize;
-            let cost = cost.checked_mul(2).unwrap_or(usize::MAX);
+            let cost = cost.saturating_mul(2);
             let (width, height) = (self.width, self.height);
             // A strongly negative spread can collapse the mask rectangle. The direct
             // path remains valid, but constructing a tile would cast negative lengths

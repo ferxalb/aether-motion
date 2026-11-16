@@ -28,7 +28,7 @@ By default a render uses a quarter of the cores (1 to 4 workers) at low scheduli
 | `left`, `top`, `width`, `height` in px or %, hex/basic named colors, opacity, fonts, centered flex layout, `object-fit` | Yes |
 | `border-radius`, `linear-gradient(...)`, `radial-gradient(...)` | Background radius in px; angled, corner, and multi-stop gradients with translucent stops; radial glows |
 | `margin`, `overflow: hidden`, `letter-spacing`, `<br>` | Flex-aware margins, rounded content clipping, tracked text, and forced line breaks |
-| `font-weight` | `normal`, `bold`, or 1-1000, matched to installed font faces |
+| `font-weight` | `normal`, `bold`, or 1-1000, matched to installed font faces; generic families and the fallback use the embedded Roboto (Apache 2.0) for identical output on every machine |
 | `data-hf-fade-in`, `data-hf-fade-out` | Native extension; seconds, linear transition |
 | `data-hf-keyframes` | Native extension; interpolated position and opacity with quadratic, expo, cubic, quart, back, and `cubic-bezier` easings |
 | `data-hf-split` | Native extension; kinetic text with per-word or per-letter staggered entrances |

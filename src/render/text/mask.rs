@@ -6,6 +6,7 @@ use crate::render::paint::Surface;
 
 /// Samples a fixed raster with bilinear coverage and a transparent border.
 /// Blend each destination once, so translucent glyph edges do not accumulate opacity.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn paint_mask(
     pixels: &mut [u8],
     dimensions: (u32, u32),

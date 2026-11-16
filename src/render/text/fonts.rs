@@ -1,22 +1,42 @@
-//! System font index and per-family cache, independent of any renderer state.
+//! Font index and per-family cache, independent of any renderer state.
+//!
+//! Roboto Regular and Bold (Apache 2.0, `assets/fonts/`) are embedded in the binary and back the
+//! generic families (`sans-serif`, `serif`, `monospace`) and the final fallback, so text that does
+//! not name an installed font renders identically on every machine. Named families still resolve
+//! against the system fonts.
 
 use anyhow::{anyhow, Result};
 use fontdb::{Database, Family, Query, Weight};
 use fontdue::{Font, FontSettings};
 use std::collections::HashMap;
 
-/// System font index plus the parsed fonts requested so far, keyed by the CSS family list and weight.
+/// Family name of the embedded fonts, used for every generic family.
+const EMBEDDED_FAMILY: &str = "Roboto";
+
+/// Embedded font faces (Roboto Regular and Bold).
+const EMBEDDED_FONTS: [&[u8]; 2] = [
+    include_bytes!("../../../assets/fonts/Roboto-Regular.ttf"),
+    include_bytes!("../../../assets/fonts/Roboto-Bold.ttf"),
+];
+
+/// Font index plus the parsed fonts requested so far, keyed by the CSS family list and weight.
 pub(in crate::render) struct FontStore {
     fonts: HashMap<(String, u16), Font>,
     db: Database,
 }
 
 impl FontStore {
-    /// Scans system fonts only when `needed`; otherwise the index stays empty.
+    /// Loads the embedded fonts and scans system fonts only when `needed`; otherwise the index stays empty.
     pub(in crate::render) fn new(needed: bool) -> Self {
         let mut db = Database::new();
         if needed {
             db.load_system_fonts();
+            for data in EMBEDDED_FONTS {
+                db.load_font_data(data.to_vec());
+            }
+            db.set_sans_serif_family(EMBEDDED_FAMILY);
+            db.set_serif_family(EMBEDDED_FAMILY);
+            db.set_monospace_family(EMBEDDED_FAMILY);
         }
         Self::with_index(db)
     }

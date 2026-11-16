@@ -1,5 +1,6 @@
 //! Temporal regression tests for fractional motion, stable text zoom, and cache-independent frames.
 
+#![allow(clippy::chunks_exact_to_as_chunks)] // `as_chunks` needs a newer toolchain than the supported stable Rust.
 mod common;
 use aether_hyperframes::{parse::parse_file, render::Renderer};
 
