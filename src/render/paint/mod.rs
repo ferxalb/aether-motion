@@ -6,6 +6,7 @@ mod clip;
 mod fill;
 mod filter;
 mod finish;
+mod float_ops;
 mod gradient;
 mod images;
 mod inset;

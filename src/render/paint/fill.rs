@@ -2,6 +2,7 @@
 
 use crate::model::Color;
 use crate::render::geometry::{clip_pixels, PixelRect, Rect};
+use crate::render::paint::float_ops::round_to_u8;
 use crate::render::paint::surface::Surface;
 
 impl Surface {
@@ -77,9 +78,9 @@ impl Surface {
         } else {
             for row in rows {
                 for pixel in row.as_chunks_mut::<4>().0 {
-                    pixel[0] = (color.r as f32 * a + pixel[0] as f32 * (1.0 - a)).round() as u8;
-                    pixel[1] = (color.g as f32 * a + pixel[1] as f32 * (1.0 - a)).round() as u8;
-                    pixel[2] = (color.b as f32 * a + pixel[2] as f32 * (1.0 - a)).round() as u8;
+                    pixel[0] = round_to_u8(color.r as f32 * a + pixel[0] as f32 * (1.0 - a));
+                    pixel[1] = round_to_u8(color.g as f32 * a + pixel[1] as f32 * (1.0 - a));
+                    pixel[2] = round_to_u8(color.b as f32 * a + pixel[2] as f32 * (1.0 - a));
                 }
             }
         }

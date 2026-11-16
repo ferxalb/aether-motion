@@ -11,6 +11,7 @@
 use crate::model::Color;
 use crate::model::{Gradient, GradientKind, LinearDirection, Stop};
 use crate::render::geometry::{clip_pixels, Rect};
+use crate::render::paint::float_ops::{hypot, round_to_u8};
 use crate::render::paint::surface::Surface;
 use crate::render::paint::tile_cache::TileCache;
 use anyhow::Result;
@@ -91,6 +92,7 @@ impl<'a> Sampler<'a> {
         Self { stops, colors }
     }
 
+    #[inline]
     fn sample(&self, t: f32) -> [f32; 4] {
         let last = self.stops.len() - 1;
         if t <= self.stops[0].pos {
@@ -166,13 +168,14 @@ impl Mapper {
         }
     }
 
+    #[inline]
     fn t(&self, x: f32, y: f32) -> f32 {
         match *self {
             Self::Linear { center, dir, len } => {
                 ((x - center.0) * dir.0 + (y - center.1) * dir.1) / len.max(1e-3) + 0.5
             }
             Self::Radial { center, radii } => {
-                ((x - center.0) / radii.0).hypot((y - center.1) / radii.1)
+                hypot((x - center.0) / radii.0, (y - center.1) / radii.1)
             }
         }
     }
@@ -315,9 +318,11 @@ impl Surface {
             let (left, right) = Self::rounded_span(float_edges, radius, y);
             let first = (left.floor().max(bounds.x0 as f32)) as usize;
             let last = (right.ceil().min(bounds.x1 as f32)) as usize;
+            // Row invariants, hoisted out of the pixel loop (same expressions, same values).
+            let vertical = (float_edges[3].min(y as f32 + 1.0) - float_edges[1].max(y as f32))
+                .clamp(0.0, 1.0);
+            let dither_row = [0, 1, 2, 3].map(|i| dither(i, y));
             for x in first..last {
-                let vertical = (float_edges[3].min(y as f32 + 1.0) - float_edges[1].max(y as f32))
-                    .clamp(0.0, 1.0);
                 let coverage =
                     (right.min(x as f32 + 1.0) - left.max(x as f32)).clamp(0.0, 1.0) * vertical;
                 let [pr, pg, pb, pa] = sampler.sample(mapper.t(x as f32 + 0.5, y as f32 + 0.5));
@@ -326,12 +331,12 @@ impl Surface {
                 if a <= 0.0 || pa <= 0.0 {
                     continue;
                 }
-                let d = dither(x, y);
+                let d = dither_row[x & 3];
                 let offset = (y * width + x) * 4;
                 let dest = &mut self.pixels[offset..offset + 4];
                 for (channel, premult) in dest.iter_mut().take(3).zip([pr, pg, pb]) {
                     let blended = premult * a + f32::from(*channel) * (1.0 - pa * a) + d;
-                    *channel = blended.round().clamp(0.0, 255.0) as u8;
+                    *channel = round_to_u8(blended);
                 }
                 dest[3] = 255;
             }
