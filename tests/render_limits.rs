@@ -2,7 +2,7 @@
 
 mod common;
 
-use aether_hyperframes::{parse::parse_file, render::Renderer};
+use aether_motion::{parse::parse_file, render::Renderer};
 
 #[test]
 fn extreme_layer_and_shadow_sizes_return_errors() {

@@ -1,8 +1,8 @@
 //! Command-line entry point: `inspect`, `render`, `bench`, `check`, `block`, and `mcp`.
 
-use aether_hyperframes::encode::encode_native;
-use aether_hyperframes::parse::parse_file;
-use aether_hyperframes::render::{OutputSize, Renderer};
+use aether_motion::encode::encode_native;
+use aether_motion::parse::parse_file;
+use aether_motion::render::{OutputSize, Renderer};
 use anyhow::{anyhow, bail, Context, Result};
 use image::ColorType;
 use std::env;
@@ -13,16 +13,16 @@ use std::process::{Command, Stdio};
 use std::time::Instant;
 
 fn usage() -> &'static str {
-    "aether-hyperframes 0.1\n\
+    concat!("AETHER Motion ", env!("CARGO_PKG_VERSION"), "\n\
 Usage:\n\
-  aether-hyperframes inspect <composition.html>\n\
-  aether-hyperframes render <composition.html> --output <video.mp4|frame.png> [--fps 30] [--scale 1 | --size 1080p|4k] [--threads N (default: cores/4, 1 to 4)] [--priority low|normal (default: low)] [--encoder native|ffmpeg] [--frame N]\n\
-  aether-hyperframes bench <composition.html> [--fps 30] [--scale 1 | --size 1080p|4k] [--frame START --count N]\n\
-  aether-hyperframes check <composition.html>   (JSON; exits with 1 on failure)\n\
-  aether-hyperframes block [list | <name> [--set key=value]...]   (print a ready-made block or theme as HTML)\n\
-  aether-hyperframes mcp                        (MCP server over stdio for agents)\n\
+  aether-motion inspect <composition.html>\n\
+  aether-motion render <composition.html> --output <video.mp4|frame.png> [--fps 30] [--scale 1 | --size 1080p|4k] [--threads N (default: cores/4, 1 to 4)] [--priority low|normal (default: low)] [--encoder native|ffmpeg] [--frame N]\n\
+  aether-motion bench <composition.html> [--fps 30] [--scale 1 | --size 1080p|4k] [--frame START --count N]\n\
+  aether-motion check <composition.html>   (JSON; exits with 1 on failure)\n\
+  aether-motion block [list | <name> [--set key=value]...]   (print a ready-made block or theme as HTML)\n\
+  aether-motion mcp                        (MCP server over stdio for agents)\n\
 The native backend accepts an explicit subset of HyperFrames HTML/CSS.\n\
-MP4 uses built-in OpenH264 by default; --encoder ffmpeg requires FFmpeg on PATH."
+MP4 uses built-in OpenH264 by default; --encoder ffmpeg requires FFmpeg on PATH.")
 }
 
 #[derive(Debug)]
@@ -65,7 +65,7 @@ fn options() -> Result<Option<Options>> {
         fps: 30,
         scale: None,
         size: None,
-        threads: aether_hyperframes::encode::default_threads(),
+        threads: aether_motion::encode::default_threads(),
         encoder: "native".to_string(),
         low_priority: true,
         frame: None,
@@ -199,17 +199,17 @@ fn mp4_ffmpeg(renderer: &mut Renderer<'_>, output: &Path, fps: u32, threads: u32
 fn main() -> Result<()> {
     let mut raw = env::args().skip(1);
     match raw.next().as_deref() {
-        Some("mcp") => return aether_hyperframes::agent::serve(),
+        Some("mcp") => return aether_motion::agent::serve(),
         Some("block") => {
             let args: Vec<String> = raw.collect();
-            print!("{}", aether_hyperframes::blocks::run_cli(&args)?);
+            print!("{}", aether_motion::blocks::run_cli(&args)?);
             return Ok(());
         }
         Some("check") => {
             let file = raw
                 .next()
                 .ok_or_else(|| anyhow!("missing <composition.html>"))?;
-            let report = aether_hyperframes::agent::check(Path::new(&file));
+            let report = aether_motion::agent::check(Path::new(&file));
             println!("{}", serde_json::to_string_pretty(&report)?);
             std::process::exit(if report["ok"] == true { 0 } else { 1 });
         }
@@ -246,7 +246,7 @@ fn main() -> Result<()> {
         None => Renderer::new(&composition, opts.scale.unwrap_or(1.0))?,
     };
     if opts.low_priority {
-        aether_hyperframes::encode::lower_priority();
+        aether_motion::encode::lower_priority();
     }
     let (w, h) = renderer.dimensions();
     let frames = renderer.frame_count(opts.fps);

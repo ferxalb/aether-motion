@@ -2,7 +2,7 @@
 
 mod common;
 
-use aether_hyperframes::parse::parse_file;
+use aether_motion::parse::parse_file;
 use common::{render, scratch};
 
 /// Writes `html` into a scratch directory and returns the file path.

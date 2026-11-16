@@ -255,7 +255,7 @@ pub fn serve() -> Result<()> {
         let method = req["method"].as_str().unwrap_or("");
         let result = match method {
             "initialize" => Some(Ok(
-                json!({"protocolVersion": "2024-11-05", "capabilities": {"tools": {}}, "serverInfo": {"name": "aether", "version": env!("CARGO_PKG_VERSION")}}),
+                json!({"protocolVersion": "2024-11-05", "capabilities": {"tools": {}}, "serverInfo": {"name": env!("CARGO_PKG_NAME"), "version": env!("CARGO_PKG_VERSION")}}),
             )),
             "tools/list" => Some(Ok(json!({"tools": tools()}))),
             "tools/call" => {

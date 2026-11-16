@@ -2,8 +2,8 @@
 
 mod common;
 
-use aether_hyperframes::parse::parse_file;
-use aether_hyperframes::render::Renderer;
+use aether_motion::parse::parse_file;
+use aether_motion::render::Renderer;
 use common::{render, scratch, Shot};
 
 const CLIP: &str = r#"data-start="0" data-duration="1""#;

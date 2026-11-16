@@ -1,6 +1,6 @@
-use aether_hyperframes::encode::encode_native;
-use aether_hyperframes::parse::parse_file;
-use aether_hyperframes::render::Renderer;
+use aether_motion::encode::encode_native;
+use aether_motion::parse::parse_file;
+use aether_motion::render::Renderer;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
@@ -90,13 +90,13 @@ fn rejects_browser_only_script() {
 
 #[test]
 fn check_reports_ok_and_actionable_errors() {
-    let ok = aether_hyperframes::agent::check(fixture());
+    let ok = aether_motion::agent::check(fixture());
     assert_eq!(ok["ok"], true);
     let dir = std::env::temp_dir().join(format!("aether-hf-check-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let bad = dir.join("bad.html");
     std::fs::write(&bad, r#"<div data-composition-id="x" data-width="100" data-height="100" data-duration="1"><script>1</script></div>"#).unwrap();
-    let report = aether_hyperframes::agent::check(&bad);
+    let report = aether_motion::agent::check(&bad);
     assert_eq!(report["ok"], false);
     assert!(report["fix"].as_str().unwrap().contains("remove"));
 }
@@ -125,7 +125,7 @@ fn animates_nested_clips_deterministically_at_arbitrary_times() {
     assert_eq!(renderer.render_at(3.5).unwrap(), held);
     assert_eq!(renderer.stats().reused, 1);
     assert_eq!(renderer.render_frame(3, 2).unwrap(), mid);
-    let report = aether_hyperframes::agent::check(&path);
+    let report = aether_motion::agent::check(&path);
     assert_eq!(
         report["animations"][0]["keyframeTimes"],
         serde_json::json!([0.0, 1.0, 2.0])
@@ -133,7 +133,7 @@ fn animates_nested_clips_deterministically_at_arbitrary_times() {
 
     let invalid = html.replace(r#"{"at":2}"#, r#"{"at":1}"#);
     std::fs::write(&path, invalid).unwrap();
-    let report = aether_hyperframes::agent::check(&path);
+    let report = aether_motion::agent::check(&path);
     assert_eq!(report["ok"], false);
     assert!(report["error"].as_str().unwrap().contains("keyframe 3"));
     assert!(report["fix"].as_str().unwrap().contains("increasing"));
@@ -142,7 +142,7 @@ fn animates_nested_clips_deterministically_at_arbitrary_times() {
 
 #[test]
 fn exports_full_hd_and_uhd_with_exact_cadence() {
-    use aether_hyperframes::render::OutputSize;
+    use aether_motion::render::OutputSize;
 
     let dir = std::env::temp_dir().join(format!("aether-hf-uhd-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();

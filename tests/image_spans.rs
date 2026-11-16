@@ -2,7 +2,7 @@
 
 mod common;
 
-use aether_hyperframes::{parse::parse_file, render::Renderer};
+use aether_motion::{parse::parse_file, render::Renderer};
 
 #[test]
 fn mixed_alpha_rows_match_original_pixel_formula() {

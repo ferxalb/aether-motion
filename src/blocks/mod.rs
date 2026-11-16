@@ -1,7 +1,7 @@
 //! Ready-made blocks and themes: parametrized HTML fragments for premium compositions.
 //!
 //! `catalog` embeds the templates from `blocks/`, `template` fills their `{{name|default}}` placeholders.
-//! This facade serves the CLI (`aether-hyperframes block ...`) and the `aether_block` MCP tool.
+//! This facade serves the CLI (`aether-motion block ...`) and the `aether_block` MCP tool.
 
 mod catalog;
 mod template;
@@ -86,7 +86,7 @@ fn format_list() -> Result<String> {
     Ok(out)
 }
 
-/// `aether-hyperframes block [list | <name> [--set key=value]...]`; returns the text to print.
+/// `aether-motion block [list | <name> [--set key=value]...]`; returns the text to print.
 pub fn run_cli(args: &[String]) -> Result<String> {
     match args.first().map(String::as_str) {
         None | Some("list") => format_list(),

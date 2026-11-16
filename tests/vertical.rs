@@ -2,10 +2,10 @@
 
 mod common;
 
-use aether_hyperframes::parse::parse_file;
-use aether_hyperframes::render::{OutputSize, Renderer};
+use aether_motion::parse::parse_file;
+use aether_motion::render::{OutputSize, Renderer};
 
-fn vertical_composition(name: &str) -> aether_hyperframes::model::Composition {
+fn vertical_composition(name: &str) -> aether_motion::model::Composition {
     let html = r#"<html><head><style>
         .bar { left: 0px; top: 0px; width: 540px; height: 96px; background: #f00 }
       </style></head><body>

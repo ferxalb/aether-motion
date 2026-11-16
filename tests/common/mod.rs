@@ -1,8 +1,8 @@
 //! Shared helpers for integration tests: render a small composition and inspect its pixels.
 #![allow(dead_code)]
 
-use aether_hyperframes::parse::parse_file;
-use aether_hyperframes::render::Renderer;
+use aether_motion::parse::parse_file;
+use aether_motion::render::Renderer;
 
 pub struct Shot {
     pub pixels: Vec<u8>,

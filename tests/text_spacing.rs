@@ -2,7 +2,7 @@
 
 mod common;
 
-use aether_hyperframes::parse::parse_file;
+use aether_motion::parse::parse_file;
 use common::{render, scratch};
 
 fn ink_width(name: &str, style: &str) -> usize {

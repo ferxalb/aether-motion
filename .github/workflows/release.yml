@@ -37,23 +37,25 @@ jobs:
       - name: Package
         shell: bash
         run: |
-          name="aether-hyperframes-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          name="aether-motion-${GITHUB_REF_NAME}-${{ matrix.target }}"
           mkdir "$name"
           cp LICENSE README.md CHANGELOG.md "$name/"
+          mkdir -p "$name/assets/readme"
+          cp assets/readme/{hero,motion-study}.jpg "$name/assets/readme/"
           cp assets/fonts/LICENSE-Roboto.txt "$name/"
           if [ "${{ runner.os }}" = "Windows" ]; then
-            cp "target/${{ matrix.target }}/release/aether-hyperframes.exe" "$name/"
+            cp "target/${{ matrix.target }}/release/aether-motion.exe" "$name/"
             7z a "$name.zip" "$name"
             echo "ASSET=$name.zip" >> "$GITHUB_ENV"
           else
-            cp "target/${{ matrix.target }}/release/aether-hyperframes" "$name/"
+            cp "target/${{ matrix.target }}/release/aether-motion" "$name/"
             tar czf "$name.tar.gz" "$name"
             echo "ASSET=$name.tar.gz" >> "$GITHUB_ENV"
           fi
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}
-          path: aether-hyperframes-${{ github.ref_name }}-${{ matrix.target }}.*
+          path: aether-motion-${{ github.ref_name }}-${{ matrix.target }}.*
 
   publish:
     needs: build

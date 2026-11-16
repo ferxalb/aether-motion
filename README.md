@@ -1,132 +1,187 @@
-# Aether
+<h1 align="center"><img src="assets/readme/hero.jpg" alt="AETHER Motion" width="800"></h1>
 
-Aether is a local Rust tool for generating PNG frames and H.264 MP4 videos from timed HTML compositions. Its native backend supports the profile described below, renders without launching a browser or Node.js, and returns explicit errors for unsupported features. The native MP4 encoder includes OpenH264; FFmpeg is optional. Licensed under Apache 2.0.
+<p align="center"><b>Write HTML. Render video. No browser.</b></p>
 
-## Getting started
+<p align="center">
+  <a href="https://github.com/ferxalb/aether-hyperframes/actions/workflows/ci.yml"><img src="https://github.com/ferxalb/aether-hyperframes/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/ferxalb/aether-hyperframes/releases"><img src="https://img.shields.io/github/v/release/ferxalb/aether-hyperframes?style=flat" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License"></a>
+  <img src="https://img.shields.io/badge/built%20with-Rust-orange?logo=rust" alt="Rust">
+  <img src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey" alt="Platforms">
+</p>
 
-Stable Rust is required to build the project. The native MP4 path includes OpenH264 and does not require FFmpeg. FFmpeg is available as an optional encoder with `--encoder ffmpeg`.
+<p align="center">
+  <a href="#quick-start">Quick Start</a> |
+  <a href="#blocks-and-themes">Blocks</a> |
+  <a href="examples">Examples</a> |
+  <a href="AGENTS.md">Composition Reference</a> |
+  <a href="https://github.com/ferxalb/aether-hyperframes/releases">Download</a>
+</p>
+
+AETHER Motion is a free, open-source video renderer that turns HTML and CSS compositions into deterministic MP4 videos. It is a single native binary: no headless Chrome, no Node.js, no FFmpeg. It reads the HyperFrames composition format (clips, tracks, and timing as data attributes) and adds native motion: keyframes, camera moves, kinetic type, scene transitions, and glass.
+
+Using Claude Code, Codex, Cursor, or another coding agent? Connect `aether-motion mcp`, then ask your agent to make a video.
+
+## Quick Start
+
+### With an AI coding agent
+
+Install AETHER Motion (see [Install](#install)), then register its MCP server. For Claude Code:
+
+```bash
+claude mcp add aether-motion -- aether-motion mcp
+```
+
+For other agents, add `aether-motion mcp` as a stdio MCP server in their settings.
+
+Try a prompt like:
+
+> Using the AETHER Motion tools, make a 12-second 1080p product intro with a kinetic title, three glass feature cards, an animated counter, and a push transition between scenes.
+
+The agent reads the contract with `aether_guide`, writes the file, validates it with `aether_check` (which returns the exact error and a fix), looks at any moment with `aether_snapshot`, and exports with `aether_render`.
+
+### Manually with the CLI
+
+```bash
+aether-motion check  examples/premium-promo.html                                       # validate
+aether-motion render examples/premium-promo.html --output frame.png --frame 90         # preview a frame
+aether-motion render examples/premium-promo.html --output promo.mp4 --size 1080p --fps 30
+```
+
+**Requirements:** none. FFmpeg is optional (`--encoder ffmpeg`).
+
+## Install
+
+Download the binary for your system from [Releases](https://github.com/ferxalb/aether-hyperframes/releases) and put `aether-motion` on your `PATH`. Or build it with Rust:
+
+```bash
+cargo install --git https://github.com/ferxalb/aether-hyperframes
+```
+
+Earlier release archives use the executable name `aether-hyperframes`. From a local checkout, run `cargo install --path . --locked` to install `aether-motion` before the next release.
+
+## What You Can Build
+
+- Product launch videos and feature announcements
+- Metric and milestone videos with animated counters and stat cards
+- Kinetic title cards and lower thirds
+- Vertical (9:16) social videos at 1080p or 4K
+- Automated video in CI and content pipelines, with output identical on every run
+
+## How It Works
+
+Define a video as HTML. Data attributes set timing and tracks; `data-hf-*` attributes and CSS `@keyframes` add motion.
+
+```html
+<div id="stage" data-composition-id="launch" data-width="1920" data-height="1080"
+     data-duration="6" style="position: relative; background: #0b1020">
+
+  <div id="intro" class="clip" data-start="0" data-duration="3" data-track-index="0"
+       style="position: absolute; left: 0; top: 0; width: 100%; height: 100%">
+    <div data-hf-camera='[{"at":0,"zoom":1},{"at":3,"zoom":1.15,"easing":"ease-out-expo"}]'
+         style="position: absolute; left: 0; top: 0; width: 100%; height: 100%;
+                display: flex; align-items: center; justify-content: center">
+      <h1 data-hf-split="words" data-hf-split-from="up"
+          style="color: white; font-family: sans-serif; font-size: 120px">Launch day</h1>
+    </div>
+  </div>
+
+  <div id="outro" class="clip" data-start="intro-0.6" data-duration="3.6" data-track-index="1"
+       data-hf-transition="push-left" data-hf-transition-from="intro"
+       style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: #12203d;
+              display: flex; align-items: center; justify-content: center">
+    <div data-hf-counter="12400" data-hf-counter-suffix="+"
+         style="color: #4ee0b5; font-family: sans-serif; font-size: 160px; font-weight: bold"></div>
+  </div>
+</div>
+```
+
+AETHER Motion parses the composition, lays it out, and draws every frame with its own software renderer, then encodes H.264 with a built-in encoder. Each frame is a function of time only, so the same input produces the same video on every run. Anything outside the supported subset fails with an explicit error instead of rendering something wrong.
+
+<p align="center">
+  <img src="assets/readme/motion-study.jpg" alt="Illustration of a silver ribbon seen at three points in its rotation" width="800">
+</p>
+
+## Blocks and Themes
+
+Ready-made, parametrized pieces, printed as editable HTML:
+
+```bash
+aether-motion block list
+aether-motion block hero-title --set title="Launch day" --set id=intro
+aether-motion block theme-midnight
+```
+
+| Block | What it is |
+| --- | --- |
+| `hero-title` | Full-screen hero: kicker, word-by-word headline, subtitle |
+| `feature-card` | Glass card with accent dot, title, and body |
+| `stat-card` | Big value that pops in letter by letter, with a label |
+| `counter-card` | Number that counts up, with prefix or suffix and a label |
+| `cta` | Closing headline, gradient button, and URL |
+| `glow` | Two soft, slowly drifting background glows |
+| `theme-midnight`, `theme-sunrise`, `theme-paper` | Recolor every block at once |
+
+[`examples/premium-promo.html`](examples/premium-promo.html) is a 15-second promo built from blocks.
+
+## Why AETHER Motion?
+
+- **One binary:** no browser, no Node.js, no FFmpeg. Runs on macOS, Linux, and Windows, including CI runners and servers.
+- **Deterministic:** same input, same frames, same output. Generic fonts use an embedded Roboto, so text matches across machines.
+- **Honest errors:** unsupported HTML or CSS returns the exact problem and a suggested fix, never a silently wrong video.
+- **Native motion:** keyframes with expo, back, and `cubic-bezier` easing, CSS `@keyframes`, camera zoom and pan, kinetic text, reveals, counters, and crossfade, push, cover, wipe, and zoom transitions.
+- **Polished look:** flexbox, text wrapping, gradients, layered and inset shadows, blur, frosted glass, rotation, vignette, and film grain.
+- **Easy on your machine:** renders at low priority on a quarter of your cores by default. `--threads N` goes faster; `--scale 0.5` gives quick drafts.
+- **Fast:** the 15-second premium promo (450 frames at 1080p/30) renders to MP4 in about 15 seconds with default settings on a laptop. See [BENCHMARK.md](BENCHMARK.md).
+- **Open source:** Apache 2.0.
+
+## AETHER Motion vs HyperFrames
+
+AETHER Motion uses the [HyperFrames](https://github.com/heygen-com/hyperframes) composition format but replaces the browser pipeline with a native renderer. Pick the one that fits the job:
+
+| | **AETHER Motion** | **HyperFrames** |
+| --- | --- | --- |
+| Rendering | Native Rust renderer | Headless Chrome + FFmpeg |
+| Install | One binary | Node.js 22+, Chrome, FFmpeg |
+| HTML/CSS coverage | Documented subset; anything else fails with an error | Everything a browser can render |
+| Animation | Native keyframes, camera, text, transitions, CSS `@keyframes` | GSAP, CSS, Lottie, Three.js, WAAPI, adapters |
+| Video, audio, SVG, scripts | Not supported | Supported |
+| Agent integration | MCP server | Agent skills and CLI |
+| License | Apache 2.0 | Apache 2.0 |
+
+Use AETHER Motion when you want a lightweight, dependency-free, reproducible render of motion graphics. Use HyperFrames when you need media, audio, scripts, or full browser CSS.
+
+## Output
+
+| Composition | `--size 1080p` | `--size 4k` |
+| --- | --- | --- |
+| Landscape (16:9) | 1920 × 1080 | 3840 × 2160 |
+| Vertical (9:16) | 1080 × 1920 | 2160 × 3840 |
+
+Up to 60 fps, H.264 MP4 (yuv420p, constant frame rate), or a single PNG frame with `--frame N`.
+
+## Documentation
+
+- [Composition reference](AGENTS.md): every supported attribute, CSS property, and motion feature
+- [Limits](limits.md): what is not supported
+- [Examples](examples): ready-to-render compositions
+- [Architecture](docs/architecture.md): source layout, memory limits, encoding
+- [Benchmarks](BENCHMARK.md): measurements and method
+- [Changelog](CHANGELOG.md): releases (SemVer; while `0.x`, minor releases may break the contract, and every break is listed)
+
+## Contributing
 
 ```bash
 cargo build --release
-cargo run --release -- inspect examples/title-card.html
-cargo run --release -- render examples/title-card.html --output /tmp/title.png --frame 24 --fps 24 --scale 0.5
-cargo run --release -- render examples/title-card.html --output /tmp/title.mp4 --fps 24 --scale 0.5 --threads 2
-# Optional, if FFmpeg is already installed:
-cargo run --release -- render examples/title-card.html --output /tmp/title-ffmpeg.mp4 --encoder ffmpeg
+cargo test --release <test-name>
 ```
 
-By default a render uses a quarter of the cores (1 to 4 workers) at low scheduling priority (`nice 10`) so the machine stays responsive; the total CPU work is the same, only spread over more or fewer cores. Use `--threads N` to go faster and `--priority normal` to drop the lower priority. `--scale 0.5` halves the width and height, so each frame contains one quarter as many pixels. For native exports at 1080p or higher, `--threads 2` or more overlaps drawing and color conversion with encoding through a one-frame queue. Both encoders produce H.264/yuv420p; FFmpeg mode uses `veryfast` and CRF 25. The renderer keeps one RGBA frame, up to 64 MiB of scaled images, and up to 32 MiB of text masks. When the visible state matches the previous frame, it reuses the RGBA frame and the native encoder's YUV conversion.
+CI builds and tests on Linux, macOS, and Windows. Read [AGENTS.md](AGENTS.md) for code organization and CPU budget rules before profiling or benchmarking.
 
-## Supported input
+- Bugs and feature requests: [GitHub Issues](https://github.com/ferxalb/aether-hyperframes/issues)
 
-| Input | Status |
-| --- | --- |
-| `data-composition-id`, `data-width`, `data-height`, `data-duration` | Yes; on the root element or in `<meta>` |
-| Numeric `data-start` or a reference to another `id`, with an optional `+`/`-` offset | Yes |
-| `data-track-index`, clips using `<div>`, text, and local PNG/JPEG/WebP images | Yes |
-| Type, class, ID, and descendant CSS selectors; inline styles | Yes |
-| `left`, `top`, `width`, `height` in px or %, hex/basic named colors, opacity, fonts, centered flex layout, `object-fit` | Yes |
-| `border-radius`, `linear-gradient(...)`, `radial-gradient(...)` | Background radius in px; angled, corner, and multi-stop gradients with translucent stops; radial glows |
-| `margin`, `overflow: hidden`, `letter-spacing`, `<br>` | Flex-aware margins, rounded content clipping, tracked text, and forced line breaks |
-| `font-weight` | `normal`, `bold`, or 1-1000, matched to installed font faces; generic families and the fallback use the embedded Roboto (Apache 2.0) for identical output on every machine |
-| `data-hf-fade-in`, `data-hf-fade-out` | Native extension; seconds, linear transition |
-| `data-hf-keyframes` | Native extension; interpolated position and opacity with quadratic, expo, cubic, quart, back, and `cubic-bezier` easings |
-| `data-hf-split` | Native extension; kinetic text with per-word or per-letter staggered entrances |
-| `data-hf-reveal` | Native extension; uncover an element from one edge (wipes, growing bars, mask reveals) |
-| `data-hf-counter` | Native extension; animated numbers with prefix, suffix, decimals, and thousands separators |
-| `data-hf-transition` | Native extension; crossfade, push, cover, wipe, and zoom transitions between overlapping scene clips |
-| `filter: blur()` | Blurs the whole element (box, shadows, content, children) on an offscreen layer |
-| `backdrop-filter: blur()` | Glass cards: blurs the already painted backdrop behind a translucent element |
-| `data-hf-vignette`, `data-hf-grain` | Native extension on the root; frame-wide corner darkening and deterministic film grain |
-| `data-hf-camera` | Native extension; zoom in/out and pan with a focus point over a container's whole subtree |
-| GSAP, `<script>`, `<video>`, `<audio>`, `<svg>`, canvas, complex effects, external compositions, general CSS | Not yet; explicit error |
+## License
 
-Fonts are looked up on the system. Text wraps at spaces (`max-width`, `line-height`, `white-space: nowrap`) but does not implement all browser typography shaping: no kerning, hyphenation, or breaks inside words. `text-shadow` takes a single shadow. Only local images are accepted. For a real composition, run `inspect` first; if a feature is unsupported, the program reports the first incompatibility.
+[Apache 2.0](LICENSE). Includes Roboto (Apache 2.0).
 
-## Blocks and themes
-
-Ready-made, parametrized pieces for premium compositions. Print one and paste it into your file:
-
-```sh
-aether-hyperframes block list
-aether-hyperframes block theme-midnight
-aether-hyperframes block hero-title --set title="Premium by default" --set id=intro
-```
-
-Blocks are 1920x1080 fragments (`hero-title`, `feature-card`, `stat-card`, `counter-card`, `cta`, `glow`) styled with custom properties such as `--text`, `--accent`, and `--panel`; a theme (`theme-midnight`, `theme-sunrise`, `theme-paper`) sets them all. Give each block a unique `id`, and wrap scene-sized blocks in a clip that sets `data-start` and `data-duration`. [examples/premium-promo.html](examples/premium-promo.html) is a 15 s promo built from them, with camera moves, kinetic type, scene transitions, glass, vignette, and grain.
-
-## Export at 1080p and 4K
-
-```bash
-aether-hyperframes render examples/motion.html --size 1080p --fps 60 --output /tmp/motion-1080p.mp4
-aether-hyperframes render examples/motion.html --size 4k --fps 30 --output /tmp/motion-4k.mp4
-```
-
-The presets produce 1920×1080 and 3840×2160 from 16:9 compositions, and 1080×1920 and 2160×3840 from 9:16 (vertical) ones. Both support 30 and 60 fps. For other aspect ratios, use `--scale` or set the output dimensions in the HTML. Native MP4 supports up to 60 fps and even dimensions up to 3840×2160 or 2160×3840. The file uses a constant frame rate. Export time depends on the scene and the machine.
-
-In MCP, the same presets are available through `size`. Use either `size` or `scale` in each call.
-
-## Create and review animations
-
-[The motion example](examples/motion.html) combines animated entrances and exits, layers, and relative timing. Keyframes use seconds relative to the clip. The attribute supports `x`, `y`, `opacity`, and `easing`. See the full contract in [AGENTS.md](AGENTS.md).
-
-```bash
-aether-hyperframes check examples/motion.html
-aether-hyperframes render examples/motion.html --output /tmp/motion.png --fps 30 --frame 12
-aether-hyperframes render examples/motion.html --output /tmp/motion.mp4 --fps 30
-```
-
-For agents, `aether-hyperframes mcp` exposes the contract through `aether_guide`. `aether_check` returns resolved times and local keyframe times in `animations`, along with an error and a suggested fix on failure. `aether_snapshot` returns a PNG showing the composition at the requested second.
-
-## Benchmark on your machine
-
-```bash
-cargo run --release -- bench examples/title-card.html --fps 24 --scale 0.5
-```
-
-`bench` measures in-memory drawing, **without MP4 encoding**. Add `--frame START --count N` to draw only N frames from START, which measures a heavy section of a long composition in about a second instead of rendering all of it. The output shows elapsed time and the number of rasterized and reused frames. To measure the full pipeline, use `render` to produce an MP4. To compare engines, render the same supported composition with identical resolution, FPS, and encoding options on the same machine. Record total time, peak memory, and output size; do not extrapolate results from one machine to another.
-
-[Initial measurements](BENCHMARK.md).
-
-The code uses portable Rust APIs, and the repository includes a CI matrix for Linux, macOS, and Windows.
-
-## Stability
-
-Aether follows [Semantic Versioning](https://semver.org/); see [CHANGELOG.md](CHANGELOG.md). The public surface is:
-
-- the supported HTML/CSS profile and the `data-hf-*` attributes described above (unsupported input keeps returning explicit errors rather than silently rendering wrong);
-- the CLI commands and flags (`check`, `inspect`, `render`, `bench`, `block`, `mcp`) and the JSON returned by `check`;
-- the MCP tools `aether_guide`, `aether_write`, `aether_block`, `aether_check`, `aether_snapshot`, and `aether_render`;
-- deterministic output: the same composition, options, and installed fonts give the same frames.
-
-While the version is `0.x`, a minor release may change any of these; breaking changes are listed in the changelog. From `1.0.0`, breaking changes require a major release. Features beyond the profile (see [limits.md](limits.md)) are rejected with an error, and adding support for them is not a breaking change. Text that uses generic families or an uninstalled font renders with the embedded Roboto; named fonts depend on what is installed.
-
-## Roadmap
-
-1. Add more CSS properties and layout cases from real compositions, with visual fixtures.
-2. Measure the full MP4 pipeline on Windows and Linux (CI builds and tests there, but timings in `BENCHMARK.md` come from macOS only), and profile CPU and memory by stage.
-3. Evaluate OpenH264 quality and output size against FFmpeg on real scenes.
-
-## Source layout
-
-- `src/model.rs`: parsed composition, styles, and time-sampled motion tracks.
-- `src/parse/`: HTML/CSS parser; unsupported features fail with explicit errors. `mod.rs` is the `parse_file` facade; `css/` (stylesheet, selectors, cascade, variables), `values/` (lengths, colors, backgrounds, transforms, shadows), `style/` (property groups: layout, text, visual), `animation/` (CSS animation, `data-hf-keyframes`, and `data-hf-camera` into motion tracks), `split.rs` (`data-hf-split` kinetic text), `transition.rs` (`data-hf-transition` scene transitions), `tree.rs` (DOM walk), `timeline.rs` (`data-start`), `html.rs` (node helpers).
-- `src/render/`: software renderer. `mod.rs` holds the public `Renderer` and frame loop; `draw.rs` walks the scene; `layout/` sizes and places flex items; `paint/` holds the `Surface` pixel buffer and its primitives (fills, gradients and soft shadows backed by a memory-bounded tile cache in `tile_cache.rs`, borders, outer and inset box shadows, backdrop and element blur, images with cached row spans, rotation, and the vignette/grain `finish` pass); `text/` handles fonts, inherited properties, line wrapping (`wrap.rs`), block layout (`block.rs`), glyph painting with fixed-size coverage masks and subpixel resampling (`mask.rs`) for continuous translation/zoom, and `text-shadow` (`shadow.rs`); `allocation.rs` checks frame/layer byte sizes and coordinate conversions; `geometry.rs` and `frame_state.rs` hold small shared types.
-- `src/blocks/` and `blocks/`: ready-made blocks and themes. `blocks/*.html` are `{{name|default}}` templates embedded by `catalog.rs`; `template.rs` fills them; `mod.rs` serves the `block` CLI command and the `aether_block` MCP tool.
-- `src/encode.rs`: native H.264/MP4 encoding. `src/agent.rs`: `check` and the MCP server.
-
-### Render resource limits
-
-Each gradient or outer-shadow tile cache retains at most 4,096 keys, including
-first sightings and rejected tiles. Exceeding that metadata limit returns an
-explicit render error; existing slots are not evicted or changed, preserving
-the cached/direct drawing decisions. Reduce animated size variation or split
-the composition when this limit is reached. Fitted-image and text-run caches
-also retain at most 4,096 entries; image eviction and uncached text preparation
-retain the same pixel calculations. Text-layout blocks already have a 4,096-key cap.
-
-Frames and offscreen RGBA layers keep their 128 MiB per-buffer limit, with
-checked multiplication and widened coordinate subtraction before allocation.
-Rotation and element blur reject unrepresentable pixel coordinates. Shadow-edge
-profiles are limited to 16 MiB before allocation. These are per-resource bounds,
-not a guarantee of total process memory or successful allocation under memory pressure.
+AETHER Motion is an independent project and is not affiliated with HeyGen or the HyperFrames project.

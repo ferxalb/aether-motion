@@ -1,4 +1,4 @@
-# Aether — Agent Guide
+# AETHER Motion — Agent Guide
 
 ## Language policy
 
@@ -19,10 +19,10 @@ Create, validate, inspect, and render HTML compositions. Output must be determin
 
 ## Work loop
 
-1. Run `aether-hyperframes check <file.html>`. It returns JSON with `ok`, structure, and, on failure, `error` and `fix`. Continue until `ok: true`.
-2. Inspect the result with `aether-hyperframes render <file.html> --output frame.png --frame N` or the `aether_snapshot` MCP tool.
+1. Run `aether-motion check <file.html>`. It returns JSON with `ok`, structure, and, on failure, `error` and `fix`. Continue until `ok: true`.
+2. Inspect the result with `aether-motion render <file.html> --output frame.png --frame N` or the `aether_snapshot` MCP tool.
 3. For 16:9 or 9:16 compositions, choose `--size 1080p` or `--size 4k` and `--fps 30` or `--fps 60`. The native encoder writes one MP4 sample per frame.
-4. Render the video with `aether-hyperframes render <file.html> --output video.mp4`.
+4. Render the video with `aether-motion render <file.html> --output video.mp4`.
 
 ## Supported contract
 
@@ -75,11 +75,11 @@ Create, validate, inspect, and render HTML compositions. Output must be determin
 
 ## Blocks and themes
 
-Prefer ready-made pieces over hand-written scenes. `aether-hyperframes block list` (or `aether_block` without a name) shows every block with its parameters and defaults; `aether-hyperframes block <name> --set key=value` (or `aether_block` with `name` and `params`) prints HTML to paste into the composition. Blocks target 1920x1080, take a unique `id` (it prefixes their classes and keyframes), inherit timing from the clip that contains them, and read colors from custom properties (`--bg`, `--text`, `--muted`, `--accent`, `--accent-2`, `--on-accent`, `--panel`, `--line`, `--glow-a`, `--glow-b` and their `-fade` variants). Add a theme block (`theme-midnight`, `theme-sunrise`, `theme-paper`) to recolor everything, and set the root background to `var(--bg)`. See `examples/premium-promo.html`.
+Prefer ready-made pieces over hand-written scenes. `aether-motion block list` (or `aether_block` without a name) shows every block with its parameters and defaults; `aether-motion block <name> --set key=value` (or `aether_block` with `name` and `params`) prints HTML to paste into the composition. Blocks target 1920x1080, take a unique `id` (it prefixes their classes and keyframes), inherit timing from the clip that contains them, and read colors from custom properties (`--bg`, `--text`, `--muted`, `--accent`, `--accent-2`, `--on-accent`, `--panel`, `--line`, `--glow-a`, `--glow-b` and their `-fade` variants). Add a theme block (`theme-midnight`, `theme-sunrise`, `theme-paper`) to recolor everything, and set the root background to `var(--bg)`. See `examples/premium-promo.html`.
 
 ## MCP
 
-`aether-hyperframes mcp` speaks MCP over stdio. Tools: `aether_guide`, `aether_write`, `aether_block`, `aether_check`, `aether_snapshot` (returns an image), and `aether_render`.
+`aether-motion mcp` speaks MCP over stdio. Tools: `aether_guide`, `aether_write`, `aether_block`, `aether_check`, `aether_snapshot` (returns an image), and `aether_render`.
 
 For motion, read the `animations` entries from `aether_check` and inspect the start, midpoint, and end of a transition with `aether_snapshot`. Its `t` argument is an absolute composition time in the range `0 <= t < duration`. See `examples/motion.html`.
 

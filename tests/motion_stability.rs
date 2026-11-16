@@ -2,7 +2,7 @@
 
 #![allow(clippy::chunks_exact_to_as_chunks)] // `as_chunks` needs a newer toolchain than the supported stable Rust.
 mod common;
-use aether_hyperframes::{parse::parse_file, render::Renderer};
+use aether_motion::{parse::parse_file, render::Renderer};
 
 fn fixture(name: &str, body: &str) -> std::path::PathBuf {
     let path = common::scratch(name).join("motion.html");
@@ -104,7 +104,7 @@ fn motion_stability_camera_text_zoom_has_no_centroid_jumps() {
 
 #[test]
 fn motion_stability_mp4_has_120_ordered_samples_at_60_fps() {
-    use aether_hyperframes::encode::encode_native;
+    use aether_motion::encode::encode_native;
     use std::{fs::File, io::BufReader};
     let path = fixture(
         "mp4-cadence",
