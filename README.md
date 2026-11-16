@@ -157,7 +157,7 @@ aether-motion block theme-midnight
 - **Sample-accurate audio:** `<audio>` clips (WAV, FLAC, Ogg Vorbis, MP3) with volume, fades, trim, and loop are mixed and encoded to AAC with no FFmpeg; see `examples/audio.html`.
 - **Polished look:** flexbox, text wrapping, gradients, layered and inset shadows, blur, frosted glass, rotation, vignette, and film grain.
 - **Easy on your machine:** renders at low priority on a quarter of your cores by default. `--threads N` goes faster; `--scale 0.5` gives quick drafts.
-- **Top quality by default:** MP4 exports use `--quality max` (H.264 quantizer 18) for sharp text, clean gradients, and visible grain; `--quality draft|standard|high` trade fidelity for smaller files at about the same CPU cost.
+- **Quality presets:** `--quality draft|standard|high|max` sets the H.264 quantizer (30, 26, 22, 18); `standard` is the default, and the other presets trade file size against fidelity at about the same CPU cost.
 - **Fast:** the 15-second premium promo (450 frames at 1080p/30) renders to MP4 in about 15 seconds with default settings on a laptop. See [BENCHMARK.md](BENCHMARK.md).
 - **Open source:** Apache 2.0.
 

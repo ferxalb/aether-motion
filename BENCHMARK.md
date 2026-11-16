@@ -656,6 +656,8 @@ at 1% to 12% more encoding time, so the encoder stays at `Complexity::Low`.
 
 Full native export of `premium-promo.html` (450 frames, 1080p, 30 fps, `--threads 1`, one run each):
 before 41.6 s and 2,347,124 bytes; `--quality standard` 38.5 s and the same bytes (byte-identical
-file); `--quality max` (the new default) 39.4 s and 6,617,373 bytes. The quantizer barely changes CPU
+file); `--quality max` 39.4 s and 6,617,373 bytes. The quantizer barely changes CPU
 time because drawing dominates (37.7 s of the export is drawing). Both files decode to 450 frames.
+The default stays `standard`: the higher presets mostly grow the file (SSIM gains of 0.0003 to 0.0007
+above, none on grain or fast slides), which was not judged worth the size.
 No measurements were made on older PCs or other operating systems.

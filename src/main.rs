@@ -16,7 +16,7 @@ fn usage() -> &'static str {
 Quick start:\n\
   aether-motion init [dir]                 create a project with a sample video, agent skills, and MCP config\n\
   aether-motion preview [file] [--at 2.5] [--watch]   render one frame to .aether/preview.png and open it\n\
-  aether-motion render [file] [-o out.mp4] [--size 1080p|4k] [--fps 30] [--quality max]   (defaults from aether.json; writes out/<name>.mp4)\n\
+  aether-motion render [file] [-o out.mp4] [--size 1080p|4k] [--fps 30] [--quality standard]   (defaults from aether.json; writes out/<name>.mp4)\n\
   aether-motion check [file]               validate (summary on a terminal, JSON when piped or with --json)\n\
   aether-motion add [block] [--set k=v]    list blocks, or append one to the composition\n\
   aether-motion captions <file> [--to srt]  convert a transcript (JSON, SRT, VTT) to JSON, SRT, or VTT\n\
@@ -26,7 +26,7 @@ Quick start:\n\
 `file` defaults to aether.json \"entry\", then index.html.\n\
 Advanced:\n\
   aether-motion inspect <composition.html>\n\
-  aether-motion render <composition.html> --output <video.mp4|frame.png> [--fps 30] [--scale 1 | --size 1080p|4k] [--threads N (default: cores/4, 1 to 4)] [--priority low|normal (default: low)] [--encoder native|ffmpeg] [--quality draft|standard|high|max (default: max)] [--audio-bitrate 192] [--frame N]\n\
+  aether-motion render <composition.html> --output <video.mp4|frame.png> [--fps 30] [--scale 1 | --size 1080p|4k] [--threads N (default: cores/4, 1 to 4)] [--priority low|normal (default: low)] [--encoder native|ffmpeg] [--quality draft|standard|high|max (default: standard)] [--audio-bitrate 192] [--frame N]\n\
   aether-motion bench <composition.html> [--fps 30] [--scale 1 | --size 1080p|4k] [--frame START --count N]\n\
   aether-motion check <composition.html>   (JSON; exits with 1 on failure)\n\
   aether-motion block [list | <name> [--set key=value]...]   (print a ready-made block or theme as HTML)\n\

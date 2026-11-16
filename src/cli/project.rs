@@ -15,7 +15,7 @@ pub struct Project {
     pub entry: PathBuf,
     pub fps: u32,
     pub size: Option<OutputSize>,
-    /// MP4 quality preset (`"quality"`, default `max`).
+    /// MP4 quality preset (`"quality"`, default `standard`).
     pub quality: Quality,
     pub out_dir: PathBuf,
 }

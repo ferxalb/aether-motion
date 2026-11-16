@@ -54,12 +54,12 @@ impl NalFrame {
 pub enum Quality {
     /// QP 30: small files for quick previews.
     Draft,
-    /// QP 26: OpenH264's default, byte-identical to exports before presets existed.
+    /// QP 26: the default; OpenH264's own default, byte-identical to exports before presets existed.
+    #[default]
     Standard,
     /// QP 22.
     High,
-    /// QP 18: the default; fine text, gradients, and grain survive compression.
-    #[default]
+    /// QP 18: finer text edges at roughly 1.7 times the file size of `Standard`.
     Max,
 }
 

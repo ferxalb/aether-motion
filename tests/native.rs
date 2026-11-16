@@ -626,7 +626,7 @@ fn quality_presets_trade_file_size_for_fidelity() {
     }
     // A lower quantizer keeps more detail, so each preset is larger than the one before.
     assert!(sizes.windows(2).all(|pair| pair[0] < pair[1]), "{sizes:?}");
-    assert_eq!(Quality::default(), Quality::Max);
+    assert_eq!(Quality::default(), Quality::Standard);
     assert_eq!("standard".parse::<Quality>().unwrap().base_qp(), 26);
     assert!("ultra".parse::<Quality>().is_err());
     std::fs::remove_dir_all(dir).unwrap();
