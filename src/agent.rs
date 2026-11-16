@@ -50,7 +50,10 @@ fn fix_hint(message: &str) -> &'static str {
         "use <audio src=\"file.wav\"> with a local WAV, FLAC, Ogg Vorbis, or MP3 file (mono or stereo), optional data-start, data-duration, data-volume (0 to 8), data-hf-fade-in, data-hf-fade-out, data-hf-trim-start, and data-hf-loop (needs data-duration); keep the clip inside the composition"
     } else if message.contains("<script>") {
         "scripts (GSAP, Date.now, randomness) are not executed so output stays deterministic; replace them with data-hf-keyframes, data-hf-camera, data-hf-split, data-hf-counter, data-hf-transition, or CSS @keyframes"
-    } else if message.contains("invalid SVG") || message.contains("<svg>") || message.contains("inside <svg>") {
+    } else if message.contains("invalid SVG")
+        || message.contains("<svg>")
+        || message.contains("inside <svg>")
+    {
         "use a static SVG (shapes, paths, gradients, strokes, clip paths) with a viewBox, as inline <svg> or <img src=\"file.svg\"> with an explicit width and height; no <script>, animation elements, <foreignObject>, text, or external references"
     } else if message.contains("JavaScript") || message.contains("unsupported HTML element") {
         "remove the element or replace it with a div, text, local img (PNG, JPEG, WebP, SVG), or inline <svg>"

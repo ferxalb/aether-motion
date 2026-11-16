@@ -177,6 +177,18 @@ Up to 60 fps, H.264 MP4 (yuv420p, constant frame rate), or a single PNG frame wi
 - [Benchmarks](BENCHMARK.md): measurements and method
 - [Changelog](CHANGELOG.md): releases (SemVer; while `0.x`, minor releases may break the contract, and every break is listed)
 
+## Agent skills
+
+Install the skill collection with `npx skills add ferxalb/aether-motion`, then select the workflows you want to add to your agent.
+
+| Skill | Use it for |
+| --- | --- |
+| `aether-motion` | Creating and editing compositions |
+| `aether-motion-cli` | Checking, inspecting, and rendering compositions |
+| `aether-motion-blocks` | Finding and adapting ready-made blocks and themes |
+| `aether-motion-svg` | Creating and placing static SVG artwork |
+| `aether-motion-import` | Porting existing HyperFrames or Remotion projects |
+
 ## Contributing
 
 ```bash
