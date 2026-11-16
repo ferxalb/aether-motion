@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 description = "Lightweight native renderer for a documented subset of HyperFrames HTML"
 license = "Apache-2.0"
+readme = "README.md"
+keywords = ["html", "video", "renderer", "mp4", "animation"]
+categories = ["multimedia::video", "rendering", "command-line-utilities"]
 
 [dependencies]
 anyhow = "1.0"
