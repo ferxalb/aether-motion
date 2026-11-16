@@ -15,9 +15,7 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-          - os: macos-13
-            target: x86_64-apple-darwin
-          - os: macos-latest
+          - os: macos-15
             target: aarch64-apple-darwin
           - os: windows-latest
             target: x86_64-pc-windows-msvc
@@ -32,30 +30,60 @@ jobs:
         run: |
           version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
           test "v$version" = "${GITHUB_REF_NAME}" || { echo "tag ${GITHUB_REF_NAME} != Cargo.toml v$version"; exit 1; }
-      - run: cargo test --release --locked
+      - run: cargo test --release --locked --target ${{ matrix.target }}
       - run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Build and test the Intel macOS executable
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          rustup target add x86_64-apple-darwin
+          if ! arch -x86_64 /usr/bin/true; then
+            sudo softwareupdate --install-rosetta --agree-to-license
+          fi
+          cargo test --release --locked --target x86_64-apple-darwin
+          cargo build --release --locked --target x86_64-apple-darwin
+      - name: Create the universal macOS executable
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          mkdir -p target/universal-apple-darwin/release
+          binary=target/universal-apple-darwin/release/aether-motion
+          lipo -create \
+            target/aarch64-apple-darwin/release/aether-motion \
+            target/x86_64-apple-darwin/release/aether-motion \
+            -output "$binary"
+          lipo "$binary" -verify_arch arm64 x86_64
+          codesign --force --sign - "$binary"
+          codesign --verify --all-architectures "$binary"
+          "$binary" --version
+          arch -x86_64 "$binary" --version
       - name: Package
         shell: bash
         run: |
-          name="aether-motion-${GITHUB_REF_NAME}-${{ matrix.target }}"
-          mkdir "$name"
-          cp LICENSE README.md CHANGELOG.md "$name/"
-          mkdir -p "$name/assets/readme"
-          cp assets/readme/hero.jpg assets/readme/motion-preview.gif "$name/assets/readme/"
-          cp assets/fonts/LICENSE-Roboto.txt "$name/"
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            cp "target/${{ matrix.target }}/release/aether-motion.exe" "$name/"
-            7z a "$name.zip" "$name"
-            echo "ASSET=$name.zip" >> "$GITHUB_ENV"
-          else
-            cp "target/${{ matrix.target }}/release/aether-motion" "$name/"
-            tar czf "$name.tar.gz" "$name"
-            echo "ASSET=$name.tar.gz" >> "$GITHUB_ENV"
+          targets=("${{ matrix.target }}")
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            targets+=(x86_64-apple-darwin universal-apple-darwin)
           fi
+          for target in "${targets[@]}"; do
+            name="aether-motion-${GITHUB_REF_NAME}-$target"
+            mkdir -p "$name/assets/readme"
+            cp LICENSE README.md CHANGELOG.md assets/fonts/LICENSE-Roboto.txt "$name/"
+            cp assets/readme/hero.jpg assets/readme/motion-preview.gif "$name/assets/readme/"
+            if [ "${{ runner.os }}" = "Windows" ]; then
+              cp "target/$target/release/aether-motion.exe" "$name/"
+              7z a "$name.zip" "$name"
+            else
+              cp "target/$target/release/aether-motion" "$name/"
+              tar czf "$name.tar.gz" "$name"
+            fi
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}
-          path: aether-motion-${{ github.ref_name }}-${{ matrix.target }}.*
+          path: |
+            aether-motion-${{ github.ref_name }}-*.tar.gz
+            aether-motion-${{ github.ref_name }}-*.zip
+          if-no-files-found: error
 
   publish:
     needs: build
@@ -72,4 +100,79 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#v}"
           awk "/^## \\[$version\\]/{f=1;next} /^## \\[/{f=0} f" CHANGELOG.md > notes.md
-          gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --notes-file notes.md
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/aether-motion-${GITHUB_REF_NAME}-universal-apple-darwin.tar.gz" \
+            "dist/aether-motion-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu.tar.gz" \
+            "dist/aether-motion-${GITHUB_REF_NAME}-x86_64-pc-windows-msvc.zip" \
+            --title "$GITHUB_REF_NAME" --notes-file notes.md
+
+  # Prepares the npm tarballs and stages updates through trusted publishing for maintainer approval.
+  npm:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Use npm 11 with staged publishing support
+        run: npm install -g 'npm@^11.15.0' && npm --version
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Extract the binaries
+        shell: bash
+        run: |
+          for t in aarch64-apple-darwin x86_64-apple-darwin x86_64-unknown-linux-gnu; do
+            mkdir -p "bins/$t"
+            tar xzf "dist/aether-motion-${GITHUB_REF_NAME}-$t.tar.gz" -C "bins/$t" --strip-components=1
+          done
+          t=x86_64-pc-windows-msvc
+          mkdir -p "bins/$t"
+          unzip -j -q "dist/aether-motion-${GITHUB_REF_NAME}-$t.zip" '*/aether-motion.exe' -d "bins/$t"
+      - name: Assemble the packages
+        run: node npm/scripts/build-packages.mjs --version "${GITHUB_REF_NAME#v}" --binaries bins --out npm-dist | tee npm-order.txt
+      - name: Pack the npm tarballs
+        shell: bash
+        run: |
+          mkdir npm-tarballs
+          while IFS= read -r dir; do
+            npm pack "./npm-dist/$dir" --pack-destination npm-tarballs
+          done < npm-order.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-tarballs
+          path: npm-tarballs/*.tgz
+          if-no-files-found: error
+      - name: Stage updates with npm Trusted Publishing
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          tag=latest
+          case "$version" in *-*) tag=next ;; esac
+          while IFS= read -r dir; do
+            name=$(node -p "encodeURIComponent(require('./npm-dist/$dir/package.json').name)")
+            status=$(curl --silent --show-error --retry 3 --output /dev/null --write-out '%{http_code}' "https://registry.npmjs.org/$name")
+            case "$status" in
+              200) ;;
+              404)
+                echo "First npm release: stage the npm-tarballs artifact from your npm account. See docs/releasing.md."
+                exit 0
+                ;;
+              *) echo "Unexpected npm registry response: HTTP $status" >&2; exit 1 ;;
+            esac
+          done < npm-order.txt
+
+          while IFS= read -r dir; do
+            name=$(node -p "require('./npm-dist/$dir/package.json').name")
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "$name@$version is already published"; continue
+            fi
+            npm stage publish "npm-tarballs/aether-motion-${dir}-$version.tgz" --access public --tag "$tag"
+          done < npm-order.txt

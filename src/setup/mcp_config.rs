@@ -29,11 +29,54 @@ const AGENTS: [Agent; 3] = [
 
 const SERVER: &str = "aether-motion";
 
+/// Environment variable set by the npm launcher with the package name it was started from.
+pub const NPM_PACKAGE_ENV: &str = "AETHER_MOTION_NPM_PACKAGE";
+
+/// True when an executable named `aether-motion` is reachable through the user's `PATH`.
+///
+/// `node_modules/.bin` entries are ignored: package runners (`npx`, `pnpm exec`) add them to `PATH`
+/// for the child process only, so an agent starting the MCP server later would not see them.
+pub fn on_path() -> bool {
+    let exe = if cfg!(windows) { "aether-motion.exe" } else { "aether-motion" };
+    std::env::var_os("PATH").is_some_and(|p| {
+        std::env::split_paths(&p)
+            .filter(|d| !d.ends_with("node_modules/.bin") && !d.ends_with("node_modules\\.bin"))
+            .any(|d| d.join(exe).is_file())
+    })
+}
+
+/// Command line that starts the MCP server: the plain binary when it is on `PATH`, otherwise
+/// `npx` when this process was launched from the npm package (so `npx ... init` yields a working config).
+fn launcher() -> (String, Vec<String>) {
+    let plain = || ("aether-motion".to_string(), vec!["mcp".to_string()]);
+    match std::env::var(NPM_PACKAGE_ENV) {
+        Ok(pkg) if !on_path() => {
+            let mut args = vec!["-y".to_string(), pkg, "mcp".to_string()];
+            if cfg!(windows) {
+                args.splice(0..0, ["/c".to_string(), "npx".to_string()]);
+                ("cmd".to_string(), args)
+            } else {
+                ("npx".to_string(), args)
+            }
+        }
+        _ => plain(),
+    }
+}
+
+/// Prefix for commands shown to the user: `aether-motion`, or the `npx` form when only npm provides it.
+pub fn command_prefix() -> String {
+    match std::env::var(NPM_PACKAGE_ENV) {
+        Ok(pkg) if !on_path() => format!("npx {pkg}"),
+        _ => "aether-motion".to_string(),
+    }
+}
+
 fn entry(typed: bool) -> Value {
+    let (command, args) = launcher();
     if typed {
-        json!({"type": "stdio", "command": "aether-motion", "args": ["mcp"]})
+        json!({"type": "stdio", "command": command, "args": args})
     } else {
-        json!({"command": "aether-motion", "args": ["mcp"]})
+        json!({"command": command, "args": args})
     }
 }
 
@@ -107,7 +150,7 @@ mod tests {
         let merged = merge(doc, "mcpServers", entry(false)).unwrap().unwrap();
         let v: Value = serde_json::from_str(&merged).unwrap();
         assert_eq!(v["mcpServers"]["other"]["command"], "x");
-        assert_eq!(v["mcpServers"][SERVER]["args"][0], "mcp");
+        assert!(v["mcpServers"][SERVER]["command"].is_string());
         assert_eq!(v["extra"], 1);
         assert_eq!(merge(&merged, "mcpServers", entry(false)).unwrap(), None);
     }

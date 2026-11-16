@@ -27,6 +27,12 @@ Using a coding agent? Connect the local MCP server for direct tool access, or in
 ## Quick Start
 
 ```bash
+npx @aether-motion/cli init my-video    # or: pnpm dlx / bunx / yarn dlx (no install needed)
+```
+
+With the binary on your `PATH` (`npm i -g @aether-motion/cli`, a [release download](https://github.com/ferxalb/aether-hyperframes/releases), or `cargo install`), the commands are short:
+
+```bash
 aether-motion init my-video   # sample video + agent skills + MCP config, ready to go
 cd my-video
 aether-motion preview         # render a frame and open it (add --watch to refresh on save)

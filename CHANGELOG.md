@@ -11,6 +11,7 @@ First stable release.
 
 ### Added
 
+- npm distribution as `@aether-motion/cli` (launcher plus per-platform binary packages, no install scripts), published from GitHub Actions with trusted publishing; see `docs/releasing.md`. When started through npm, `init` writes an `npx`-based MCP entry if the binary is not on `PATH`.
 - `init`, `preview`, `add`, `agent setup|status`, and `doctor` commands; `render` and `check` now work without
   arguments inside a project (`aether.json`). `init` installs the bundled skills and MCP config for coding agents.
 - Native renderer for a documented subset of HyperFrames HTML: PNG frames and H.264 MP4 output without a

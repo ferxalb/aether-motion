@@ -1,0 +1,34 @@
+{
+  "name": "@aether-motion/cli",
+  "version": "0.0.0",
+  "description": "Write HTML, render video. AETHER Motion native renderer: init, preview, and render deterministic MP4s without a browser.",
+  "license": "Apache-2.0",
+  "bin": {
+    "aether-motion": "bin/aether-motion.js"
+  },
+  "files": [
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ferxalb/aether-hyperframes.git"
+  },
+  "homepage": "https://github.com/ferxalb/aether-hyperframes#readme",
+  "keywords": [
+    "video",
+    "html",
+    "renderer",
+    "mp4",
+    "animation",
+    "cli",
+    "mcp"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -64,7 +64,8 @@ pub fn run(raw: &[String]) -> Result<()> {
     if dir != "." {
         println!("  cd {dir}");
     }
-    println!("  aether-motion preview     # look at a frame");
-    println!("  aether-motion render      # export out/index.mp4");
+    let cmd = crate::setup::mcp_config::command_prefix();
+    println!("  {cmd} preview     # look at a frame");
+    println!("  {cmd} render      # export out/index.mp4");
     Ok(())
 }
