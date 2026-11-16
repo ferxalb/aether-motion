@@ -1,10 +1,9 @@
-//! Command-line entry point: `inspect`, `render`, `bench`, `check`, `block`, and `mcp`.
+//! Command-line entry point: short project commands live in `cli`; this file keeps the legacy flag-based `inspect`, `render --output`, `bench`, `block`, and `mcp`.
 
 use aether_motion::encode::encode_native_with_audio;
 use aether_motion::parse::parse_file;
 use aether_motion::render::{OutputSize, Renderer};
 use anyhow::{anyhow, bail, Context, Result};
-use image::ColorType;
 use std::env;
 use std::fs;
 use std::io::Write;
@@ -14,7 +13,16 @@ use std::time::Instant;
 
 fn usage() -> &'static str {
     concat!("AETHER Motion ", env!("CARGO_PKG_VERSION"), "\n\
-Usage:\n\
+Quick start:\n\
+  aether-motion init [dir]                 create a project with a sample video, agent skills, and MCP config\n\
+  aether-motion preview [file] [--at 2.5] [--watch]   render one frame to .aether/preview.png and open it\n\
+  aether-motion render [file] [-o out.mp4] [--size 1080p|4k] [--fps 30]   (defaults from aether.json; writes out/<name>.mp4)\n\
+  aether-motion check [file]               validate (summary on a terminal, JSON when piped or with --json)\n\
+  aether-motion add [block] [--set k=v]    list blocks, or append one to the composition\n\
+  aether-motion agent setup|status         install skills and MCP config for coding agents\n\
+  aether-motion doctor                     diagnose the installation and project\n\
+`file` defaults to aether.json \"entry\", then index.html.\n\
+Advanced:\n\
   aether-motion inspect <composition.html>\n\
   aether-motion render <composition.html> --output <video.mp4|frame.png> [--fps 30] [--scale 1 | --size 1080p|4k] [--threads N (default: cores/4, 1 to 4)] [--priority low|normal (default: low)] [--encoder native|ffmpeg] [--audio-bitrate 192] [--frame N]\n\
   aether-motion bench <composition.html> [--fps 30] [--scale 1 | --size 1080p|4k] [--frame START --count N]\n\
@@ -118,14 +126,6 @@ fn options() -> Result<Option<Options>> {
     Ok(Some(opts))
 }
 
-fn png(renderer: &mut Renderer<'_>, output: &Path, frame: usize, fps: u32) -> Result<()> {
-    let (w, h) = renderer.dimensions();
-    let pixels = renderer.render_frame(frame, fps)?;
-    image::save_buffer(output, pixels, w, h, ColorType::Rgba8)
-        .with_context(|| format!("could not save {}", output.display()))?;
-    Ok(())
-}
-
 fn mp4_ffmpeg(renderer: &mut Renderer<'_>, output: &Path, fps: u32, threads: u32) -> Result<()> {
     let (w, h) = renderer.dimensions();
     if w % 2 != 0 || h % 2 != 0 {
@@ -206,6 +206,14 @@ fn mp4_ffmpeg(renderer: &mut Renderer<'_>, output: &Path, fps: u32, threads: u32
 }
 
 fn main() -> Result<()> {
+    let all: Vec<String> = env::args().skip(1).collect();
+    if let Some(result) = aether_motion::cli::run(&all) {
+        let code = result?;
+        if code != 0 {
+            std::process::exit(code);
+        }
+        return Ok(());
+    }
     let mut raw = env::args().skip(1);
     match raw.next().as_deref() {
         Some("mcp") => return aether_motion::agent::serve(),
@@ -289,7 +297,7 @@ fn main() -> Result<()> {
             .as_deref()
             .ok_or_else(|| anyhow!("render requires --output"))?;
         match output.extension().and_then(|x| x.to_str()) {
-            Some("png") => png(&mut renderer, output, opts.frame.unwrap_or(0), opts.fps)?,
+            Some("png") => aether_motion::cli::render_cmd::write_png(&mut renderer, output, opts.frame.unwrap_or(0), opts.fps)?,
             Some("mp4") => {
                 if opts.frame.is_some() {
                     bail!("--frame only applies to PNG");

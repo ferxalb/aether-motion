@@ -11,6 +11,10 @@ Use this skill when the task is primarily to validate a composition, inspect fra
 
 Call `aether_guide` to retrieve the active contract. Use `aether_check` to validate, `aether_snapshot` to inspect an absolute composition time, and `aether_render` to export. `aether_snapshot` accepts `t` in seconds with `0 <= t < duration`; use it to inspect the beginning, middle, and end of motion windows. Use `aether_write` or `aether_block` only when those actions are needed for the user's request.
 
+## Project commands
+
+Inside a project created by `aether-motion init`, `aether.json` supplies the entry file, fps, size, and output folder. `aether-motion check` (JSON when piped), `aether-motion preview --at 2.5` (writes `.aether/preview.png`), and `aether-motion render` (writes `out/<name>.mp4`) need no arguments. `aether-motion add <block> --set key=value` appends a block, and `aether-motion doctor` diagnoses skills, MCP config, and the composition.
+
 ## CLI workflow
 
 1. Validate with `aether-motion check <composition.html>`. Read the JSON result, fix each reported issue, and rerun until `ok` is true.

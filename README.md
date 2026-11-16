@@ -26,6 +26,15 @@ Using a coding agent? Connect the local MCP server for direct tool access, or in
 
 ## Quick Start
 
+```bash
+aether-motion init my-video   # sample video + agent skills + MCP config, ready to go
+cd my-video
+aether-motion preview         # render a frame and open it (add --watch to refresh on save)
+aether-motion render          # export out/index.mp4
+```
+
+`init` writes `aether.json`, a sample `index.html`, project `AGENTS.md`, the bundled Agent Skills (`.claude/skills`, `.agents/skills`), and the MCP server entry for Claude Code (`.mcp.json`; Cursor and VS Code too when their folders exist or with `--all`). It never overwrites existing files without `--force`, merges into existing MCP files, and is safe to re-run. Other commands: `check`, `add [block]`, `agent setup|status`, `doctor`.
+
 ### With an AI coding agent
 
 Install AETHER Motion (see [Install](#install)), then register its MCP server. For Claude Code:

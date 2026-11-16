@@ -11,6 +11,8 @@ First stable release.
 
 ### Added
 
+- `init`, `preview`, `add`, `agent setup|status`, and `doctor` commands; `render` and `check` now work without
+  arguments inside a project (`aether.json`). `init` installs the bundled skills and MCP config for coding agents.
 - Native renderer for a documented subset of HyperFrames HTML: PNG frames and H.264 MP4 output without a
   browser or Node.js (OpenH264 built in, FFmpeg optional with `--encoder ffmpeg`).
 - Layout and paint: flex layout, margins, text wrapping, `border`, `border-radius`, linear and radial
