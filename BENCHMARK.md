@@ -522,3 +522,34 @@ shadow tests passed afterward, including a new empty-mask regression test;
 both 30/60 fps outer-shadow MP4 comparisons passed again. The nested-layer
 midpoint was visually inspected at 1080p/60 fps. The final set comprises 97
 distinct selected tests across the initial run and the additional boundary test.
+
+## Temporal stability correction (2026-11-15)
+
+The monochrome promo exposed spatial quantization during its slow camera zooms:
+text was re-rasterized at every zoom value, glyph positions were rounded individually,
+and fractional box bounds expanded to integer edges. Soft-shadow tiles also rounded
+geometry that the first, uncached draw retained. Fixed-resolution glyph/shadow masks
+now use bilinear coverage sampling for translation and zoom. Fractional solid fills
+and general gradients retain floating-point geometry; fractional outer shadows stay
+on the direct path so cache admission cannot move them.
+
+This is a visual correctness change, not a speed optimization. A release, one-worker
+sample of `examples/aether-monochrome-promo.html`, frames 120–134 at 60 fps,
+1920×1080, took 0.952 s before and 1.498 s after. A corrected-build run during
+concurrent export/test compilation took 4.137 s and is not comparable to the idle
+sample. These are single observations, not a controlled performance study. The new
+coverage sampling and direct fractional paint paths cost additional CPU work.
+
+The complete corrected 30-second 1080p/60 fps export with two workers took
+115.693 s under concurrent validation load and produced 12,369,948 bytes. The
+original export was 9,847,903 bytes. Both files contained 1,800 samples at timescale
+60 with duration one tick and zero rendering offset; all 1,800 samples decoded.
+The original container therefore already had uniform cadence: the reproduced
+stability defects were in rasterization, rather than MP4 sample scheduling.
+
+All 55 selected integration tests passed (motion stability, native rendering/export,
+gradients, text shadows, spacing, and wrapping). The five temporal regressions cover
+quarter-pixel motion at 60 fps, constant box area, stable text coverage/centroids,
+continuous camera text zoom, cache-independent fractional shadows, and a decoded
+120-frame MP4 crossing a segment boundary. The promo passed composition checking;
+its 2.5-second snapshot was visually inspected at 1080p.
