@@ -1,5 +1,6 @@
 //! Distance, error-function, and size-checked Gaussian edge helpers shared by border and shadow painting.
 
+use crate::render::paint::float_ops::hypot;
 use anyhow::{bail, Result};
 
 /// Signed distance from `(x, y)` to a rounded rectangle; negative inside.
@@ -15,7 +16,7 @@ pub(in crate::render) fn rounded_distance(
     let qy = (y - (y0 + hy)).abs() - (hy - radius);
     // Only the corner arcs need a square root.
     let outside = if qx > 0.0 && qy > 0.0 {
-        qx.hypot(qy)
+        hypot(qx, qy)
     } else {
         qx.max(qy)
     };

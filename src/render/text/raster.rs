@@ -193,7 +193,11 @@ impl<'a> Renderer<'a> {
                 (x1 / scale + sx).min(clip[2]),
                 ((top + total) / scale + sy).min(clip[3]),
             ];
-            if let (true, true, Some(boxes)) = (x0 < x1, rect[0] < rect[2] && rect[1] < rect[3], self.probe.as_mut()) {
+            if let (true, true, Some(boxes)) = (
+                x0 < x1,
+                rect[0] < rect[2] && rect[1] < rect[3],
+                self.probe.as_mut(),
+            ) {
                 boxes.push(crate::render::probe::TextBox { element: idx, rect });
             }
         }

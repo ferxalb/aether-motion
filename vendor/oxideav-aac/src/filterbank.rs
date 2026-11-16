@@ -102,11 +102,124 @@ pub(crate) fn imdct(spec: &[f64], n_transform: usize) -> Vec<f64> {
 /// `MDCT(x_est)` of the §4.6.7.3 Long-Term-Prediction loop.
 pub(crate) fn forward_mdct(time: &[f64], n_transform: usize) -> Vec<f64> {
     // AETHER Motion patch: the upstream implementation evaluates one `cos` per (n, k) term, about
-    // two million per channel and frame. The argument is `2*pi*(n + n0)*(k + 1/2) / N`, which is
-    // `2*pi*M / 4N` with the integer `M = (2n + N/2 + 1)*(2k + 1)`, so a table of `4N` cosines
-    // indexed by `M mod 4N` gives the same values (see `forward_mdct_matches_the_direct_formula`).
-    let half = n_transform / 2;
+    // two million per channel and frame. Power-of-two lengths (every AAC-LC transform: 2048 and
+    // 256) fold the input into a DCT-IV of length N/2 and evaluate it with one N/4-point complex
+    // FFT, O(N log N). Other lengths keep the O(N^2) cosine-table sum. Both agree with the
+    // upstream formula to floating-point rounding (see `forward_mdct_matches_the_direct_formula`).
     debug_assert_eq!(time.len(), n_transform);
+    if n_transform >= 8 && n_transform.is_power_of_two() {
+        fft_mdct(time, n_transform)
+    } else {
+        table_mdct(time, n_transform)
+    }
+}
+
+/// MDCT through a DCT-IV and an `N/4`-point complex FFT.
+///
+/// With the input split into quarters `(a, b, c, d)` of length `N/4`, the MDCT equals the
+/// DCT-IV of `v = (-c_r - d, a - b_r)` (`_r` reversed). The DCT-IV of length `M = N/2` is a
+/// pre-twiddled `M/2`-point FFT of `v[2n] + i v[M-1-2n]` followed by a post-twiddle.
+fn fft_mdct(x: &[f64], n: usize) -> Vec<f64> {
+    let plan = mdct_plan(n);
+    let m = n / 2;
+    let q = m / 2;
+    let fold = |i: usize| -> f64 {
+        // v[i] for 0 <= i < M.
+        if i < q {
+            -x[m + q - 1 - i] - x[m + q + i]
+        } else {
+            let j = i - q;
+            x[j] - x[m - 1 - j]
+        }
+    };
+    let mut re = vec![0.0_f64; q];
+    let mut im = vec![0.0_f64; q];
+    for i in 0..q {
+        let (a, b) = (fold(2 * i), fold(m - 1 - 2 * i));
+        let (c, s) = plan.pre[i];
+        let slot = plan.bitrev[i];
+        re[slot] = a * c - b * s;
+        im[slot] = a * s + b * c;
+    }
+    // In-place iterative radix-2 FFT (input already in bit-reversed order).
+    let mut len = 2;
+    while len <= q {
+        let half = len / 2;
+        let stride = q / len;
+        for start in (0..q).step_by(len) {
+            for k in 0..half {
+                let (wr, wi) = plan.twiddle[k * stride];
+                let (a, b) = (start + k, start + k + half);
+                let tr = re[b] * wr - im[b] * wi;
+                let ti = re[b] * wi + im[b] * wr;
+                re[b] = re[a] - tr;
+                im[b] = im[a] - ti;
+                re[a] += tr;
+                im[a] += ti;
+            }
+        }
+        len <<= 1;
+    }
+    let mut out = vec![0.0_f64; m];
+    for k in 0..q {
+        let (c, s) = plan.post[k];
+        let r = re[k] * c - im[k] * s;
+        let i = re[k] * s + im[k] * c;
+        out[2 * k] = 2.0 * r;
+        out[m - 1 - 2 * k] = -2.0 * i;
+    }
+    out
+}
+
+/// Precomputed twiddles and bit-reversal for one power-of-two MDCT length.
+struct MdctPlan {
+    /// `exp(-i*pi*(4n + 1) / 4M)` for the pre-twiddle.
+    pre: Vec<(f64, f64)>,
+    /// `exp(-i*pi*k / M)` for the post-twiddle.
+    post: Vec<(f64, f64)>,
+    /// `exp(-2*pi*i*k / Q)` for the FFT butterflies, `k < Q/2`.
+    twiddle: Vec<(f64, f64)>,
+    bitrev: Vec<usize>,
+}
+
+/// The plan for `n`, cached per thread (AAC-LC uses only two lengths).
+fn mdct_plan(n: usize) -> std::rc::Rc<MdctPlan> {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    thread_local! {
+        static PLANS: RefCell<Vec<(usize, Rc<MdctPlan>)>> = const { RefCell::new(Vec::new()) };
+    }
+    PLANS.with(|plans| {
+        let mut plans = plans.borrow_mut();
+        if let Some((_, plan)) = plans.iter().find(|(len, _)| *len == n) {
+            return Rc::clone(plan);
+        }
+        let pi = core::f64::consts::PI;
+        let m = n / 2;
+        let q = m / 2;
+        let unit = |angle: f64| (angle.cos(), angle.sin());
+        let bits = q.trailing_zeros();
+        let plan = Rc::new(MdctPlan {
+            pre: (0..q)
+                .map(|i| unit(-pi * (4 * i + 1) as f64 / (4 * m) as f64))
+                .collect(),
+            post: (0..q).map(|k| unit(-pi * k as f64 / m as f64)).collect(),
+            twiddle: (0..q / 2)
+                .map(|k| unit(-2.0 * pi * k as f64 / q as f64))
+                .collect(),
+            bitrev: (0..q)
+                .map(|i| if bits == 0 { 0 } else { i.reverse_bits() >> (usize::BITS - bits) })
+                .collect(),
+        });
+        plans.push((n, Rc::clone(&plan)));
+        plan
+    })
+}
+
+/// The O(N^2) MDCT with a cached cosine table, for lengths that are not powers of two.
+/// The cosine argument is `2*pi*M / 4N` with the integer `M = (2n + N/2 + 1)*(2k + 1)`.
+fn table_mdct(time: &[f64], n_transform: usize) -> Vec<f64> {
+    let half = n_transform / 2;
     let period = 4 * n_transform;
     let table = cosine_table(period);
     let offset = half + 1;
@@ -169,7 +282,7 @@ mod aether_patch_tests {
 
     #[test]
     fn forward_mdct_matches_the_direct_formula() {
-        for n in [256_usize, 2048] {
+        for n in [8_usize, 16, 64, 256, 512, 960, 2048] {
             let time: Vec<f64> = (0..n)
                 .map(|i| ((i * 7919 % 1013) as f64 - 500.0) * 61.0)
                 .collect();

@@ -1,5 +1,6 @@
 //! Project configuration (`aether.json`) and entry-file resolution for the short commands.
 
+use crate::encode::Quality;
 use crate::render::OutputSize;
 use anyhow::{anyhow, bail, Context, Result};
 use serde_json::Value;
@@ -14,6 +15,8 @@ pub struct Project {
     pub entry: PathBuf,
     pub fps: u32,
     pub size: Option<OutputSize>,
+    /// MP4 quality preset (`"quality"`, default `standard`).
+    pub quality: Quality,
     pub out_dir: PathBuf,
 }
 
@@ -45,11 +48,18 @@ pub fn resolve(dir: &Path, file: Option<&str>) -> Result<Project> {
         .map(str::parse)
         .transpose()
         .context("aether.json: size")?;
+    let quality = config["quality"]
+        .as_str()
+        .map(str::parse)
+        .transpose()
+        .context("aether.json: quality")?
+        .unwrap_or_default();
     let out_dir = dir.join(config["out"].as_str().unwrap_or("out"));
     Ok(Project {
         entry,
         fps,
         size,
+        quality,
         out_dir,
     })
 }

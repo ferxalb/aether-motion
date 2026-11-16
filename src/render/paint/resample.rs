@@ -21,13 +21,17 @@ fn taps(source: u32, target: u32) -> Taps {
     for i in 0..target {
         let center = (f64::from(i) + 0.5) * ratio;
         let first = ((center - scale).floor().max(0.0)) as usize;
-        let end = (((center + scale).ceil()) as usize).min(source as usize).max(first + 1);
+        let end = (((center + scale).ceil()) as usize)
+            .min(source as usize)
+            .max(first + 1);
         let raw: Vec<f64> = (first..end)
             .map(|j| (1.0 - ((j as f64 + 0.5 - center) / scale).abs()).max(0.0))
             .collect();
         let total: f64 = raw.iter().sum();
         let mut fixed: Vec<i32> = if total > 0.0 {
-            raw.iter().map(|w| (w / total * 65536.0).round() as i32).collect()
+            raw.iter()
+                .map(|w| (w / total * 65536.0).round() as i32)
+                .collect()
         } else {
             // Degenerate window: nearest source pixel.
             let mut single = vec![0; end - first];
@@ -102,7 +106,12 @@ mod tests {
 
     fn gradient(w: u32, h: u32) -> RgbaImage {
         RgbaImage::from_fn(w, h, |x, y| {
-            Rgba([(x * 255 / w) as u8, (y * 255 / h) as u8, ((x ^ y) * 7 % 256) as u8, 255])
+            Rgba([
+                (x * 255 / w) as u8,
+                (y * 255 / h) as u8,
+                ((x ^ y) * 7 % 256) as u8,
+                255,
+            ])
         })
     }
 

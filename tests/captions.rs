@@ -32,7 +32,11 @@ fn shot_at(path: &std::path::Path, seconds: f64) -> Shot {
         .render_frame((seconds * FPS as f64) as usize, FPS)
         .unwrap()
         .to_vec();
-    Shot { pixels, width: width as usize, height: height as usize }
+    Shot {
+        pixels,
+        width: width as usize,
+        height: height as usize,
+    }
 }
 
 fn is_red(p: [u8; 3]) -> bool {
@@ -56,8 +60,14 @@ fn cues_follow_the_transcript_and_highlight_the_spoken_word() {
     assert_eq!(shot_at(&path, 2.0).count(|p| is_white(p) || is_red(p)), 0);
     // While "One" is spoken the cue is visible with a highlighted word and white context.
     let first = shot_at(&path, 0.7);
-    assert!(first.count(is_red) > 100, "spoken word should be highlighted");
-    assert!(first.count(is_white) > 100, "other words keep the base color");
+    assert!(
+        first.count(is_red) > 100,
+        "spoken word should be highlighted"
+    );
+    assert!(
+        first.count(is_white) > 100,
+        "other words keep the base color"
+    );
     // Moving to the next word moves the highlight to the right.
     let second = shot_at(&path, 1.2);
     let (l1, _, _, _) = first.bbox(is_red).unwrap();
@@ -103,9 +113,10 @@ fn bad_inputs_report_explicit_errors() {
     assert!(err.contains("sort the transcript"), "{err}");
 
     let orphan = project("t.json", WORDS, "");
-    let html = std::fs::read_to_string(&orphan)
-        .unwrap()
-        .replace(r#"data-hf-captions="t.json""#, r#"data-hf-captions-pop="1.2""#);
+    let html = std::fs::read_to_string(&orphan).unwrap().replace(
+        r#"data-hf-captions="t.json""#,
+        r#"data-hf-captions-pop="1.2""#,
+    );
     std::fs::write(&orphan, html).unwrap();
     let err = format!("{:#}", parse_file(&orphan).unwrap_err());
     assert!(err.contains("requires data-hf-captions"), "{err}");

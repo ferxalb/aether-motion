@@ -148,7 +148,10 @@ pub(in crate::parse) fn walk(
         Content::Image(base.join(src))
     } else if tag == "video" {
         let parsed = parse_video(node, base, duration.is_some()).with_context(|| {
-            format!("<video> ({})", attr(node, "id").as_deref().unwrap_or("no id"))
+            format!(
+                "<video> ({})",
+                attr(node, "id").as_deref().unwrap_or("no id")
+            )
         })?;
         video_length = Some(parsed.default_duration);
         video_audio = parsed.audio;

@@ -2,7 +2,7 @@
 
 use super::args::Args;
 use super::project;
-use crate::encode::{encode_native_with_audio, lower_priority};
+use crate::encode::{encode_native_with_options, lower_priority, EncodeOptions};
 use crate::parse::parse_file;
 use crate::render::Renderer;
 use anyhow::{anyhow, bail, Context, Result};
@@ -19,7 +19,7 @@ pub fn write_png(renderer: &mut Renderer<'_>, output: &Path, frame: usize, fps: 
         .with_context(|| format!("could not save {}", output.display()))
 }
 
-/// `render [file] [-o out.mp4|png] [--size 1080p|4k | --scale N] [--fps N] [--frame N] [--force]`.
+/// `render [file] [-o out.mp4|png] [--size 1080p|4k | --scale N] [--fps N] [--quality Q] [--frame N] [--force]`.
 pub fn run(raw: &[String]) -> Result<()> {
     let args = Args::parse(
         raw,
@@ -31,6 +31,7 @@ pub fn run(raw: &[String]) -> Result<()> {
             "--threads",
             "--frame",
             "--audio-bitrate",
+            "--quality",
         ],
         &["--force"],
     )?;
@@ -60,6 +61,11 @@ pub fn run(raw: &[String]) -> Result<()> {
         _ => Renderer::new(&composition, 1.0)?,
     };
     lower_priority();
+    // Validate the preset before an existing output is removed below.
+    let quality = match args.value("--quality") {
+        Some(q) => q.parse()?,
+        None => project.quality,
+    };
     let explicit = args.value("--output");
     let stem = project
         .entry
@@ -101,11 +107,16 @@ pub fn run(raw: &[String]) -> Result<()> {
                 .number("--audio-bitrate")?
                 .unwrap_or(crate::audio::DEFAULT_BITRATE / 1000);
             println!(
-                "Rendering {} -> {} ({w}x{h}, {frames} frames @ {fps} fps)",
+                "Rendering {} -> {} ({w}x{h}, {frames} frames @ {fps} fps, quality {quality:?})",
                 project.entry.display(),
                 output.display()
             );
-            encode_native_with_audio(&mut renderer, &output, fps, threads, kbps * 1000)?;
+            let options = EncodeOptions {
+                audio_bitrate: kbps * 1000,
+                quality,
+                ..EncodeOptions::new(fps, threads)
+            };
+            encode_native_with_options(&mut renderer, &output, &options)?;
         }
         _ => return Err(anyhow!("output must end in .png or .mp4")),
     }

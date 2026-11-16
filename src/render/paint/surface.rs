@@ -3,6 +3,7 @@
 
 use crate::model::Color;
 use crate::render::geometry::PixelRect;
+use crate::render::paint::float_ops::round_to_u8;
 
 /// An RGBA pixel buffer plus the bookkeeping painting needs.
 pub(in crate::render) struct Surface {
@@ -84,9 +85,9 @@ impl Surface {
 
     #[inline]
     pub(in crate::render) fn blend_pixel(dest: &mut [u8], color: Color, a: f32) {
-        dest[0] = (color.r as f32 * a + dest[0] as f32 * (1.0 - a)).round() as u8;
-        dest[1] = (color.g as f32 * a + dest[1] as f32 * (1.0 - a)).round() as u8;
-        dest[2] = (color.b as f32 * a + dest[2] as f32 * (1.0 - a)).round() as u8;
+        dest[0] = round_to_u8(color.r as f32 * a + dest[0] as f32 * (1.0 - a));
+        dest[1] = round_to_u8(color.g as f32 * a + dest[1] as f32 * (1.0 - a));
+        dest[2] = round_to_u8(color.b as f32 * a + dest[2] as f32 * (1.0 - a));
         dest[3] = 255;
     }
 

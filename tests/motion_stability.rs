@@ -1,6 +1,5 @@
 //! Temporal regression tests for fractional motion, stable text zoom, and cache-independent frames.
 
-#![allow(clippy::chunks_exact_to_as_chunks)] // `as_chunks` needs a newer toolchain than the supported stable Rust.
 mod common;
 use aether_motion::{parse::parse_file, render::Renderer};
 
@@ -12,7 +11,7 @@ fn fixture(name: &str, body: &str) -> std::path::PathBuf {
 
 fn mass_center(pixels: &[u8]) -> (f64, f64) {
     let (mut mass, mut moment) = (0.0, 0.0);
-    for (i, pixel) in pixels.chunks_exact(4).enumerate() {
+    for (i, pixel) in pixels.as_chunks::<4>().0.iter().enumerate() {
         mass += f64::from(pixel[0]);
         moment += f64::from(pixel[0]) * (i % 320) as f64;
     }
@@ -150,7 +149,7 @@ fn motion_stability_mp4_has_120_ordered_samples_at_60_fps() {
             .expect("every MP4 sample must decode a frame");
         decoded.write_rgb8(&mut rgb);
         let (mut mass, mut moment) = (0.0, 0.0);
-        for (i, pixel) in rgb.chunks_exact(3).enumerate() {
+        for (i, pixel) in rgb.as_chunks::<3>().0.iter().enumerate() {
             let value = f64::from(pixel[0].saturating_sub(10));
             mass += value;
             moment += value * (i % 320) as f64;

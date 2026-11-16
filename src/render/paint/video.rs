@@ -42,7 +42,15 @@ impl<'a> Renderer<'a> {
         let opaque = exact || fit != "contain";
         let x0 = (rect.x * self.scale).round() as i32;
         let y0 = (rect.y * self.scale).round() as i32;
-        blit(&mut self.surface, &CachedImage::frame(fitted, opaque), x0, y0, w, h, alpha);
+        blit(
+            &mut self.surface,
+            &CachedImage::frame(fitted, opaque),
+            x0,
+            y0,
+            w,
+            h,
+            alpha,
+        );
         Ok(())
     }
 }

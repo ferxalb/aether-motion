@@ -59,7 +59,8 @@ pub fn run(raw: &[String]) -> Result<i32> {
             report["width"].as_u64().unwrap_or(0) as u32,
             report["height"].as_u64().unwrap_or(0) as u32,
         );
-        if let Err(error) = request.plan(width, height, report["duration"].as_f64().unwrap_or(0.0)) {
+        if let Err(error) = request.plan(width, height, report["duration"].as_f64().unwrap_or(0.0))
+        {
             return usage(error);
         }
         if let Some(outcome) = zones::attach(&mut report, &project.entry, &request)? {

@@ -117,7 +117,12 @@ impl VideoPlayer {
             let sample = self
                 .reader
                 .read_sample(index.track_id, (self.fed + 1) as u32)
-                .map_err(|e| anyhow!("{}: could not read a video sample: {e}", self.path.display()))?
+                .map_err(|e| {
+                    anyhow!(
+                        "{}: could not read a video sample: {e}",
+                        self.path.display()
+                    )
+                })?
                 .ok_or_else(|| anyhow!("{}: a video sample is missing", self.path.display()))?;
             self.fed += 1;
             self.annex_b.clear();
@@ -133,19 +138,33 @@ impl VideoPlayer {
                 let at = self.emitted;
                 self.emitted += 1;
                 if at >= want {
-                    keep(&mut self.stash, &mut self.stash_first, at, &yuv, &index, &self.path)?;
+                    keep(
+                        &mut self.stash,
+                        &mut self.stash_first,
+                        at,
+                        &yuv,
+                        &index,
+                        &self.path,
+                    )?;
                 }
             }
         } else if !self.flushed {
             self.flushed = true;
-            let rest = decoder.flush_remaining().map_err(|e| {
-                anyhow!("{}: H.264 decoding failed: {e}", self.path.display())
-            })?;
+            let rest = decoder
+                .flush_remaining()
+                .map_err(|e| anyhow!("{}: H.264 decoding failed: {e}", self.path.display()))?;
             for yuv in rest {
                 let at = self.emitted;
                 self.emitted += 1;
                 if at >= want {
-                    keep(&mut self.stash, &mut self.stash_first, at, &yuv, &index, &self.path)?;
+                    keep(
+                        &mut self.stash,
+                        &mut self.stash_first,
+                        at,
+                        &yuv,
+                        &index,
+                        &self.path,
+                    )?;
                 }
             }
         } else {
@@ -184,7 +203,10 @@ fn keep(
     if index.colour.is_decoder_default() {
         yuv.write_rgba8(&mut rgba);
         // Decoded video is opaque whatever the converter wrote into the alpha byte.
-        rgba.as_chunks_mut::<4>().0.iter_mut().for_each(|p| p[3] = 255);
+        rgba.as_chunks_mut::<4>()
+            .0
+            .iter_mut()
+            .for_each(|p| p[3] = 255);
     } else {
         colour::to_rgba(
             (yuv.y(), yuv.u(), yuv.v()),

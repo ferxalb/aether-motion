@@ -35,7 +35,10 @@ pub fn run(raw: &[String]) -> Result<()> {
         (None, false) => group(&loaded.words, options),
     };
     let text = match args.value("--to").unwrap_or("json") {
-        "json" => format!("{}\n", serde_json::to_string_pretty(&export::words_json(&loaded.words))?),
+        "json" => format!(
+            "{}\n",
+            serde_json::to_string_pretty(&export::words_json(&loaded.words))?
+        ),
         "srt" => export::srt(&cues),
         "vtt" => export::vtt(&cues),
         other => bail!("--to must be json, srt, or vtt: {other}"),

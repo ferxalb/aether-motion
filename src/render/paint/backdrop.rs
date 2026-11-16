@@ -9,6 +9,7 @@
 //! function of the pixels behind the element and stays deterministic.
 
 use crate::render::geometry::{clip_pixels, Rect};
+use crate::render::paint::float_ops::round_to_u8;
 use crate::render::paint::Surface;
 
 /// Radius in pixels of each box blur so that three of them approximate a gaussian of `sigma`.
@@ -219,15 +220,6 @@ fn blur_plane_radii(plane: &mut [f32], width: usize, height: usize, radii: [usiz
     plane.copy_from_slice(&scratch);
 }
 
-/// `value.round().clamp(0.0, 255.0) as u8` without the libm call: exact, because the fractional
-/// part of a float is computed without error.
-#[inline]
-fn round_to_u8(value: f32) -> u8 {
-    let value = value.clamp(0.0, 255.0);
-    let whole = value as u8;
-    whole + u8::from(value - f32::from(whole) >= 0.5 && whole < 255)
-}
-
 impl Surface {
     /// Replaces the pixels inside `rect` (rounded by `radius`) with their blurred version.
     ///
@@ -340,17 +332,6 @@ mod tests {
                 );
                 sum += src[(i + r + 1).min(12) as usize] - src[(i - r).max(0) as usize];
             }
-        }
-    }
-
-    #[test]
-    fn round_to_u8_matches_round_and_clamp() {
-        for i in -600..=5600 {
-            let v = i as f32 * 0.05 - 4.0;
-            assert_eq!(round_to_u8(v), v.round().clamp(0.0, 255.0) as u8, "{v}");
-        }
-        for v in [0.499_999_97_f32, 0.5, 254.5, 254.499_97, 255.0, 300.0, -3.0] {
-            assert_eq!(round_to_u8(v), v.round().clamp(0.0, 255.0) as u8, "{v}");
         }
     }
 

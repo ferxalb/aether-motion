@@ -14,6 +14,7 @@ pub mod probe;
 mod text;
 
 use crate::model::{Composition, Content, Element};
+use crate::video::VideoPlayer;
 use anyhow::{anyhow, Context, Result};
 use fontdb::Database;
 use frame_state::FrameState;
@@ -24,7 +25,6 @@ use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::sync::Arc;
 use text::{FontStore, TextBlock, TextRun};
-use crate::video::VideoPlayer;
 
 #[derive(Default, Debug)]
 pub struct RenderStats {
@@ -201,7 +201,12 @@ impl<'a> Renderer<'a> {
             probe: None,
             layer_depth: 0,
             layer_shift: (0.0, 0.0),
-            layer_clip: [f32::NEG_INFINITY, f32::NEG_INFINITY, f32::INFINITY, f32::INFINITY],
+            layer_clip: [
+                f32::NEG_INFINITY,
+                f32::NEG_INFINITY,
+                f32::INFINITY,
+                f32::INFINITY,
+            ],
         })
     }
 

@@ -1,7 +1,9 @@
 //! Safe-zone and caption-zone checks: findings, opt-outs, and 9:16 versus other frames.
 mod common;
 
-use aether_motion::agent::zones::{check_zones, default_zones, parse_caption_zone, Zone, ZoneOptions};
+use aether_motion::agent::zones::{
+    check_zones, default_zones, parse_caption_zone, Zone, ZoneOptions,
+};
 use common::scratch;
 use serde_json::Value;
 
@@ -59,15 +61,29 @@ fn text_in_the_bottom_ui_band_is_reported_with_platforms_and_edges() {
         .iter()
         .map(|v| v.as_str().unwrap())
         .collect();
-    assert!(platforms.contains(&"reels") && platforms.contains(&"shorts"), "{platforms:?}");
-    assert!(finding["edges"].as_array().unwrap().iter().any(|e| e == "bottom"));
+    assert!(
+        platforms.contains(&"reels") && platforms.contains(&"shorts"),
+        "{platforms:?}"
+    );
+    assert!(finding["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|e| e == "bottom"));
     assert_eq!(finding["severity"], "warning");
 }
 
 #[test]
 fn opt_out_attribute_silences_text_and_descendants() {
-    let own = project(1080, 1920, &text("low", 1500, "data-layout-allow-safe-zone"));
-    assert!(check_zones(&own, &options(default_zones(1080, 1920))).unwrap().findings.is_empty());
+    let own = project(
+        1080,
+        1920,
+        &text("low", 1500, "data-layout-allow-safe-zone"),
+    );
+    assert!(check_zones(&own, &options(default_zones(1080, 1920)))
+        .unwrap()
+        .findings
+        .is_empty());
 
     let wrapped = project(
         1080,
@@ -77,7 +93,10 @@ fn opt_out_attribute_silences_text_and_descendants() {
             text("low", 1500, "")
         ),
     );
-    assert!(check_zones(&wrapped, &options(default_zones(1080, 1920))).unwrap().findings.is_empty());
+    assert!(check_zones(&wrapped, &options(default_zones(1080, 1920)))
+        .unwrap()
+        .findings
+        .is_empty());
 }
 
 #[test]
@@ -89,7 +108,10 @@ fn platform_zones_skip_non_vertical_frames_but_standard_applies() {
     let skipped = check_zones(&path, &options(vec![Zone::Tiktok])).unwrap();
     assert!(skipped.findings.is_empty() && skipped.notes[0].contains("9:16"));
     let standard = check_zones(&path, &options(default_zones(1920, 1080))).unwrap();
-    assert_eq!(codes(&standard), [("outside_safe_zone".into(), "edge".into())]);
+    assert_eq!(
+        codes(&standard),
+        [("outside_safe_zone".into(), "edge".into())]
+    );
     assert_eq!(standard.findings[0]["platforms"][0], "standard");
 }
 
@@ -101,12 +123,23 @@ fn caption_zone_flags_text_in_the_band_unless_allowed() {
         caption: Some(zone),
         times: vec![1.0],
     };
-    let path = project(1080, 1920, &(text("title", 1500, "") + &text("top", 300, "")));
+    let path = project(
+        1080,
+        1920,
+        &(text("title", 1500, "") + &text("top", 300, "")),
+    );
     let report = check_zones(&path, &opts).unwrap();
-    assert_eq!(codes(&report), [("caption_zone_collision".into(), "title".into())]);
+    assert_eq!(
+        codes(&report),
+        [("caption_zone_collision".into(), "title".into())]
+    );
     assert!(report.caption_errors);
 
-    let allowed = project(1080, 1920, &text("title", 1500, "data-layout-allow-caption-zone"));
+    let allowed = project(
+        1080,
+        1920,
+        &text("title", 1500, "data-layout-allow-caption-zone"),
+    );
     assert!(check_zones(&allowed, &opts).unwrap().findings.is_empty());
 }
 
@@ -135,9 +168,15 @@ fn generated_caption_words_collapse_into_one_finding_for_the_host() {
         },
     )
     .unwrap();
-    assert_eq!(codes(&report), [("outside_safe_zone".into(), "subs".into())]);
+    assert_eq!(
+        codes(&report),
+        [("outside_safe_zone".into(), "subs".into())]
+    );
     let first: &Value = &report.findings[0];
-    assert!((first["time"].as_f64().unwrap() - 0.4).abs() < 1e-9, "reported at the first time seen");
+    assert!(
+        (first["time"].as_f64().unwrap() - 0.4).abs() < 1e-9,
+        "reported at the first time seen"
+    );
 }
 
 #[test]
