@@ -5,6 +5,7 @@
 <p align="center">
   <a href="https://github.com/ferxalb/aether-hyperframes/actions/workflows/ci.yml"><img src="https://github.com/ferxalb/aether-hyperframes/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/ferxalb/aether-hyperframes/releases"><img src="https://img.shields.io/github/v/release/ferxalb/aether-hyperframes?style=flat" alt="Release"></a>
+  <a href="https://skills.sh/ferxalb/aether-motion"><img src="https://skills.sh/b/ferxalb/aether-motion" alt="skills.sh installs"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/built%20with-Rust-orange?logo=rust" alt="Rust">
   <img src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey" alt="Platforms">
