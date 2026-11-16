@@ -210,10 +210,16 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
             bail!("fade-in + fade-out exceeds the clip duration");
         }
         let clip_len = p.element.end - p.element.start;
-        let label = p.element.id.as_deref().unwrap_or("element with no id");
+        let label = p
+            .element
+            .id
+            .clone()
+            .unwrap_or_else(|| "element with no id".to_string());
+        let label = label.as_str();
         let rest = p.element.motion.base;
+        let filter_rest = filter_base(&p.element.style);
         if let Some(spec) = &p.animation {
-            p.element.motion = build_motion(spec, rest, clip_len)
+            p.element.motion = build_motion(spec, rest, filter_rest, clip_len)
                 .with_context(|| format!("CSS animation on {label}"))?;
         } else if !p.keyframes.is_empty() {
             if p.keyframes
@@ -222,7 +228,7 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
             {
                 bail!("data-hf-keyframes exceeds the duration of {label}");
             }
-            p.element.motion = motion_from_keyframes(rest, &p.keyframes);
+            p.element.motion = motion_from_keyframes(rest, filter_rest, &p.keyframes);
         } else if !p.camera.is_empty() {
             if idx == 0 {
                 bail!("data-hf-camera cannot be on the root; add a container inside it");
@@ -235,6 +241,8 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
             }
             p.element.motion = motion_from_camera(rest, &p.camera);
         }
+        order_animated_filters(&mut p.element, idx == 0)
+            .with_context(|| format!("animated filter on {label}"))?;
         if idx == 0 {
             let style = &mut p.element.style;
             if style.filter_blur > 0.0 {
@@ -337,6 +345,7 @@ fn check_blend_isolation(elements: &[crate::model::Element]) -> Result<()> {
             let ancestor = &elements[idx];
             let style = &ancestor.style;
             let layered = style.overflow_hidden
+                || !ancestor.motion.filter.is_static()
                 || style.rotate != 0.0
                 || ancestor.motion.base.rotate != 0.0
                 || !ancestor.motion.rotate.0.is_empty()
@@ -357,6 +366,52 @@ fn check_blend_isolation(elements: &[crate::model::Element]) -> Result<()> {
                 );
             }
             parent = ancestor.parent;
+        }
+    }
+    Ok(())
+}
+
+/// Resting amount of each animatable filter channel: the static `filter` value, else neutral.
+fn filter_base(style: &crate::model::Style) -> [f32; 8] {
+    use crate::model::FilterChannel;
+    let mut base = FilterChannel::ALL.map(FilterChannel::neutral);
+    base[FilterChannel::Blur.index()] = style.filter_blur;
+    for &filter in &style.filter_colors {
+        if let Some(channel) = FilterChannel::of(filter) {
+            base[channel.index()] = FilterChannel::amount(filter);
+        }
+    }
+    base
+}
+
+/// Checks an element's animated filter channels and lists those its static `filter` lacks (they
+/// apply after the static functions, in `FilterChannel::ALL` order).
+fn order_animated_filters(element: &mut crate::model::Element, root: bool) -> Result<()> {
+    use crate::model::FilterChannel;
+    let filter = &mut element.motion.filter;
+    if filter.is_static() {
+        return Ok(());
+    }
+    if root {
+        bail!("filters cannot be animated on the root; animate a full-size container inside it");
+    }
+    for channel in FilterChannel::ALL.into_iter().skip(1) {
+        if !filter.is_animated(channel) {
+            continue;
+        }
+        let listed = element
+            .style
+            .filter_colors
+            .iter()
+            .filter(|&&f| FilterChannel::of(f) == Some(channel))
+            .count();
+        match listed {
+            0 => filter.appended.push(channel),
+            1 => {}
+            _ => bail!(
+                "{} is animated but appears {listed} times in the static filter; list it once",
+                channel.key()
+            ),
         }
     }
     Ok(())

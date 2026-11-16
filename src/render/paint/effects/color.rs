@@ -162,6 +162,18 @@ impl ColorChain {
         (rgb, alpha)
     }
 
+    /// Recolors one premultiplied texel (channels and alpha in 0..=255, alpha above 0).
+    #[inline]
+    pub(in crate::render) fn recolor(&self, [r, g, b, a]: [f32; 4]) -> [f32; 4] {
+        let unpremultiply = |v: f32| (v / a).clamp(0.0, 1.0);
+        let ([cr, cg, cb], alpha) = self.apply(
+            [unpremultiply(r), unpremultiply(g), unpremultiply(b)],
+            a / 255.0,
+        );
+        let scale = alpha * 255.0;
+        [cr * scale, cg * scale, cb * scale, scale]
+    }
+
     /// For chains made only of channel-wise steps, the 8-bit output of every 8-bit input value.
     fn lut(&self) -> Option<[[u8; 256]; 3]> {
         if !self.steps.iter().all(Step::is_channelwise) {

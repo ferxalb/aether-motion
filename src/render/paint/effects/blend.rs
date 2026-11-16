@@ -3,9 +3,13 @@
 //! Separable blend functions follow W3C Compositing and Blending Level 1 in sRGB space. With an
 //! opaque backdrop the result is `(1 - αs) * Cb + αs * B(Cb, Cs)`; `plus-lighter` adds the
 //! premultiplied source and clamps. `normal` keeps the exact rounding of plain source-over.
+//! Texels come from blurred planes or straight from the two drawing passes (`Texels`), with
+//! identical arithmetic either way.
 
 use crate::model::BlendMode;
 use crate::render::geometry::PixelRect;
+use crate::render::paint::clip::premultiplied_pixel;
+use crate::render::paint::effects::color::ColorChain;
 use crate::render::paint::float_ops::round_to_u8;
 
 fn hard_light(cb: f32, cs: f32) -> f32 {
@@ -53,9 +57,67 @@ fn color_burn(cb: f32, cs: f32) -> f32 {
 /// A premultiplied layer: four planes (red, green, blue, alpha, each 0..=255) of `width` columns
 /// whose top-left pixel sits at `origin` in frame pixels.
 pub(in crate::render) struct Layer<'p> {
-    pub(in crate::render) planes: &'p [Vec<f32>],
+    pub(in crate::render) texels: Texels<'p>,
     pub(in crate::render) width: usize,
     pub(in crate::render) origin: (i32, i32),
+}
+
+/// Where a layer's premultiplied texels come from.
+pub(in crate::render) enum Texels<'p> {
+    /// Four planes (red, green, blue, alpha), after blur or drop shadow.
+    Planes(&'p [Vec<f32>]),
+    /// The black and white drawing passes, recovered and recolored on the fly (no blur or shadow).
+    Passes {
+        black: &'p [u8],
+        white: &'p [u8],
+        colors: &'p ColorChain,
+    },
+}
+
+impl Layer<'_> {
+    /// Replaces `out` with the `count` texels starting at layer index `first`.
+    #[inline(always)]
+    fn fill_row(&self, first: usize, count: usize, out: &mut Vec<[f32; 4]>) {
+        out.clear();
+        let span = first..first + count;
+        match self.texels {
+            Texels::Planes(planes) => {
+                let [r, g, b, a] = planes else {
+                    return;
+                };
+                out.extend(
+                    r[span.clone()]
+                        .iter()
+                        .zip(&g[span.clone()])
+                        .zip(&b[span.clone()])
+                        .zip(&a[span])
+                        .map(|(((&r, &g), &b), &a)| [r, g, b, a]),
+                );
+            }
+            Texels::Passes {
+                black,
+                white,
+                colors,
+            } => {
+                let bytes = span.start * 4..span.end * 4;
+                out.extend(
+                    black[bytes.clone()]
+                        .as_chunks::<4>()
+                        .0
+                        .iter()
+                        .zip(white[bytes].as_chunks::<4>().0)
+                        .map(|(b, w)| {
+                            let texel = premultiplied_pixel(b, w).map(f32::from);
+                            if texel[3] > 0.0 {
+                                colors.recolor(texel)
+                            } else {
+                                texel
+                            }
+                        }),
+                );
+            }
+        }
+    }
 }
 
 /// Composites `layer` onto the opaque RGBA `frame` (`stride` pixels per row) inside `bounds`.
@@ -121,21 +183,14 @@ fn run(
     layer: &Layer,
     pixel: impl Fn([f32; 3], [f32; 3], f32) -> [u8; 3],
 ) {
-    let [r, g, b, alpha] = layer.planes else {
-        return;
-    };
     let (x0, y0) = layer.origin;
     let count = bounds.x1 - bounds.x0;
+    let mut texels = Vec::with_capacity(count);
     for y in bounds.y0..bounds.y1 {
         let first = (y as i32 - y0) as usize * layer.width + (bounds.x0 as i32 - x0) as usize;
-        let span = first..first + count;
+        layer.fill_row(first, count, &mut texels);
         let dest = &mut frame[(y * stride + bounds.x0) * 4..(y * stride + bounds.x1) * 4];
-        let source = r[span.clone()]
-            .iter()
-            .zip(&g[span.clone()])
-            .zip(&b[span.clone()])
-            .zip(&alpha[span]);
-        for (px, (((&sr, &sg), &sb), &sa)) in dest.as_chunks_mut::<4>().0.iter_mut().zip(source) {
+        for (px, &[sr, sg, sb, sa]) in dest.as_chunks_mut::<4>().0.iter_mut().zip(&texels) {
             if sa <= 0.0 {
                 continue;
             }
@@ -156,7 +211,7 @@ mod tests {
             source.iter().map(|&c| vec![f32::from(c) * alpha]).collect();
         planes.push(vec![alpha * 255.0]);
         let layer = Layer {
-            planes: &planes,
+            texels: Texels::Planes(&planes),
             width: 1,
             origin: (0, 0),
         };

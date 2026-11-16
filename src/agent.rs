@@ -18,6 +18,8 @@ fn fix_hint(message: &str) -> &'static str {
         "use data-hf-counter=<end value> on an empty element, with optional data-hf-counter-from, -duration (0.05 to 10), -delay, -decimals (0 to 6), -prefix, -suffix, -separator, and -easing"
     } else if message.contains("backdrop-filter") {
         "use backdrop-filter: blur(<px>) or none (at most 200px); no other filter functions are supported"
+    } else if message.contains("animated filter") || message.contains("not animatable") {
+        "animate filters with blur, brightness, contrast, saturate, grayscale, sepia, hueRotate, or invert in data-hf-keyframes, or with filter in CSS @keyframes, on a non-root element; list each animated function at most once in the static filter; opacity() and drop-shadow() are not animatable"
     } else if message.contains("mix-blend-mode") {
         "use mix-blend-mode: normal|multiply|screen|overlay|darken|lighten|color-dodge|color-burn|hard-light|soft-light|difference|exclusion|plus-lighter on a non-root element that is not inside overflow: hidden, rotation, a reveal, a wipe, or another filter"
     } else if message.contains("filter") || message.contains("drop-shadow") {
@@ -33,7 +35,7 @@ fn fix_hint(message: &str) -> &'static str {
     } else if message.contains("data-hf-camera") || message.contains("camera keyframe") {
         "use a JSON array of {at, zoom, x, y, easing} on a non-root container; at in local seconds, strictly increasing; zoom between 0.05 and 50"
     } else if message.contains("data-hf-keyframes") {
-        "use a JSON array with at in local seconds, strictly increasing and within the clip; check the indicated field"
+        "use a JSON array of {at, x, y, opacity, easing} plus optional filter amounts blur (0 to 200 px), brightness, contrast, saturate (0 to 100), grayscale, sepia, invert (0 to 1), and hueRotate (degrees); at in local seconds, strictly increasing and within the clip; check the indicated field"
     } else if message.contains("CSS variable") || message.contains("var()") {
         "define --name on :root or an ancestor, or add a fallback: var(--name, value)"
     } else if message.contains("animation") || message.contains("@keyframes") {
@@ -197,6 +199,7 @@ pub fn check(path: &Path) -> Value {
             "rootGrade": c.grade.len(),
             "colorFilters": filters,
             "blendModes": blends,
+            "animatedFilters": c.elements.iter().filter(|e| !e.motion.filter.is_static()).count(),
         });
         let animations: Vec<Value> = c
             .elements

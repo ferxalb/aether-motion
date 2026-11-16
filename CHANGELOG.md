@@ -19,8 +19,12 @@ CLI/MCP output may still change between minor releases.
   `color-dodge`, `color-burn`, `hard-light`, `soft-light`, `difference`, `exclusion`) and `plus-lighter`.
 - `data-motion-blur` on the root: deterministic shutter motion blur with `data-motion-blur-shutter`
   (degrees) and `data-motion-blur-samples` (automatic from the fastest motion when omitted).
-- `check` reports `effects` (motion blur settings, root grade, color filters, and blend modes).
-- `examples/effects.html`.
+- Animated filters: `blur`, `brightness`, `contrast`, `saturate`, `grayscale`, `sepia`, `hueRotate`, and
+  `invert` in `data-hf-keyframes`, and `filter` in CSS `@keyframes`. An animated blur uses a continuous
+  exact-variance kernel, so it eases without steps.
+- `check` reports `effects` (motion blur settings, root grade, color filters, blend modes, and animated
+  filters).
+- `examples/effects.html` and `examples/filter-motion.html`.
 
 ### Changed
 

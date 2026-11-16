@@ -8,20 +8,57 @@
 //! (`color.rs`, on unpremultiplied values), drop shadow (the blurred, offset alpha under the
 //! layer), and finally compositing with the blend function (`blend.rs`) over the frame.
 //!
+//! Animated filters read their amounts from the element's `FrameState`. An animated blur uses the
+//! continuous kernel of `exact_blur.rs`; a static blur keeps the whole-radius box kernel. Animated
+//! color functions replace the amounts of the same functions in the static `filter` and the others
+//! follow in `FilterChannel::ALL` order, so a chain that is neutral at some instant skips the layer.
+//!
 //! Non-normal blend modes need the real backdrop, so they are rejected inside another offscreen
 //! layer (`overflow: hidden`, rotation, reveals, or another filter), where only a black or white
 //! stand-in is behind the element.
 
 pub(in crate::render) mod blend;
 pub(in crate::render) mod color;
+pub(in crate::render) mod exact_blur;
 
-use crate::model::{BlendMode, Color, Shadow};
+use crate::model::{BlendMode, Color, ColorFilter, FilterChannel, Shadow};
 use crate::render::geometry::{clip_pixels, Rect};
 use crate::render::paint::backdrop::{blur_plane, box_radius};
 use crate::render::paint::Surface;
 use crate::render::Renderer;
 use anyhow::{bail, Result};
 use color::ColorChain;
+use exact_blur::{blur_plane_exact, ExactBox};
+
+/// Blur kernel of one draw: the static whole-radius box, or the continuous one when animated.
+#[derive(Clone, Copy)]
+enum Kernel {
+    Boxes(usize),
+    Exact(ExactBox),
+}
+
+impl Kernel {
+    fn is_none(self) -> bool {
+        matches!(self, Self::Boxes(0))
+    }
+
+    fn reach(self) -> Result<i32> {
+        match self {
+            Self::Boxes(0) => Ok(0),
+            Self::Boxes(r) => reach(r),
+            Self::Exact(pass) => i32::try_from(pass.reach() + 1)
+                .map_err(|_| anyhow::anyhow!("filter: blur reach is too large; use --scale")),
+        }
+    }
+
+    fn apply(self, plane: &mut [f32], width: usize, height: usize) {
+        match self {
+            Self::Boxes(0) => {}
+            Self::Boxes(r) => blur_plane(plane, width, height, r),
+            Self::Exact(pass) => blur_plane_exact(plane, width, height, pass),
+        }
+    }
+}
 
 /// Pixels of padding around the element so the blur can spread past its box (three box passes).
 fn reach(box_r: usize) -> Result<i32> {
@@ -65,12 +102,47 @@ impl LayerShadow {
 impl<'a> Renderer<'a> {
     /// Whether element `idx` needs [`Self::draw_with_effects`] at the given blur `sigma`.
     pub(in crate::render) fn has_effects(&self, idx: usize, sigma: f32) -> bool {
-        let style = &self.composition.elements[idx].style;
+        let element = &self.composition.elements[idx];
+        let style = &element.style;
         idx != 0
             && (sigma > 0.0
                 || !style.filter_colors.is_empty()
                 || style.drop_shadow.is_some()
-                || style.blend != BlendMode::Normal)
+                || style.blend != BlendMode::Normal
+                || !element.motion.filter.is_static())
+    }
+
+    /// The element's `filter: blur()` radius (composition px) at the current instant.
+    pub(in crate::render) fn filter_blur(&self, idx: usize) -> f32 {
+        let element = &self.composition.elements[idx];
+        if element.motion.filter.is_animated(FilterChannel::Blur) {
+            self.current[idx].filters[FilterChannel::Blur.index()]
+        } else {
+            element.style.filter_blur
+        }
+    }
+
+    /// The element's color functions at the current instant (see the module notes for the order).
+    fn color_filters(&self, idx: usize) -> Vec<ColorFilter> {
+        let element = &self.composition.elements[idx];
+        let motion = &element.motion.filter;
+        if motion.is_static() {
+            return element.style.filter_colors.clone();
+        }
+        let values = self.current[idx].filters;
+        let animated = |channel: FilterChannel| {
+            motion
+                .is_animated(channel)
+                .then(|| channel.color(values[channel.index()]))
+                .flatten()
+        };
+        element
+            .style
+            .filter_colors
+            .iter()
+            .map(|&f| FilterChannel::of(f).and_then(animated).unwrap_or(f))
+            .chain(motion.appended.iter().filter_map(|&c| animated(c)))
+            .collect()
     }
 
     /// Draws element `idx` (placed in `rect`) through its `filter` stages and `mix-blend-mode`;
@@ -90,10 +162,18 @@ impl<'a> Renderer<'a> {
                 self.label(idx)
             );
         }
-        let colors = ColorChain::new(&style.filter_colors);
+        let colors = ColorChain::new(&self.color_filters(idx));
         let k = self.scale;
-        let box_r = box_radius(sigma);
-        if box_r == 0
+        let kernel = if self.composition.elements[idx]
+            .motion
+            .filter
+            .is_animated(FilterChannel::Blur)
+        {
+            ExactBox::new(sigma).map_or(Kernel::Boxes(0), Kernel::Exact)
+        } else {
+            Kernel::Boxes(box_radius(sigma))
+        };
+        if kernel.is_none()
             && colors.is_identity()
             && style.drop_shadow.is_none()
             && blend == BlendMode::Normal
@@ -105,7 +185,9 @@ impl<'a> Renderer<'a> {
             .map(|s| LayerShadow::new(s, k * cumulative))
             .transpose()?;
         let shadow_pad = shadow.as_ref().map_or(Ok(0), LayerShadow::reach)?;
-        let pad = reach(box_r)?
+        let pad = kernel
+            .reach()?
+            .max(1)
             .checked_add(shadow_pad)
             .ok_or_else(|| anyhow::anyhow!("filter: reach is too large; use --scale"))?;
         // Shadows can extend past the box, so pad generously; stay near the frame to bound memory.
@@ -141,17 +223,58 @@ impl<'a> Renderer<'a> {
             y: rect.y - oy,
             ..rect
         };
+        // Layers of the static blur alone keep their own empty caches, so their output stays as it
+        // was; the other effects share the frame's caches, frozen so both passes agree.
+        let share = !(colors.is_identity()
+            && shadow.is_none()
+            && blend == BlendMode::Normal
+            && matches!(kernel, Kernel::Boxes(_)));
+        if share {
+            self.surface.gradient_cache.freeze();
+            self.surface.shadow_cache.freeze();
+        }
         let mut layers: Vec<Vec<u8>> = Vec::with_capacity(2);
         let mut outcome = Ok(());
         for (pass, backdrop) in [Color::BLACK, Color::WHITE].into_iter().enumerate() {
-            let layer = Surface::filled(lw as u32, lh as u32, k, backdrop);
+            let mut layer = Surface::filled(lw as u32, lh as u32, k, backdrop);
+            if share {
+                layer.take_caches(&mut self.surface);
+            }
             let outer = std::mem::replace(&mut self.surface, layer);
             let saved = self.begin_layer_pass(pass, (ox, oy), None);
             outcome = outcome.and_then(|()| self.draw_posed(idx, shifted, cumulative));
             self.end_layer_pass(saved);
-            layers.push(std::mem::replace(&mut self.surface, outer).pixels);
+            let mut layer = std::mem::replace(&mut self.surface, outer);
+            if share {
+                self.surface.take_caches(&mut layer);
+            }
+            layers.push(layer.pixels);
+        }
+        if share {
+            self.surface.gradient_cache.thaw();
+            self.surface.shadow_cache.thaw();
         }
         outcome?;
+        let Some(bounds) = clip_pixels((self.surface.width, self.surface.height), x0, y0, x1, y1)
+        else {
+            return Ok(());
+        };
+        let stride = self.surface.width as usize;
+        if kernel.is_none() && shadow.is_none() {
+            // Color functions and blending only: recover, recolor, and composite in one pass.
+            self.surface.mark_painted(bounds);
+            let layer = blend::Layer {
+                texels: blend::Texels::Passes {
+                    black: &layers[0],
+                    white: &layers[1],
+                    colors: &colors,
+                },
+                width: lw,
+                origin: (x0, y0),
+            };
+            blend::composite_layer(blend, &mut self.surface.pixels, stride, bounds, &layer);
+            return Ok(());
+        }
         // Zeroed allocations come from the allocator already cleared; zips avoid bounds checks.
         let mut planes = vec![vec![0.0_f32; lw * lh]; 4];
         if let [r, g, b, a] = &mut planes[..] {
@@ -171,9 +294,9 @@ impl<'a> Renderer<'a> {
             }
         }
         drop(layers);
-        if box_r > 0 {
+        if !kernel.is_none() {
             for plane in &mut planes {
-                blur_plane(plane, lw, lh, box_r);
+                kernel.apply(plane, lw, lh);
             }
         }
         if !colors.is_identity() {
@@ -182,17 +305,12 @@ impl<'a> Renderer<'a> {
         if let Some(shadow) = &shadow {
             apply_drop_shadow(&mut planes, lw, lh, shadow);
         }
-        let Some(bounds) = clip_pixels((self.surface.width, self.surface.height), x0, y0, x1, y1)
-        else {
-            return Ok(());
-        };
         self.surface.mark_painted(bounds);
         let layer = blend::Layer {
-            planes: &planes,
+            texels: blend::Texels::Planes(&planes),
             width: lw,
             origin: (x0, y0),
         };
-        let stride = self.surface.width as usize;
         blend::composite_layer(blend, &mut self.surface.pixels, stride, bounds, &layer);
         Ok(())
     }
@@ -235,17 +353,9 @@ fn apply_colors(planes: &mut [Vec<f32>], colors: &ColorChain) {
         return;
     };
     for (((r, g), b), a) in r.iter_mut().zip(g.iter_mut()).zip(b.iter_mut()).zip(a) {
-        if *a <= 0.0 {
-            continue;
+        if *a > 0.0 {
+            [*r, *g, *b, *a] = colors.recolor([*r, *g, *b, *a]);
         }
-        let alpha = *a / 255.0;
-        let unpremultiply = |v: f32| (v / *a).clamp(0.0, 1.0);
-        let ([cr, cg, cb], alpha) = colors.apply(
-            [unpremultiply(*r), unpremultiply(*g), unpremultiply(*b)],
-            alpha,
-        );
-        let scale = alpha * 255.0;
-        (*r, *g, *b, *a) = (cr * scale, cg * scale, cb * scale, scale);
     }
 }
 

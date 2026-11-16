@@ -58,6 +58,8 @@ pub(in crate::parse) struct CssFrame {
     /// `transform` as (translate x, translate y, scale).
     pub(in crate::parse) transform: Option<(f32, f32, f32, f32)>,
     pub(in crate::parse) opacity: Option<f32>,
+    /// `filter` amounts listed at this keyframe, by [`crate::model::FilterChannel::index`].
+    pub(in crate::parse) filter: Option<[Option<f32>; 8]>,
     pub(in crate::parse) easing: Option<Easing>,
 }
 

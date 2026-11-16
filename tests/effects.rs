@@ -169,3 +169,211 @@ fn motion_blur_smears_movement_and_keeps_still_frames_sharp() {
     );
     assert!(message.contains("2 to 64"), "{message}");
 }
+
+/// A 60x60 box of `color` at (20, 20) with the given extra style and attributes, over black.
+fn animated_box(color: &str, style: &str, attrs: &str) -> String {
+    format!(
+        r#"<div {BOX} style="position:absolute; left:20px; top:20px; width:60px; height:60px; background:{color}; {style}" {attrs}></div>"#
+    )
+}
+
+#[test]
+fn keyframed_color_filters_interpolate_with_easing() {
+    let body = animated_box(
+        "#646464",
+        "",
+        r#"data-hf-keyframes='[{"at":0,"brightness":0},{"at":1,"brightness":2}]'"#,
+    );
+    let root = r#"style="background:#000000""#;
+    // Gray 100 scaled by 0.5, 1, and 1.5; held at 2 after the last keyframe.
+    assert_eq!(
+        pixels("fx_kf_b1", root, &body, 0.25, &[(50, 50)])[0],
+        [50, 50, 50]
+    );
+    assert_eq!(
+        pixels("fx_kf_b2", root, &body, 0.5, &[(50, 50)])[0],
+        [100, 100, 100]
+    );
+    assert_eq!(
+        pixels("fx_kf_b3", root, &body, 0.75, &[(50, 50)])[0],
+        [150, 150, 150]
+    );
+    assert_eq!(
+        pixels("fx_kf_b4", root, &body, 1.5, &[(50, 50)])[0],
+        [200, 200, 200]
+    );
+}
+
+#[test]
+fn animated_functions_follow_the_static_list() {
+    // Static invert(1) comes first; the animated brightness absent from it is applied after.
+    let body = animated_box(
+        "#333333",
+        "filter: invert(1)",
+        r#"data-hf-keyframes='[{"at":0,"brightness":0.5},{"at":1}]'"#,
+    );
+    let px = pixels(
+        "fx_kf_order",
+        r#"style="background:#000000""#,
+        &body,
+        0.5,
+        &[(50, 50)],
+    );
+    assert_eq!(px[0], [102, 102, 102], "invert 51 -> 204, then halve");
+    // An animated function listed statically keeps its place and takes the animated amount.
+    let body = animated_box(
+        "#333333",
+        "filter: brightness(1) invert(1)",
+        r#"data-hf-keyframes='[{"at":0,"brightness":0.5},{"at":1}]'"#,
+    );
+    let px = pixels(
+        "fx_kf_in_place",
+        r#"style="background:#000000""#,
+        &body,
+        0.5,
+        &[(50, 50)],
+    );
+    assert_eq!(px[0], [230, 230, 230], "halve 51 -> 25.5, then invert");
+}
+
+#[test]
+fn animated_blur_changes_continuously() {
+    let body = animated_box(
+        "#ffffff",
+        "",
+        r#"data-hf-keyframes='[{"at":0,"blur":0},{"at":2,"blur":3}]'"#,
+    );
+    let root = r#"style="background:#000000""#;
+    let mut previous = 0;
+    // One pixel outside the left edge: more light leaks out as the blur grows, frame after frame
+    // (blur 0.3 to 2.85 px; a whole-radius kernel would repeat values here).
+    for step in 2..=19 {
+        let time = f64::from(step) * 0.1;
+        let value = pixels(&format!("fx_kf_blur{step}"), root, &body, time, &[(19, 50)])[0][0];
+        assert!(value > previous, "t={time}: {value} after {previous}");
+        previous = value;
+    }
+    // At blur 0 the element is drawn directly, exactly like no filter.
+    let sharp = pixels("fx_kf_blur0", root, &body, 0.0, &[(19, 50), (20, 50)]);
+    assert_eq!(sharp, vec![[0, 0, 0], [255, 255, 255]]);
+}
+
+#[test]
+fn css_keyframes_animate_filter_lists() {
+    let html = format!(
+        r#"<style>@keyframes g {{ from {{ filter: grayscale(0) }} to {{ filter: blur(0px) grayscale(1) }} }} .a {{ animation: g 1s linear forwards }}</style>{}"#,
+        animated_box("#ff0000", "", "").replacen(r#"class="clip""#, r#"class="clip a""#, 1)
+    );
+    let root = r#"style="background:#000000""#;
+    let start = pixels("fx_css_f0", root, &html, 0.0, &[(50, 50)])[0];
+    let middle = pixels("fx_css_f1", root, &html, 0.5, &[(50, 50)])[0];
+    let end = pixels("fx_css_f2", root, &html, 1.5, &[(50, 50)])[0];
+    assert_eq!(start, [255, 0, 0]);
+    assert!(
+        middle[0] < 255 && middle[1] > 0 && middle[1] < end[1],
+        "{middle:?}"
+    );
+    assert_eq!(end, [54, 54, 54]);
+}
+
+#[test]
+fn invalid_filter_animations_are_rejected() {
+    let cases = [
+        (
+            "",
+            animated_box("#fff", "", r#"data-hf-keyframes='[{"at":0,"blur":300}]'"#),
+            "out of range",
+        ),
+        (
+            "",
+            animated_box(
+                "#fff",
+                "filter: sepia(1) sepia(0.5)",
+                r#"data-hf-keyframes='[{"at":0,"sepia":0}]'"#,
+            ),
+            "appears 2 times",
+        ),
+        (
+            r#"data-hf-keyframes='[{"at":0,"blur":2}]'"#,
+            String::new(),
+            "root",
+        ),
+        (
+            "",
+            format!(
+                r#"<style>@keyframes s {{ to {{ filter: drop-shadow(0 0 4px red) }} }} .a {{ animation: s 1s }}</style>{}"#,
+                animated_box("#fff", "", "").replacen(r#"class="clip""#, r#"class="clip a""#, 1)
+            ),
+            "not animatable",
+        ),
+    ];
+    for (i, (root, body, expected)) in cases.iter().enumerate() {
+        let message = error(&format!("fx_kf_err{i}"), root, body);
+        assert!(message.contains(expected), "{expected}: {message}");
+    }
+}
+
+#[test]
+fn single_pass_color_path_matches_the_plane_path() {
+    // A transparent drop shadow forces the plane path without changing any pixel.
+    let points: Vec<(usize, usize)> = (0..100)
+        .flat_map(|y| (0..100).map(move |x| (x, y)))
+        .collect();
+    for (i, style) in [
+        "filter: sepia(0.7) hue-rotate(40deg) contrast(1.3); border-radius: 18px",
+        "filter: invert(0.4) saturate(2); mix-blend-mode: overlay",
+        "filter: grayscale(0.5) opacity(0.6); mix-blend-mode: multiply",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let body = |extra: &str| {
+            format!(
+                r#"<div {BOX} style="position:absolute; left:10px; top:15px; width:70px; height:60px; background: linear-gradient(90deg, #ff3366, #33ddff); {style}{extra}"></div>"#
+            )
+        };
+        let root = r#"style="background: linear-gradient(180deg, #202040, #c0a060)""#;
+        let fused = pixels(&format!("fx_fused{i}"), root, &body(""), 0.0, &points);
+        // Append the shadow to the end of the `filter` value (the first `;` after it).
+        let plain = body("");
+        let at = plain.find("filter: ").unwrap();
+        let end = at + plain[at..].find(';').unwrap();
+        let planes_body = format!(
+            "{} drop-shadow(0 0 0 transparent){}",
+            &plain[..end],
+            &plain[end..]
+        );
+        assert_ne!(planes_body, body(""));
+        let planes = pixels(&format!("fx_planes{i}"), root, &planes_body, 0.0, &points);
+        assert_eq!(fused, planes, "{style}");
+    }
+}
+
+#[test]
+fn shared_tile_caches_keep_layers_consistent_across_frames() {
+    // The box moves 1 px per frame (10 fps), so its gradient keeps one size and is cached from the
+    // second frame on, inside the effect layer, while the first frame draws it directly.
+    let html = format!(
+        r#"<div id="root" data-composition-id="x" data-width="100" data-height="100" data-duration="1" style="background:#102030"><div {BOX} style="position:absolute; left:10px; top:10px; width:60px; height:60px; background: radial-gradient(ellipse farthest-side at 40% 40%, rgba(255, 90, 140, 0.9), rgba(111, 141, 255, 0.35) 60%, rgba(111, 141, 255, 0)); filter: hue-rotate(30deg) contrast(1.2)" data-hf-keyframes='[{{"at":0,"x":0}},{{"at":1,"x":10}}]'></div></div>"#
+    );
+    let html = html.replace(r#"data-duration="2""#, r#"data-duration="1""#);
+    let path = scratch("fx_shared_cache").join("c.html");
+    std::fs::write(&path, html).unwrap();
+    let composition = parse_file(&path).unwrap();
+    let mut sequential = Renderer::new(&composition, 1.0).unwrap();
+    for frame in 0..6 {
+        let warm = sequential.render_frame(frame, 10).unwrap().to_vec();
+        let cold = Renderer::new(&composition, 1.0)
+            .unwrap()
+            .render_frame(frame, 10)
+            .unwrap()
+            .to_vec();
+        let worst = warm
+            .iter()
+            .zip(&cold)
+            .map(|(a, b)| a.abs_diff(*b))
+            .max()
+            .unwrap();
+        assert!(worst <= 1, "frame {frame}: cached layer differs by {worst}");
+    }
+}

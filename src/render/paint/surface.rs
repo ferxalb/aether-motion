@@ -62,6 +62,12 @@ impl Surface {
         self.painted = Some(self.painted.map_or(rect, |painted| painted.union(rect)));
     }
 
+    /// Moves the gradient and shadow tile caches of `other` into this surface (leaving empty ones).
+    pub(in crate::render) fn take_caches(&mut self, other: &mut Self) {
+        self.gradient_cache = std::mem::take(&mut other.gradient_cache);
+        self.shadow_cache = std::mem::take(&mut other.shadow_cache);
+    }
+
     /// Marks every pixel as painted, after a pass that rewrote the whole frame.
     pub(in crate::render) fn mark_all_painted(&mut self) {
         self.mark_painted(PixelRect {

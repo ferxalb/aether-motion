@@ -695,3 +695,37 @@ passes recover premultiplied alpha), which the existing filter blur shares.
 Motion blur multiplies drawing by the sample count on frames where something moves: the same 20 frames
 take 16.3–17.0 s with `data-motion-blur-samples="8"` and 34.1–34.5 s with automatic samples (the puck
 travels fast enough to ask for more), against 2.6–2.7 s sharp. Static frames are drawn once.
+
+## Animated filters (2026-11-16)
+
+Same settings as the section above (`bench --threads 1`, 1080p, 30 fps, release build).
+
+Existing output: the 111 half-scale PNGs of every example and benchmark composition (frames 0, 20,
+and 50) and three complete MP4s (`aether-intro-landscape`, `glass`, `premium-promo`, half scale,
+sequential frames with warm caches, including static blur layers) are byte-identical to the build
+before the effects work. `examples/effects.html` frames 0, 10, 18, 30, 60, and 89 are byte-identical to
+the first effects build, so the optimizations below did not change the plane path either. Instruction
+counts for `premium-promo.html` frames 280–282: 3.056 G before, 3.051 G after (the larger
+`FrameState`, with eight filter amounts per element, costs nothing measurable); wall-clock medians of
+five alternating runs differed by up to 6% in either direction, which is noise on this machine.
+
+`examples/filter-motion.html` (`--frame 18 --count 20`: a full-frame scene animating `saturate` and
+`brightness`, a CSS `hue-rotate` loop on a radial orb, and a blurred title focusing in):
+
+| Step | Seconds (three runs) |
+| --- | --- |
+| First animated-filter build | 4.893 / 4.783 / 4.757 |
+| Color-only layers recovered, recolored, and composited in one pass instead of through four `f32` planes (33 MiB per full-frame layer) | 4.339 / 4.434 / 4.438 |
+| Effect layers share the frame's gradient and shadow tile caches, frozen during both passes | 2.526 / 2.568 / 2.629 |
+
+A callgrind profile of the second step put about 45% of instructions in gradient rasterization inside
+the layers: every layer was a fresh `Surface` with empty tile caches, so a full-frame gradient was
+sampled twice per frame (black and white passes). Sharing the caches needs both passes to agree,
+because the cached tile and the direct path may differ by one level; `TileCache::freeze` keeps the
+decisions identical (a unit test replays two passes), and an integration test renders six frames with
+one renderer and with a fresh renderer per frame and finds at most one level of difference, the same
+tolerance as the frame's own cache. Static-blur-only layers keep fresh caches so existing output does
+not change. A test also checks that the single-pass color path and the plane path give identical pixels.
+
+`examples/effects.html` without motion blur (`--frame 10 --count 20`) went from 2.6–2.7 s to
+1.83–2.06 s with the same two changes.

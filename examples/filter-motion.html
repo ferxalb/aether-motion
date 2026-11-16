@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Animated filters</title>
+<style>
+  #root { background: #090b14; }
+  .clip { position: absolute; }
+  #scene { left: 0; top: 0; width: 1920px; height: 1080px; background: linear-gradient(135deg, #ff7a59 0%, #6b5bff 55%, #19c2a0 100%); }
+  #orb { left: 1240px; top: 300px; width: 480px; height: 480px; border-radius: 240px; background: radial-gradient(circle farthest-side at 35% 35%, #ffe08a, #ff5d8f 60%, #7a3cff); animation: hue 4s linear infinite; }
+  @keyframes hue { from { filter: hue-rotate(0deg) } to { filter: hue-rotate(360deg) } }
+  #logo { left: 300px; top: 380px; width: 320px; height: 320px; filter: drop-shadow(0 20px 28px rgba(0, 0, 0, 0.5)); }
+  .title { left: 240px; top: 760px; width: 1480px; color: #ffffff; font-size: 96px; font-weight: 800; text-align: left; }
+</style>
+</head>
+<body>
+<!-- The scene opens desaturated and dark, then comes to full color; the title focuses in from a
+     blur; the orb cycles its hue with a CSS animation; the logo flashes at 2 s. -->
+<div id="root" data-composition-id="filter-motion" data-width="1920" data-height="1080" data-duration="4">
+  <div id="scene" class="clip" data-start="0" data-duration="4" data-track-index="0"
+       data-hf-keyframes='[{"at":0,"saturate":0,"brightness":0.4},{"at":1.4,"saturate":1,"brightness":1,"easing":"ease-in-out-cubic"}]'></div>
+  <div id="orb" class="clip" data-start="0" data-duration="4" data-track-index="1"></div>
+  <img id="logo" class="clip" src="assets/logo.svg" data-start="0" data-duration="4" data-track-index="2"
+       data-hf-keyframes='[{"at":1.9,"brightness":1},{"at":2.05,"brightness":2.2,"easing":"ease-out"},{"at":2.6,"brightness":1,"easing":"ease-in-out"}]'>
+  <div class="clip title" data-start="0.6" data-duration="3.4" data-track-index="3"
+       data-hf-keyframes='[{"at":0,"blur":24,"opacity":0,"y":30},{"at":0.9,"blur":0,"opacity":1,"y":0,"easing":"ease-out-expo"}]'>Filters that move</div>
+</div>
+</body>
+</html>

@@ -68,7 +68,7 @@ impl<'a> Renderer<'a> {
             rect.y = cy - rect.h / 2.0;
             cumulative *= state.scale;
         }
-        let sigma = self.composition.elements[idx].style.filter_blur * cumulative * self.scale;
+        let sigma = self.filter_blur(idx) * cumulative * self.scale;
         if self.has_effects(idx, sigma) {
             return self.draw_with_effects(idx, rect, cumulative, sigma);
         }

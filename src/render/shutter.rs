@@ -5,8 +5,9 @@
 //! channel with rounding. Without `data-motion-blur-samples`, the count follows the largest travel
 //! of any element across the window: about one sample per 2 output px, from 8 to 64. Sample times depend only on the frame time and fps, so output stays
 //! deterministic. The root's color grade, vignette, and grain run once on the averaged frame.
-//! When every sample has the same element states (nothing moves inside the window) the frame is
-//! drawn once, sharp, and the identical-frame shortcut still applies.
+//! When nothing moves inside the window (no visible element changes position, scale, rotation, or
+//! reveal; fades, filters, and video frames do not count as movement) the frame is drawn once at the
+//! frame time, and the identical-frame shortcut still applies.
 //!
 //! Sums are kept in 16-bit channels (at most 64 samples of 255), so a 4K frame needs 66 MiB.
 
@@ -14,6 +15,29 @@ use super::frame_state::FrameState;
 use super::Renderer;
 use crate::model::MotionBlur;
 use anyhow::Result;
+
+/// Whether any element visible in two samples has a different geometry in them.
+fn moves(samples: &[Vec<FrameState>]) -> bool {
+    let Some(first) = samples.first() else {
+        return false;
+    };
+    (0..first.len()).any(|i| {
+        let mut visible = samples.iter().map(|s| s[i]).filter(|s| s.alpha > 0.0);
+        let Some(reference) = visible.next() else {
+            return false;
+        };
+        visible.any(|s| {
+            (s.x, s.y, s.scale, s.rotate, s.reveal)
+                != (
+                    reference.x,
+                    reference.y,
+                    reference.scale,
+                    reference.rotate,
+                    reference.reveal,
+                )
+        })
+    })
+}
 
 /// Largest distance (composition px) any visible element travels between two state sets.
 /// Rotation and scale count as the movement of a point a quarter of the frame's short side away.
@@ -63,7 +87,7 @@ impl<'a> Renderer<'a> {
             self.sample_states(t);
             samples.push(self.current.clone());
         }
-        if samples.windows(2).all(|pair| pair[0] == pair[1]) {
+        if !moves(&samples) {
             return self.render_time(time);
         }
         let len = self.surface.pixels.len();
@@ -106,6 +130,18 @@ mod tests {
             rotate,
             ..FrameState::default()
         }
+    }
+
+    #[test]
+    fn only_geometry_counts_as_movement() {
+        let faded = FrameState {
+            alpha: 0.5,
+            filters: [3.0; 8],
+            ..at(10.0, 0.0)
+        };
+        let hidden = FrameState::default();
+        assert!(!moves(&[vec![at(10.0, 0.0)], vec![faded], vec![hidden]]));
+        assert!(moves(&[vec![at(10.0, 0.0)], vec![at(10.0, 5.0)]]));
     }
 
     #[test]

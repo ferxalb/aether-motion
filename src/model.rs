@@ -123,6 +123,112 @@ pub enum ColorFilter {
     Opacity(f32),
 }
 
+/// A `filter` function whose amount can be animated, in the order used for animated functions that
+/// the static `filter` does not list. `HueRotate` is in degrees and `Blur` in px; the rest are amounts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FilterChannel {
+    Blur,
+    Brightness,
+    Contrast,
+    Saturate,
+    Grayscale,
+    Sepia,
+    HueRotate,
+    Invert,
+}
+
+impl FilterChannel {
+    pub const ALL: [Self; 8] = [
+        Self::Blur,
+        Self::Brightness,
+        Self::Contrast,
+        Self::Saturate,
+        Self::Grayscale,
+        Self::Sepia,
+        Self::HueRotate,
+        Self::Invert,
+    ];
+
+    /// Index into per-channel arrays (`FilterMotion::tracks`, values).
+    pub fn index(self) -> usize {
+        self as usize
+    }
+
+    /// The amount that leaves pixels unchanged.
+    pub fn neutral(self) -> f32 {
+        match self {
+            Self::Brightness | Self::Contrast | Self::Saturate => 1.0,
+            _ => 0.0,
+        }
+    }
+
+    /// Keeps an interpolated amount in the function's valid range (overshooting easings can leave it).
+    pub fn clamp(self, value: f32) -> f32 {
+        match self {
+            Self::Blur => value.clamp(0.0, 200.0),
+            Self::Grayscale | Self::Sepia | Self::Invert => value.clamp(0.0, 1.0),
+            Self::HueRotate => value,
+            Self::Brightness | Self::Contrast | Self::Saturate => value.max(0.0),
+        }
+    }
+
+    /// The channel of a color function; `opacity()` has none (it is not animatable).
+    pub fn of(filter: ColorFilter) -> Option<Self> {
+        Some(match filter {
+            ColorFilter::Brightness(_) => Self::Brightness,
+            ColorFilter::Contrast(_) => Self::Contrast,
+            ColorFilter::Saturate(_) => Self::Saturate,
+            ColorFilter::Grayscale(_) => Self::Grayscale,
+            ColorFilter::Sepia(_) => Self::Sepia,
+            ColorFilter::HueRotate(_) => Self::HueRotate,
+            ColorFilter::Invert(_) => Self::Invert,
+            ColorFilter::Opacity(_) => return None,
+        })
+    }
+
+    /// The amount of a color function (degrees for `hue-rotate`).
+    pub fn amount(filter: ColorFilter) -> f32 {
+        match filter {
+            ColorFilter::Brightness(v)
+            | ColorFilter::Contrast(v)
+            | ColorFilter::Saturate(v)
+            | ColorFilter::Grayscale(v)
+            | ColorFilter::Sepia(v)
+            | ColorFilter::HueRotate(v)
+            | ColorFilter::Invert(v)
+            | ColorFilter::Opacity(v) => v,
+        }
+    }
+
+    /// The color function of this channel with `value`; `None` for `Blur`.
+    pub fn color(self, value: f32) -> Option<ColorFilter> {
+        Some(match self {
+            Self::Blur => return None,
+            Self::Brightness => ColorFilter::Brightness(value),
+            Self::Contrast => ColorFilter::Contrast(value),
+            Self::Saturate => ColorFilter::Saturate(value),
+            Self::Grayscale => ColorFilter::Grayscale(value),
+            Self::Sepia => ColorFilter::Sepia(value),
+            Self::HueRotate => ColorFilter::HueRotate(value),
+            Self::Invert => ColorFilter::Invert(value),
+        })
+    }
+
+    /// The `data-hf-keyframes` field name.
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Blur => "blur",
+            Self::Brightness => "brightness",
+            Self::Contrast => "contrast",
+            Self::Saturate => "saturate",
+            Self::Grayscale => "grayscale",
+            Self::Sepia => "sepia",
+            Self::HueRotate => "hueRotate",
+            Self::Invert => "invert",
+        }
+    }
+}
+
 /// `mix-blend-mode` separable blend functions (W3C Compositing Level 1), plus `plus-lighter`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum BlendMode {
@@ -342,6 +448,8 @@ pub struct Keyframe {
     pub y: f32,
     pub opacity: f32,
     pub easing: Easing,
+    /// Filter amounts given explicitly at this keyframe, indexed by [`FilterChannel::index`].
+    pub filters: [Option<f32>; 8],
 }
 
 /// Layout-check opt-outs from `data-layout-allow-*` attributes; descendants inherit them when checked.
@@ -525,10 +633,41 @@ pub struct Motion {
     pub reveal: Track,
     /// Edge the reveal grows from; `None` means the element is never clipped by a reveal.
     pub wipe: Option<RevealFrom>,
+    /// Animated `filter` amounts.
+    pub filter: FilterMotion,
     /// Hold the first value before the first point (`animation-fill-mode: backwards`).
     pub hold_before: bool,
     /// Hold the last value after the last point (`animation-fill-mode: forwards`).
     pub hold_after: bool,
+}
+
+/// Animated `filter` amounts of one element. A channel with an empty track keeps its static value.
+#[derive(Clone, Debug, Default)]
+pub struct FilterMotion {
+    /// Resting amount of each channel (the static `filter`, or the neutral amount).
+    pub base: [f32; 8],
+    pub tracks: [Track; 8],
+    /// Animated color channels the static `filter` does not list, applied after its functions.
+    pub appended: Vec<FilterChannel>,
+}
+
+impl FilterMotion {
+    pub fn is_static(&self) -> bool {
+        self.tracks.iter().all(|track| track.0.is_empty())
+    }
+
+    pub fn is_animated(&self, channel: FilterChannel) -> bool {
+        !self.tracks[channel.index()].0.is_empty()
+    }
+
+    /// Every channel's amount `elapsed` seconds after the clip start, clamped to its range.
+    pub fn eval(&self, elapsed: f64, hold_before: bool, hold_after: bool) -> [f32; 8] {
+        FilterChannel::ALL.map(|channel| {
+            let i = channel.index();
+            let value = self.tracks[i].eval(elapsed, self.base[i], hold_before, hold_after);
+            channel.clamp(value)
+        })
+    }
 }
 
 impl Motion {
@@ -555,6 +694,7 @@ impl Motion {
         ]
         .iter()
         .all(|track| track.0.is_empty())
+            && self.filter.is_static()
     }
 
     /// Sorted, distinct point times across all channels.
@@ -567,7 +707,8 @@ impl Motion {
             &self.opacity,
             &self.reveal,
         ]
-        .iter()
+        .into_iter()
+        .chain(&self.filter.tracks)
         .flat_map(|track| track.0.iter().map(|point| point.at))
         .collect();
         times.sort_by(f64::total_cmp);
