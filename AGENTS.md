@@ -17,6 +17,12 @@ All human-readable content in this repository must be in English, including docu
 
 Create, validate, inspect, and render HTML compositions. Output must be deterministic: what appears in a frame is a function of time.
 
+## Agent skills
+
+- After a substantial change to a user-facing capability, supported composition contract, CLI or MCP workflow, block catalog, or rendering behavior, review the skills in `skills/`. Update the relevant existing skill or add a focused skill when the change introduces a distinct, recurring workflow.
+- Keep skills aligned with the actual implementation and supported contract. Organize them around durable tasks as the repository grows; avoid duplicating reference documentation or creating one-off skills for isolated changes.
+- Validate any new or updated skill before completing the change.
+
 ## Work loop
 
 1. Run `aether-motion check <file.html>`. It returns JSON with `ok`, structure, and, on failure, `error` and `fix`. Continue until `ok: true`.
