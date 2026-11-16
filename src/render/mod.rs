@@ -2,7 +2,7 @@
 //!
 //! Submodules: `draw` (scene traversal), `layout` (flex sizing and placement), `paint` (the `Surface`, fills, gradients, rotation and `overflow` layers),
 //! `text` (fonts, measurement, glyph painting), `allocation` (checked buffer sizes),
-//! `geometry` and `frame_state` (shared small types).
+//! `geometry` and `frame_state` (shared small types). `paint/video.rs` draws `<video>` frames.
 
 mod allocation;
 mod draw;
@@ -24,6 +24,7 @@ use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::sync::Arc;
 use text::{FontStore, TextBlock, TextRun};
+use crate::video::VideoPlayer;
 
 #[derive(Default, Debug)]
 pub struct RenderStats {
@@ -86,12 +87,18 @@ pub struct Renderer<'a> {
     images: HashMap<ImageKey<'a>, CachedImage>,
     image_order: VecDeque<ImageKey<'a>>,
     image_cache_bytes: usize,
+    /// One decoder per `<video>` element (by element index), created when its first frame is drawn.
+    videos: HashMap<usize, VideoPlayer>,
     fonts: FontStore,
     stats: RenderStats,
     /// Text boxes recorded while drawing, when a layout probe is running (see `probe.rs`).
     probe: Option<Vec<probe::TextBox>>,
     /// Number of offscreen layers currently being drawn into; their coordinates are layer-local.
     layer_depth: u32,
+    /// Offset (composition px) from the current offscreen layer's origin to the frame, while probing.
+    layer_shift: (f32, f32),
+    /// Visible window `[left, top, right, bottom]` (composition px) of the layers being probed.
+    layer_clip: [f32; 4],
 }
 
 pub(crate) fn check_image(path: &Path) -> Result<()> {
@@ -188,10 +195,13 @@ impl<'a> Renderer<'a> {
             images: HashMap::new(),
             image_order: VecDeque::new(),
             image_cache_bytes: 0,
+            videos: HashMap::new(),
             fonts,
             stats: RenderStats::default(),
             probe: None,
             layer_depth: 0,
+            layer_shift: (0.0, 0.0),
+            layer_clip: [f32::NEG_INFINITY, f32::NEG_INFINITY, f32::INFINITY, f32::INFINITY],
         })
     }
 

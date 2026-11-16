@@ -12,6 +12,7 @@ use crate::parse::html::{attr, direct_text, number};
 use crate::parse::split::parse_split;
 use crate::parse::style::{style_for, Resolved};
 use crate::parse::transition::{parse_transition, TransitionSpec};
+use crate::parse::video::parse_video;
 use anyhow::{anyhow, bail, Context, Result};
 use kuchiki::NodeRef;
 use std::path::Path;
@@ -55,7 +56,7 @@ pub(in crate::parse) fn walk(
         audio.push(parse_audio(node, parent, base)?);
         return Ok(());
     }
-    if matches!(tag.as_str(), "script" | "video" | "canvas" | "iframe") {
+    if matches!(tag.as_str(), "script" | "canvas" | "iframe") {
         bail!("<{tag}> requires a browser/JavaScript and is not supported by the native backend");
     }
     if !matches!(
@@ -75,6 +76,7 @@ pub(in crate::parse) fn walk(
             | "strong"
             | "img"
             | "svg"
+            | "video"
     ) {
         bail!("unsupported HTML element: <{tag}>");
     }
@@ -134,6 +136,8 @@ pub(in crate::parse) fn walk(
         .map(|s| s.parse::<i32>().context("invalid data-track-index"))
         .transpose()?
         .unwrap_or(0);
+    let mut video_length = None;
+    let mut video_audio = None;
     let content = if tag == "svg" {
         Content::InlineSvg(inline_svg_markup(node)?.into())
     } else if tag == "img" {
@@ -142,6 +146,13 @@ pub(in crate::parse) fn walk(
             bail!("only local images are supported: {src}");
         }
         Content::Image(base.join(src))
+    } else if tag == "video" {
+        let parsed = parse_video(node, base, duration.is_some()).with_context(|| {
+            format!("<video> ({})", attr(node, "id").as_deref().unwrap_or("no id"))
+        })?;
+        video_length = Some(parsed.default_duration);
+        video_audio = parsed.audio;
+        Content::Video(parsed.source)
     } else {
         let text = direct_text(node);
         if text.is_empty() {
@@ -150,6 +161,7 @@ pub(in crate::parse) fn walk(
             Content::Text(text)
         }
     };
+    let duration = duration.or(video_length);
     let reveal = parse_reveal(node).with_context(|| {
         format!(
             "data-hf-reveal on <{tag}> ({})",
@@ -262,6 +274,15 @@ pub(in crate::parse) fn walk(
     if let Some(parent_idx) = parent {
         out[parent_idx].element.children.push(idx);
     }
+    if let Some(mut clip) = video_audio {
+        // The source's sound plays exactly as long as the clip and starts with it.
+        clip.duration = duration;
+        audio.push(PendingAudio {
+            clip,
+            start_expr: None,
+            parent: Some(idx),
+        });
+    }
     if let Some(spec) = &counter {
         return spec.expand(idx, out);
     }
@@ -271,8 +292,11 @@ pub(in crate::parse) fn walk(
     if let (Some(spec), Some(text)) = (&split, &split_text) {
         return spec.expand(text, idx, out);
     }
-    // SVG children belong to the vector graphic, not to the HTML tree.
-    if matches!(out[idx].element.content, Content::InlineSvg(_)) {
+    // SVG children belong to the vector graphic, and `<source>` children to the video.
+    if matches!(
+        out[idx].element.content,
+        Content::InlineSvg(_) | Content::Video(_)
+    ) {
         return Ok(());
     }
     for child in node.children() {

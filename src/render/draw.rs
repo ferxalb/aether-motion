@@ -193,6 +193,13 @@ impl<'a> Renderer<'a> {
                 element.style.object_fit.as_deref().unwrap_or("fill"),
                 alpha,
             )?,
+            Content::Video(source) => self.draw_video(
+                idx,
+                source,
+                rect,
+                element.style.object_fit.as_deref().unwrap_or("fill"),
+                alpha,
+            )?,
             Content::Text(_) => self.draw_text(idx, content, alpha, cumulative)?,
             Content::Container => {}
         }

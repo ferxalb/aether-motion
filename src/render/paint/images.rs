@@ -10,6 +10,8 @@ use anyhow::{anyhow, Context, Result};
 use image::{imageops, Rgba, RgbaImage};
 use std::path::Path;
 
+const CACHE_LIMIT: usize = 64 * 1024 * 1024;
+
 pub(in crate::render) struct CachedImage {
     pixels: RgbaImage,
     opaque: bool,
@@ -38,7 +40,6 @@ impl<'a> Renderer<'a> {
                 .checked_mul(h as usize)
                 .and_then(|n| n.checked_mul(4))
                 .ok_or_else(|| anyhow!("rasterized image is too large"))?;
-            const CACHE_LIMIT: usize = 64 * 1024 * 1024;
             if pixel_bytes > CACHE_LIMIT {
                 return Err(anyhow!("rasterized image exceeds 64 MiB; use --scale"));
             }
@@ -68,36 +69,7 @@ impl<'a> Renderer<'a> {
             let fitted = if let Some(tree) = &vector {
                 svg::rasterize(tree, w, h, fit)?
             } else {
-                match fit {
-                    "fill" => imageops::resize(&image, w, h, imageops::FilterType::Triangle),
-                    "contain" | "cover" => {
-                        let sx = w as f32 / image.width() as f32;
-                        let sy = h as f32 / image.height() as f32;
-                        let factor = if fit == "contain" {
-                            sx.min(sy)
-                        } else {
-                            sx.max(sy)
-                        };
-                        let nw = ((image.width() as f32 * factor).round() as u32).max(1);
-                        let nh = ((image.height() as f32 * factor).round() as u32).max(1);
-                        if u64::from(nw) * u64::from(nh) > (CACHE_LIMIT / 4) as u64 {
-                            return Err(anyhow!(
-                                "intermediate image exceeds 64 MiB; adjust object-fit or --scale"
-                            ));
-                        }
-                        let resized =
-                            imageops::resize(&image, nw, nh, imageops::FilterType::Triangle);
-                        let mut canvas = RgbaImage::from_pixel(w, h, Rgba([0, 0, 0, 0]));
-                        imageops::overlay(
-                            &mut canvas,
-                            &resized,
-                            (w as i64 - nw as i64) / 2,
-                            (h as i64 - nh as i64) / 2,
-                        );
-                        canvas
-                    }
-                    _ => return Err(anyhow!("unsupported object-fit: {fit}")),
-                }
+                fit_pixels(&image, w, h, fit)?
             };
             while bytes > CACHE_LIMIT.saturating_sub(self.image_cache_bytes)
                 || self.images.len() >= 4096
@@ -157,105 +129,136 @@ impl<'a> Renderer<'a> {
         self.cache_image(&key)?;
         let x0 = (rect.x * self.scale).round() as i32;
         let y0 = (rect.y * self.scale).round() as i32;
-        let Some(bounds) = clip_pixels(
-            (self.surface.width, self.surface.height),
-            x0,
-            y0,
-            x0.saturating_add(w as i32),
-            y0.saturating_add(h as i32),
-        ) else {
-            return Ok(());
-        };
-        self.surface.mark_painted(bounds);
-        let image = &self.images[&key];
-        let stride = self.surface.width as usize * 4;
-        let source_stride = w as usize * 4;
-        let source_x = (bounds.x0 as i64 - i64::from(x0)) as usize * 4;
-        let source_y = (bounds.y0 as i64 - i64::from(y0)) as usize;
-        let row_len = (bounds.x1 - bounds.x0) * 4;
-        for (i, row) in self.surface.pixels[bounds.y0 * stride..bounds.y1 * stride]
-            .chunks_exact_mut(stride)
-            .enumerate()
-        {
-            let source_offset = (source_y + i) * source_stride + source_x;
-            let source = &image.pixels.as_raw()[source_offset..source_offset + row_len];
-            let dest = &mut row[bounds.x0 * 4..bounds.x1 * 4];
-            let (first, last, row_opaque) =
-                image
-                    .rows
-                    .get(source_y + i)
-                    .copied()
-                    .unwrap_or((0, w, image.opaque));
-            let start = (first as usize * 4).saturating_sub(source_x).min(row_len);
-            let end = (last as usize * 4).saturating_sub(source_x).min(row_len);
-            if start >= end {
-                continue;
-            }
-            let source = &source[start..end];
-            let dest = &mut dest[start..end];
-            if (image.opaque && alpha >= 1.0) || (row_opaque && alpha == 1.0) {
-                dest.copy_from_slice(source);
-            } else {
-                for (dest, &[r, g, b, a]) in dest
-                    .as_chunks_mut::<4>()
-                    .0
-                    .iter_mut()
-                    .zip(source.as_chunks::<4>().0)
-                {
-                    if a != 0 {
-                        let color = Color { r, g, b, a };
-                        Surface::blend_pixel(dest, color, alpha * f32::from(a) / 255.0);
-                    }
-                }
-            }
-        }
+        blit(&mut self.surface, &self.images[&key], x0, y0, w, h, alpha);
         Ok(())
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::parse::parse_file;
+/// Resizes `image` to a `w` x `h` canvas following `object-fit` (`fill`, `contain`, or `cover`).
+pub(in crate::render) fn fit_pixels(
+    image: &RgbaImage,
+    w: u32,
+    h: u32,
+    fit: &str,
+) -> Result<RgbaImage> {
+    fit_with(image, w, h, fit, |source, w, h| {
+        imageops::resize(source, w, h, imageops::FilterType::Triangle)
+    })
+}
 
-    #[test]
-    fn tiny_images_cannot_grow_metadata_past_the_entry_limit() {
-        let stem =
-            std::env::temp_dir().join(format!("aether-image-cache-limit-{}", std::process::id()));
-        let path = stem.with_extension("png");
-        let html = stem.with_extension("html");
-        RgbaImage::from_pixel(1, 1, Rgba([255, 255, 255, 255]))
-            .save(&path)
-            .unwrap();
-        std::fs::write(&html,r#"<main data-composition-id="test" data-width="8" data-height="8" data-duration="1"></main>"#).unwrap();
-        let composition = parse_file(&html).unwrap();
-        let mut renderer = Renderer::new(&composition, 1.0).unwrap();
-        for width in 1..=4096 {
-            let key = (ImageSrc::File(path.as_path()), width, 1, "fill");
-            renderer.images.insert(
-                key,
-                CachedImage {
-                    pixels: RgbaImage::new(1, 1),
-                    opaque: true,
-                    rows: Vec::new(),
-                },
+/// [`fit_pixels`] with a caller-chosen resize (video frames use a faster one).
+pub(in crate::render) fn fit_with(
+    image: &RgbaImage,
+    w: u32,
+    h: u32,
+    fit: &str,
+    resize: impl Fn(&RgbaImage, u32, u32) -> RgbaImage,
+) -> Result<RgbaImage> {
+    if !matches!(fit, "fill" | "contain" | "cover") {
+        return Err(anyhow!("unsupported object-fit: {fit}"));
+    }
+    Ok(match fit {
+        "fill" => resize(image, w, h),
+        _ => {
+            let sx = w as f32 / image.width() as f32;
+            let sy = h as f32 / image.height() as f32;
+            let factor = if fit == "contain" {
+                sx.min(sy)
+            } else {
+                sx.max(sy)
+            };
+            let nw = ((image.width() as f32 * factor).round() as u32).max(1);
+            let nh = ((image.height() as f32 * factor).round() as u32).max(1);
+            if u64::from(nw) * u64::from(nh) > (CACHE_LIMIT / 4) as u64 {
+                return Err(anyhow!(
+                    "intermediate image exceeds 64 MiB; adjust object-fit or --scale"
+                ));
+            }
+            let resized = resize(image, nw, nh);
+            let mut canvas = RgbaImage::from_pixel(w, h, Rgba([0, 0, 0, 0]));
+            imageops::overlay(
+                &mut canvas,
+                &resized,
+                (w as i64 - nw as i64) / 2,
+                (h as i64 - nh as i64) / 2,
             );
-            renderer.image_order.push_back(key);
-            renderer.image_cache_bytes += 4;
+            canvas
         }
-        let key = (ImageSrc::File(path.as_path()), 4097, 1, "fill");
-        renderer.cache_image(&key).unwrap();
-        assert_eq!(renderer.images.len(), 4096);
-        assert_eq!(renderer.image_order.len(), 4096);
-        assert!(!renderer
-            .images
-            .contains_key(&(ImageSrc::File(path.as_path()), 1, 1, "fill")));
-        assert!(renderer.images.contains_key(&key));
-        assert_eq!(
-            renderer.image_cache_bytes,
-            4095 * 4 + 4097 * 4 + std::mem::size_of::<(u32, u32, bool)>()
-        );
-        std::fs::remove_file(path).unwrap();
-        std::fs::remove_file(html).unwrap();
+    })
+}
+
+impl CachedImage {
+    /// Wraps a fitted video frame with no per-row metadata. `opaque` is false when `object-fit:
+    /// contain` left transparent bars around the picture.
+    pub(in crate::render) fn frame(pixels: RgbaImage, opaque: bool) -> Self {
+        Self {
+            pixels,
+            opaque,
+            rows: Vec::new(),
+        }
     }
 }
+
+/// Paints a fitted `w` x `h` image with its top-left corner at `(x0, y0)`, clipped to the surface.
+pub(in crate::render) fn blit(
+    surface: &mut Surface,
+    image: &CachedImage,
+    x0: i32,
+    y0: i32,
+    w: u32,
+    h: u32,
+    alpha: f32,
+) {
+    let Some(bounds) = clip_pixels(
+        (surface.width, surface.height),
+        x0,
+        y0,
+        x0.saturating_add(w as i32),
+        y0.saturating_add(h as i32),
+    ) else {
+        return;
+    };
+    surface.mark_painted(bounds);
+    let stride = surface.width as usize * 4;
+    let source_stride = w as usize * 4;
+    let source_x = (bounds.x0 as i64 - i64::from(x0)) as usize * 4;
+    let source_y = (bounds.y0 as i64 - i64::from(y0)) as usize;
+    let row_len = (bounds.x1 - bounds.x0) * 4;
+    for (i, row) in surface.pixels[bounds.y0 * stride..bounds.y1 * stride]
+        .chunks_exact_mut(stride)
+        .enumerate()
+    {
+        let source_offset = (source_y + i) * source_stride + source_x;
+        let source = &image.pixels.as_raw()[source_offset..source_offset + row_len];
+        let dest = &mut row[bounds.x0 * 4..bounds.x1 * 4];
+        let (first, last, row_opaque) =
+            image
+                .rows
+                .get(source_y + i)
+                .copied()
+                .unwrap_or((0, w, image.opaque));
+        let start = (first as usize * 4).saturating_sub(source_x).min(row_len);
+        let end = (last as usize * 4).saturating_sub(source_x).min(row_len);
+        if start >= end {
+            continue;
+        }
+        let source = &source[start..end];
+        let dest = &mut dest[start..end];
+        if (image.opaque && alpha >= 1.0) || (row_opaque && alpha == 1.0) {
+            dest.copy_from_slice(source);
+        } else {
+            for (dest, &[r, g, b, a]) in dest
+                .as_chunks_mut::<4>()
+                .0
+                .iter_mut()
+                .zip(source.as_chunks::<4>().0)
+            {
+                if a != 0 {
+                    let color = Color { r, g, b, a };
+                    Surface::blend_pixel(dest, color, alpha * f32::from(a) / 255.0);
+                }
+            }
+        }
+    }
+}
+

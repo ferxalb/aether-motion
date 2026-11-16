@@ -565,3 +565,16 @@ Measured with the release build and `--threads 1` on a 64×36 static composition
 | AAC-LC encoding with the vendored table-driven MDCT | about 19 s (3 runs: 20.3, 19.8, 19.8 s) |
 
 Peak memory for the 60 s case is about 96 MB (the mix and the decoded source are held as `f32`), against 11 MB without audio. The 753,080-byte MP4 is identical in size before and after the MDCT change. AAC encoding costs about one third of real time on one thread and runs before video encoding, so it adds to the render time; a 15-second composition with a full-length track adds about 5 s. Decoder-side verification: the burst-position tests in `tests/audio.rs` and a manual decode of the MP4 with the operating system's AAC decoder both place a 10 ms burst at the expected sample (centroid 35999.99 against 36000).
+
+## Video clips
+
+Measured with the release build and `--threads 1` (`bench --frame START --count N`) on a 1920×1080, 30 fps, 15 s H.264 source with 15 keyframes (a GOP of 30 frames, no B-frames) made by this renderer's encoder, inside a 1920×1080 composition.
+
+| Case | Time per frame |
+| --- | ---: |
+| Source and box both 1920×1080 (`fill`, no resize): decode, YUV to RGBA, blit | about 7 ms (60 frames: 0.41 to 0.45 s) |
+| 1920×1080 source into a 1280×720 `object-fit: cover` box, `imageops::resize` (Triangle) | about 43 ms (60 frames: 2.61 s) |
+| The same with the integer separable triangle resize in `paint/resample.rs` | about 23 ms (60 frames: 1.37 s, two runs identical) |
+| 15 frames starting 15 frames into a GOP (decode from the keyframe first) | about 9 ms (0.13 s) |
+
+The full 15 s render of the downscaled case takes 15.1 s with `--threads 1` and 5.7 s with `--threads 3`, with byte-identical MP4s. The resize replacement differs from `imageops::resize` by at most 6 levels per channel on test gradients (a unit test checks this); the resize dominates the cost whenever source and box sizes differ, so matching them (`fill` at the source size) is the cheap path. A request that goes backward or jumps ahead restarts decoding at the keyframe of its GOP, so cost grows with GOP length; sequential rendering decodes every frame once.

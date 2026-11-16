@@ -16,6 +16,7 @@ mod timeline;
 mod transition;
 mod tree;
 mod values;
+mod video;
 
 pub use values::color::parse_color;
 
@@ -41,7 +42,7 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
         fs::read_to_string(path).with_context(|| format!("could not read {}", path.display()))?;
     let document = kuchiki::parse_html().one(html);
     if let Some(unsupported) = document
-        .select("script, video, canvas, iframe")
+        .select("script, canvas, iframe")
         .map_err(|_| anyhow!("error selecting HTML elements"))?
         .next()
     {

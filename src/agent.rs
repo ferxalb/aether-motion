@@ -43,12 +43,14 @@ fn fix_hint(message: &str) -> &'static str {
         "use a supported CSS value; see the contract in AGENTS.md"
     } else if message.contains("could not read image") || message.contains("local images") {
         "make sure the PNG, JPEG, or WebP file exists and that src is relative to the HTML file"
+    } else if message.contains("<video>") {
+        "use <video src=\"clip.mp4\" muted data-start=\"0\" data-duration=\"4\" style=\"width:..px;height:..px\"> with a local H.264 MP4 (closed GOPs, not fragmented, not mirrored), optional data-media-start, muted, data-volume, and loop (needs data-duration); its AAC track plays unless muted; re-encode with `ffmpeg -i in -c:v libx264 -x264-params open-gop=0 -an out.mp4` if needed"
     } else if message.contains("audio")
         || message.contains("data-volume")
         || message.contains("data-hf-trim-start")
         || message.contains("data-hf-loop")
     {
-        "use <audio src=\"file.wav\"> with a local WAV, FLAC, Ogg Vorbis, or MP3 file (mono or stereo), optional data-start, data-duration, data-volume (0 to 8), data-hf-fade-in, data-hf-fade-out, data-hf-trim-start, and data-hf-loop (needs data-duration); keep the clip inside the composition"
+        "use <audio src=\"file.wav\"> with a local WAV, FLAC, Ogg Vorbis, MP3, or AAC (MP4/M4A) file (mono or stereo), optional data-start, data-duration, data-volume (0 to 8), data-hf-fade-in, data-hf-fade-out, data-hf-trim-start, and data-hf-loop (needs data-duration); keep the clip inside the composition"
     } else if message.contains("<script>") {
         "remove the <script> (GSAP, Date.now, and randomness are not executed so output stays deterministic) and use data-hf-keyframes, data-hf-camera, data-hf-split, data-hf-counter, data-hf-transition, or CSS @keyframes"
     } else if message.contains("invalid SVG")
@@ -71,6 +73,46 @@ fn fix_hint(message: &str) -> &'static str {
     } else {
         "see the contract in AGENTS.md"
     }
+}
+
+/// Decodes the first and last frame of every `<video>` source (so a codec or container problem
+/// shows up here, not mid-render) and reports each one.
+fn check_videos(c: &Composition) -> Result<Vec<Value>> {
+    let mut seen = HashSet::new();
+    let mut videos = Vec::new();
+    for element in &c.elements {
+        let Content::Video(video) = &element.content else {
+            continue;
+        };
+        if !seen.insert(&video.path) {
+            continue;
+        }
+        let index = &video.index;
+        let mut player = crate::video::VideoPlayer::open(&video.path, index.clone())?;
+        player.frame(0)?;
+        player.frame(index.frame_count() - 1)?;
+        videos.push(json!({
+            "id": element.id,
+            "src": video.path.display().to_string(),
+            "width": index.width,
+            "height": index.height,
+            "frames": index.frame_count(),
+            "keyframes": index.gops.len(),
+            "fps": (index.fps() * 1000.0).round() / 1000.0,
+            "duration": index.duration,
+            "mediaStart": video.media_start,
+            "loop": video.looped,
+            "rotation": index.rotation,
+            "colour": {
+                "matrix": if index.colour.matrix == crate::video::colour::Matrix::Bt709 { "bt709" } else { "bt601" },
+                "range": if index.colour.full_range { "full" } else { "limited" },
+                "tagged": index.colour.tagged,
+            },
+            "hasAudioTrack": index.has_audio,
+            "audioMixed": video.audio,
+        }));
+    }
+    Ok(videos)
 }
 
 /// Decodes and mixes the composition's audio (without encoding) and reports each clip, the peak
@@ -100,7 +142,7 @@ fn check_audio(c: &Composition) -> Result<Value> {
     Ok(json!({"clips": clips, "peak": mix.peak, "clippedSamples": mix.clipped}))
 }
 
-/// Validates the structure, image headers, and audio files, then renders a test frame.
+/// Validates the structure, image headers, video sources, and audio files, then renders a test frame.
 pub fn check(path: &Path) -> Value {
     let run = || -> Result<Value> {
         let c = parse_file(path)?;
@@ -124,6 +166,7 @@ pub fn check(path: &Path) -> Value {
             }
         }
         let audio = check_audio(&c)?;
+        let videos = check_videos(&c)?;
         let scale = 0.25_f32.max(1.0 / c.width.min(c.height) as f32);
         let mut r = Renderer::new(&c, scale)?;
         r.render_frame(0, 30)?;
@@ -143,7 +186,7 @@ pub fn check(path: &Path) -> Value {
             })
             .collect();
         Ok(
-            json!({"animations": animations, "ok": true, "width": c.width, "height": c.height, "duration": c.duration, "elements": c.elements.len(), "clips": clips, "audio": audio}),
+            json!({"animations": animations, "ok": true, "width": c.width, "height": c.height, "duration": c.duration, "elements": c.elements.len(), "clips": clips, "audio": audio, "videos": videos}),
         )
     };
     match run() {

@@ -171,6 +171,17 @@ pub fn patch_moov(path: &Path, video_frames: u64) -> Result<()> {
     ensure!(traks.len() == 2, "expected a video and an audio track");
     let (trak, trak_len) = traks[1];
     let trak_end = trak + trak_len;
+    // The `mp4` crate writes the SL config descriptor of the `esds` box as `06 00 00`, which
+    // symphonia (and so `<video>` audio and `<audio src="file.mp4">`) rejects. Standard AAC files
+    // carry `06 01 02`; both forms are three bytes, so the patch changes no size.
+    if let Some(found) = buffer[trak..trak_end].windows(4).position(|w| w == b"esds") {
+        let start = trak + found - 4;
+        let stop = start + be32(&buffer, start);
+        ensure!(stop <= trak_end && stop >= start + 15, "corrupt esds box");
+        if buffer[stop - 3..stop] == [0x06, 0x00, 0x00] {
+            buffer[stop - 3..stop].copy_from_slice(&[0x06, 0x01, 0x02]);
+        }
+    }
     let (mdia, mdia_len) = child(&buffer, trak + 8, trak_end, b"mdia")
         .ok_or_else(|| anyhow!("audio track has no mdia"))?;
     let (hdlr, _) = child(&buffer, mdia + 8, mdia + mdia_len, b"hdlr")

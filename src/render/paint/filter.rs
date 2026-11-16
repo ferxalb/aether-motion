@@ -73,12 +73,12 @@ impl<'a> Renderer<'a> {
         };
         let mut layers: Vec<Vec<u8>> = Vec::with_capacity(2);
         let mut outcome = Ok(());
-        for backdrop in [Color::BLACK, Color::WHITE] {
+        for (pass, backdrop) in [Color::BLACK, Color::WHITE].into_iter().enumerate() {
             let layer = Surface::filled(lw as u32, lh as u32, k, backdrop);
             let outer = std::mem::replace(&mut self.surface, layer);
-            self.layer_depth += 1;
+            let saved = self.begin_layer_pass(pass, (ox, oy), None);
             outcome = outcome.and_then(|()| self.draw_posed(idx, shifted, cumulative));
-            self.layer_depth -= 1;
+            self.end_layer_pass(saved);
             layers.push(std::mem::replace(&mut self.surface, outer).pixels);
         }
         outcome?;

@@ -42,7 +42,7 @@ pub fn decode_file(path: &Path) -> Result<Pcm> {
         )
         .map_err(|e| {
             anyhow!(
-                "unsupported or unreadable audio file {}: {e}; use WAV, FLAC, Ogg Vorbis, or MP3",
+                "unsupported or unreadable audio file {}: {e}; use WAV, FLAC, Ogg Vorbis, MP3, or AAC in MP4/M4A",
                 path.display()
             )
         })?;

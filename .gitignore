@@ -1,6 +1,8 @@
 /target/
 /out/
 *.mp4
+# Source clip for examples/video.html.
+!examples/video/clip.mp4
 *.png
 !examples/*.png
 target

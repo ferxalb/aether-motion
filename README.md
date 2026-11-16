@@ -153,6 +153,7 @@ aether-motion block theme-midnight
 - **Honest errors:** unsupported HTML or CSS returns the exact problem and a suggested fix, never a silently wrong video.
 - **Native motion:** keyframes with expo, back, and `cubic-bezier` easing, CSS `@keyframes`, camera zoom and pan, kinetic text, reveals, counters, and crossfade, push, cover, wipe, and zoom transitions.
 - **Captions:** `data-hf-captions` turns a transcript (`transcript.json`, OpenAI Whisper or whisper.cpp JSON, SRT, VTT) into word-highlighted captions; `aether-motion captions` converts transcripts to SRT or VTT. See `examples/captions.html`.
+- **Video clips:** local H.264 MP4 `<video>` (its sound included) with trim (`data-media-start`), loop, `object-fit`, and the usual fades, transforms, and clipping; see `examples/video.html`.
 - **Sample-accurate audio:** `<audio>` clips (WAV, FLAC, Ogg Vorbis, MP3) with volume, fades, trim, and loop are mixed and encoded to AAC with no FFmpeg; see `examples/audio.html`.
 - **Polished look:** flexbox, text wrapping, gradients, layered and inset shadows, blur, frosted glass, rotation, vignette, and film grain.
 - **Easy on your machine:** renders at low priority on a quarter of your cores by default. `--threads N` goes faster; `--scale 0.5` gives quick drafts.
@@ -169,11 +170,11 @@ AETHER Motion uses the [HyperFrames](https://github.com/heygen-com/hyperframes) 
 | Rendering | Native Rust renderer; no browser, Node.js, or FFmpeg required | Browser rendering through the CLI, plus hosted cloud rendering | Browser-based video rendering through the CLI; Player and Studio provide interactive previews |
 | Runtime and scope | One binary; documented HTML/CSS subset, with explicit errors outside it | Node.js 22+, Chrome, and FFmpeg for the local CLI; full browser HTML/CSS/JS | Node.js and a React project; supports frame-driven components and browser media |
 | Motion | Native keyframes, camera, kinetic type, transitions, and limited CSS `@keyframes` | GSAP, CSS, Lottie, Three.js, WAAPI, and browser adapters | `useCurrentFrame()`, `interpolate()`, `spring()`, React components, and transition primitives |
-| Audio and video | Local `<audio>` mixed sample-accurately into AAC; static images/SVG; no `<video>` | Browser audio/video and other media elements | `<Audio>`, `<Video>`, images, and other React media components |
+| Audio and video | Local `<audio>` mixed sample-accurately into AAC; static images/SVG; local H.264 MP4 `<video>` (no other codecs) | Browser audio/video and other media elements | `<Audio>`, `<Video>`, images, and other React media components |
 | AI-agent integration | [Local stdio MCP server](#with-an-ai-coding-agent) **and** [Agent Skills](#agent-skills) | [Hosted MCP](https://hyperframes.heygen.com/tools/mcp-server-for-video); [CLI and Agent Skills](https://github.com/heygen-com/hyperframes#skills) for coding agents | [Agent Skills](https://www.remotion.dev/docs/ai/skills) and [Studio WebMCP](https://www.remotion.dev/docs/ai/webmcp) (agent support varies) |
 | Best fit | Reproducible native rendering with a small, explicit contract | Browser-powered HTML video projects and hosted agent rendering | Programmatic video built from React components and frame-based logic |
 
-Use AETHER Motion when you want a lightweight native renderer and its supported HTML contract. Use HyperFrames when you need browser features, embedded video, or its hosted MCP workflow. Use Remotion when the project is React-based or needs frame-driven React components. The agent integrations differ: AETHER Motion combines local MCP with installable skills, HyperFrames offers hosted MCP plus CLI skills, and Remotion offers Agent Skills plus Studio WebMCP.
+Use AETHER Motion when you want a lightweight native renderer and its supported HTML contract. Use HyperFrames when you need browser features, other video formats, or its hosted MCP workflow. Use Remotion when the project is React-based or needs frame-driven React components. The agent integrations differ: AETHER Motion combines local MCP with installable skills, HyperFrames offers hosted MCP plus CLI skills, and Remotion offers Agent Skills plus Studio WebMCP.
 
 ## Output
 

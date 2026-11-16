@@ -185,11 +185,16 @@ impl<'a> Renderer<'a> {
                 x0 = x0.min(pen);
                 x1 = x1.max(pen + line.advance * zoom);
             }
-            if let (true, Some(boxes)) = (x0 < x1, self.probe.as_mut()) {
-                boxes.push(crate::render::probe::TextBox {
-                    element: idx,
-                    rect: [x0 / scale, top / scale, x1 / scale, (top + total) / scale],
-                });
+            let (sx, sy) = self.layer_shift;
+            let clip = self.layer_clip;
+            let rect = [
+                (x0 / scale + sx).max(clip[0]),
+                (top / scale + sy).max(clip[1]),
+                (x1 / scale + sx).min(clip[2]),
+                ((top + total) / scale + sy).min(clip[3]),
+            ];
+            if let (true, true, Some(boxes)) = (x0 < x1, rect[0] < rect[2] && rect[1] < rect[3], self.probe.as_mut()) {
+                boxes.push(crate::render::probe::TextBox { element: idx, rect });
             }
         }
         let mut painted = self.surface.painted;

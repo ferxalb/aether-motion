@@ -83,12 +83,40 @@ fn tools() -> Value {
     let path = json!({"type": "string", "description": "Path to the .html composition"});
     json!([
         {"name": "aether_guide", "description": "Format contract and work loop. Read it before writing a composition.", "inputSchema": {"type": "object", "properties": {}}},
-        {"name": "aether_write", "description": "Write an HTML composition and validate it. Do not overwrite unless overwrite=true.", "inputSchema": {"type": "object", "properties": {"path": path, "html": {"type": "string"}, "overwrite": {"type": "boolean"}}, "required": ["path", "html"]}},
+        {"name": "aether_write", "description": "Write an HTML composition and validate it; the response is the same report as aether_check, including layout.findings. Do not overwrite unless overwrite=true.", "inputSchema": {"type": "object", "properties": {"path": path, "html": {"type": "string"}, "overwrite": {"type": "boolean"}, "safeZone": {"type": "string"}, "captionZone": {"type": "string"}, "samples": {"type": "integer", "minimum": 1, "maximum": 200}, "at": {"type": "array", "items": {"type": "number"}}}, "required": ["path", "html"]}},
         {"name": "aether_block", "description": "List ready-made blocks and themes, or render one as HTML to paste into a composition. Without name it returns the catalog with parameters and defaults.", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "params": {"type": "object", "additionalProperties": {"type": "string"}}}}},
-        {"name": "aether_check", "description": "Validate the composition; return JSON with an error and fix on failure.", "inputSchema": {"type": "object", "properties": {"path": path}, "required": ["path"]}},
+        {"name": "aether_check", "description": "Validate the composition; return JSON with an error and fix on failure. On success it also probes text and returns layout.findings: outside_safe_zone warnings (TikTok, Reels, Shorts on 9:16 frames; 10% margins on other frames) and, with captionZone, caption_zone_collision. Opt out with data-layout-allow-safe-zone or data-layout-allow-caption-zone.", "inputSchema": {"type": "object", "properties": {"path": path, "safeZone": {"type": "string", "description": "tiktok, reels, shorts, standard (comma list), or off. Default: all platform zones on 9:16, standard otherwise."}, "captionZone": {"type": "string", "description": "Fractional band, for example x0=0;y0=0.7;x1=1;y1=1 (optional ;severity=error)"}, "samples": {"type": "integer", "minimum": 1, "maximum": 200, "description": "Midpoint sample count (default 9)"}, "at": {"type": "array", "items": {"type": "number"}, "description": "Exact sample times in seconds, instead of samples"}}, "required": ["path"]}},
         {"name": "aether_snapshot", "description": "Render the exact second t (0 <= t < duration) and return a PNG.", "inputSchema": {"type": "object", "properties": {"path": path, "t": {"type": "number"}, "scale": {"type": "number"}, "size": {"type": "string", "enum": ["1080p", "4k"]}}, "required": ["path"]}},
         {"name": "aether_render", "description": "Render to MP4 (native H.264). Does not overwrite existing outputs.", "inputSchema": {"type": "object", "properties": {"path": path, "output": {"type": "string"}, "fps": {"type": "integer", "minimum": 1, "maximum": 60}, "threads": {"type": "integer", "minimum": 1, "maximum": 64}, "scale": {"type": "number"}, "size": {"type": "string", "enum": ["1080p", "4k"]}, "audioBitrate": {"type": "integer", "minimum": 64, "maximum": 320, "description": "AAC bitrate in kbit/s for compositions with <audio> (default 192)"}}, "required": ["path", "output"]}}
     ])
+}
+
+/// Structural check plus the optional zone probe (`safeZone`, `captionZone`, `samples`, `at`).
+fn checked(path: &Path, args: &Value) -> Result<Value> {
+    let mut report = crate::agent::check(path);
+    let at = match args.get("at") {
+        None => Vec::new(),
+        Some(list) => list
+            .as_array()
+            .and_then(|items| items.iter().map(Value::as_f64).collect::<Option<Vec<_>>>())
+            .ok_or_else(|| anyhow!("at must be an array of seconds"))?,
+    };
+    let samples = match args.get("samples") {
+        None => None,
+        Some(value) => Some(
+            value
+                .as_u64()
+                .ok_or_else(|| anyhow!("samples must be a positive integer"))? as usize,
+        ),
+    };
+    let request = crate::agent::zones::ZoneRequest {
+        safe_zone: args.get("safeZone").and_then(Value::as_str),
+        caption_zone: args.get("captionZone").and_then(Value::as_str),
+        samples,
+        at,
+    };
+    crate::agent::zones::attach(&mut report, path, &request)?;
+    Ok(report)
 }
 
 fn call(name: &str, args: &Value) -> Result<Value> {
@@ -110,7 +138,7 @@ fn call(name: &str, args: &Value) -> Result<Value> {
                 path,
                 string_arg("html").ok_or_else(|| anyhow!("missing html"))?,
             )?;
-            Ok(text(crate::agent::check(path).to_string()))
+            Ok(text(checked(path, args)?.to_string()))
         }
         "aether_block" => match string_arg("name") {
             None => Ok(text(crate::blocks::list_json()?.to_string())),
@@ -132,7 +160,7 @@ fn call(name: &str, args: &Value) -> Result<Value> {
                 Ok(text(crate::blocks::render(name, &values)?))
             }
         },
-        "aether_check" => Ok(text(crate::agent::check(path).to_string())),
+        "aether_check" => Ok(text(checked(path, args)?.to_string())),
         "aether_snapshot" => snapshot(
             path,
             args.get("t").and_then(Value::as_f64).unwrap_or(0.0),

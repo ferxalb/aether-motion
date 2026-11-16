@@ -1,0 +1,18 @@
+<!doctype html>
+<html>
+<head>
+<style>
+  :root { --bg: #0b1020; --accent: #7aa2ff; }
+  #clip { left: 40px; top: 40px; width: 560px; height: 280px; border-radius: 18px; overflow: hidden; object-fit: cover; }
+  #label { left: 40px; top: 300px; width: 560px; font-size: 22px; color: var(--accent); text-align: center; }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="video-demo" data-width="640" data-height="360" data-duration="6" style="background: var(--bg)">
+  <!-- A local H.264 MP4 (muted: this clip has no sound), trimmed to start 1 s in, looped to fill 6 s. -->
+  <video id="clip" src="video/clip.mp4" muted loop class="clip" data-start="0" data-duration="6" data-track-index="0"
+         data-media-start="1" data-hf-fade-in="0.5"></video>
+  <div id="label" class="clip" data-start="1" data-duration="5" data-track-index="1" data-hf-fade-in="0.4">native video clips</div>
+</div>
+</body>
+</html>

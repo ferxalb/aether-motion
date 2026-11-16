@@ -61,12 +61,16 @@ impl<'a> Renderer<'a> {
         // Drawing on black and on white recovers color and alpha without alpha-aware blending.
         let mut layers: Vec<Vec<u8>> = Vec::with_capacity(2);
         let mut outcome = Ok(());
-        for backdrop in [Color::BLACK, Color::WHITE] {
+        let ((wx0, wx1), (wy0, wy1)) =
+            revealed_ranges(edges.map(|edge| edge as f32), amount, from);
+        let window = [wx0 / k, wy0 / k, wx1 / k, wy1 / k];
+        let origin = (bounds.x0 as f32 / k, bounds.y0 as f32 / k);
+        for (pass, backdrop) in [Color::BLACK, Color::WHITE].into_iter().enumerate() {
             let layer = Surface::filled(lw as u32, lh as u32, k, backdrop);
             let outer = std::mem::replace(&mut self.surface, layer);
-            self.layer_depth += 1;
+            let saved = self.begin_layer_pass(pass, origin, Some(window));
             outcome = outcome.and_then(|()| self.draw_body(idx, shifted, cumulative));
-            self.layer_depth -= 1;
+            self.end_layer_pass(saved);
             layers.push(std::mem::replace(&mut self.surface, outer).pixels);
         }
         outcome?;

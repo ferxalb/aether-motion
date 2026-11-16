@@ -10,3 +10,4 @@ pub mod model;
 pub mod parse;
 pub mod render;
 pub mod setup;
+pub mod video;

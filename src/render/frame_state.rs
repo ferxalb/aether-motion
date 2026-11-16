@@ -1,6 +1,6 @@
-//! Per-element visual state (alpha and pose) sampled at one instant; compared across frames to reuse pixels.
+//! Per-element visual state (alpha, pose, and video frame) sampled at one instant; compared across frames to reuse pixels.
 
-use crate::model::Element;
+use crate::model::{Content, Element};
 
 #[derive(Clone, Copy, Default, PartialEq)]
 pub(in crate::render) struct FrameState {
@@ -10,6 +10,8 @@ pub(in crate::render) struct FrameState {
     pub(in crate::render) scale: f32,
     pub(in crate::render) rotate: f32,
     pub(in crate::render) reveal: f32,
+    /// Source frame of a `<video>`, so a new frame is never mistaken for an unchanged one.
+    pub(in crate::render) media: u32,
 }
 
 impl FrameState {
@@ -25,6 +27,10 @@ impl FrameState {
             scale: pose.scale,
             rotate: pose.rotate,
             reveal: pose.reveal,
+            media: match &element.content {
+                Content::Video(video) => video.frame_at(time - element.start) as u32,
+                _ => 0,
+            },
         }
     }
 }

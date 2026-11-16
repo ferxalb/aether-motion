@@ -183,6 +183,57 @@ pub fn sample_times(duration: f64, samples: usize, at: &[f64]) -> Result<Vec<f64
         .collect())
 }
 
+/// Raw zone-check inputs shared by the CLI flags and the `aether_check` arguments.
+#[derive(Clone, Debug, Default)]
+pub struct ZoneRequest<'a> {
+    pub safe_zone: Option<&'a str>,
+    pub caption_zone: Option<&'a str>,
+    pub samples: Option<usize>,
+    pub at: Vec<f64>,
+}
+
+impl ZoneRequest<'_> {
+    /// Resolves the request for a `width`x`height` composition lasting `duration` seconds;
+    /// `None` when no zone is selected (`--safe-zone off` and no caption band).
+    pub fn plan(&self, width: u32, height: u32, duration: f64) -> Result<Option<ZoneOptions>> {
+        let requested = parse_zones(self.safe_zone)?;
+        let caption = self.caption_zone.map(parse_caption_zone).transpose()?;
+        let zones = requested.unwrap_or_else(|| default_zones(width, height));
+        if zones.is_empty() && caption.is_none() {
+            return Ok(None);
+        }
+        Ok(Some(ZoneOptions {
+            zones,
+            caption,
+            times: sample_times(duration, self.samples.unwrap_or(9), &self.at)?,
+        }))
+    }
+}
+
+/// Adds `layout` (findings, truncated, notes, samples) to a successful `agent::check` report.
+/// Reports that failed validation are left alone. Returns the zone report when zones ran.
+pub fn attach(report: &mut Value, path: &Path, request: &ZoneRequest) -> Result<Option<ZoneReport>> {
+    if report["ok"] != true {
+        return Ok(None);
+    }
+    let (width, height) = (
+        report["width"].as_u64().unwrap_or(0) as u32,
+        report["height"].as_u64().unwrap_or(0) as u32,
+    );
+    let duration = report["duration"].as_f64().unwrap_or(0.0);
+    let Some(options) = request.plan(width, height, duration)? else {
+        return Ok(None);
+    };
+    let outcome = check_zones(path, &options)?;
+    report["layout"] = json!({
+        "findings": outcome.findings,
+        "truncated": outcome.truncated,
+        "notes": outcome.notes,
+        "samples": outcome.times,
+    });
+    Ok(Some(outcome))
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct ZoneOptions {
     pub zones: Vec<Zone>,

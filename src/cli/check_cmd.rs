@@ -11,7 +11,6 @@ use super::args::Args;
 use super::project;
 use crate::agent::{self, zones};
 use anyhow::{anyhow, Result};
-use serde_json::json;
 use std::io::IsTerminal;
 use std::path::Path;
 
@@ -32,20 +31,7 @@ pub fn run(raw: &[String]) -> Result<i32> {
     let mut exit = i32::from(!ok);
     let mut lines: Vec<String> = Vec::new();
     if ok {
-        let (width, height) = (
-            report["width"].as_u64().unwrap_or(0) as u32,
-            report["height"].as_u64().unwrap_or(0) as u32,
-        );
-        let planned = (|| -> Result<Option<zones::ZoneOptions>> {
-            let requested = zones::parse_zones(args.value("--safe-zone"))?;
-            let caption = args
-                .value("--caption-zone")
-                .map(zones::parse_caption_zone)
-                .transpose()?;
-            let chosen = requested.unwrap_or_else(|| zones::default_zones(width, height));
-            if chosen.is_empty() && caption.is_none() {
-                return Ok(None);
-            }
+        let request = (|| -> Result<zones::ZoneRequest> {
             let at = match args.value("--at") {
                 Some(list) => list
                     .split(',')
@@ -57,20 +43,26 @@ pub fn run(raw: &[String]) -> Result<i32> {
                     .collect::<Result<Vec<_>>>()?,
                 None => Vec::new(),
             };
-            let samples = args.number::<usize>("--samples")?.unwrap_or(9);
-            let duration = report["duration"].as_f64().unwrap_or(0.0);
-            Ok(Some(zones::ZoneOptions {
-                zones: chosen,
-                caption,
-                times: zones::sample_times(duration, samples, &at)?,
-            }))
+            Ok(zones::ZoneRequest {
+                safe_zone: args.value("--safe-zone"),
+                caption_zone: args.value("--caption-zone"),
+                samples: args.number::<usize>("--samples")?,
+                at,
+            })
         })();
-        let options = match planned {
-            Ok(options) => options,
+        let request = match request {
+            Ok(request) => request,
             Err(error) => return usage(error),
         };
-        if let Some(options) = options {
-            let outcome = zones::check_zones(&project.entry, &options)?;
+        // Zone flags that do not parse are usage errors; probing failures are real errors.
+        let (width, height) = (
+            report["width"].as_u64().unwrap_or(0) as u32,
+            report["height"].as_u64().unwrap_or(0) as u32,
+        );
+        if let Err(error) = request.plan(width, height, report["duration"].as_f64().unwrap_or(0.0)) {
+            return usage(error);
+        }
+        if let Some(outcome) = zones::attach(&mut report, &project.entry, &request)? {
             for finding in &outcome.findings {
                 lines.push(format!(
                     "{} {} {}: {} (t={})",
@@ -85,12 +77,6 @@ pub fn run(raw: &[String]) -> Result<i32> {
             if outcome.caption_errors || (args.has("--strict") && outcome.caption_collisions > 0) {
                 exit = 1;
             }
-            report["layout"] = json!({
-                "findings": outcome.findings,
-                "truncated": outcome.truncated,
-                "notes": outcome.notes,
-                "samples": outcome.times,
-            });
         }
     }
     if args.has("--json") || !std::io::stdout().is_terminal() {

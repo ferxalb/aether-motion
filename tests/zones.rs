@@ -139,3 +139,16 @@ fn generated_caption_words_collapse_into_one_finding_for_the_host() {
     let first: &Value = &report.findings[0];
     assert!((first["time"].as_f64().unwrap() - 0.4).abs() < 1e-9, "reported at the first time seen");
 }
+
+#[test]
+fn text_inside_overflow_hidden_is_probed_and_cut_to_the_clip() {
+    // The wrapper shows y 1400..1700; "in" sits inside it (low band), "out" is clipped away.
+    let body = format!(
+        r#"<div id="mask" class="clip" data-start="0" data-duration="2" data-track-index="0" style="left:0px;top:1400px;width:1080px;height:300px;overflow:hidden">{}{}</div>"#,
+        text("in", 20, ""),
+        text("out", 600, "")
+    );
+    let path = project(1080, 1920, &body);
+    let report = check_zones(&path, &options(default_zones(1080, 1920))).unwrap();
+    assert_eq!(codes(&report), [("outside_safe_zone".into(), "in".into())]);
+}

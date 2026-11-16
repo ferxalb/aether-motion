@@ -185,6 +185,32 @@ pub enum Content {
     Image(PathBuf),
     /// Serialized `<svg>` markup from the document, rasterized at the target size.
     InlineSvg(std::sync::Arc<str>),
+    /// A local H.264 video drawn one source frame per output frame.
+    Video(VideoSource),
+}
+
+/// A `<video>` clip: which file, where in it playback starts, and its frame table.
+#[derive(Clone, Debug)]
+pub struct VideoSource {
+    pub path: PathBuf,
+    /// Seconds into the source where the clip starts (`data-media-start`).
+    pub media_start: f64,
+    /// Repeat the source when the clip outlasts it; otherwise the last frame holds.
+    pub looped: bool,
+    /// The source's audio track is mixed with the clip (it has one and the element is not `muted`).
+    pub audio: bool,
+    pub index: std::sync::Arc<crate::video::VideoIndex>,
+}
+
+impl VideoSource {
+    /// Display frame shown `local` seconds after the clip starts.
+    pub fn frame_at(&self, local: f64) -> usize {
+        let mut media = self.media_start + local.max(0.0);
+        if self.looped && self.index.duration > 0.0 {
+            media = media.rem_euclid(self.index.duration);
+        }
+        self.index.frame_at(media)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -320,7 +346,7 @@ pub struct Composition {
 #[derive(Clone, Debug, PartialEq)]
 pub struct AudioClip {
     pub id: Option<String>,
-    /// Local source file (WAV, FLAC, Ogg Vorbis, or MP3).
+    /// Local source file (WAV, FLAC, Ogg Vorbis, MP3, or AAC in MP4/M4A).
     pub src: PathBuf,
     /// Resolved start on the composition timeline.
     pub start: f64,
