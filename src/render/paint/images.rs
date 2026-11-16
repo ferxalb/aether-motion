@@ -3,6 +3,7 @@
 use crate::model::Color;
 use crate::render::check_image;
 use crate::render::geometry::{clip_pixels, Rect};
+use crate::render::paint::svg;
 use crate::render::paint::Surface;
 use crate::render::Renderer;
 use anyhow::{anyhow, Context, Result};
@@ -15,11 +16,23 @@ pub(in crate::render) struct CachedImage {
     rows: Vec<(u32, u32, bool)>,
 }
 
-pub(in crate::render) type ImageKey<'a> = (&'a Path, u32, u32, &'a str);
+/// Where a bitmap comes from: a file on disk or inline `<svg>` markup.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(in crate::render) enum ImageSrc<'a> {
+    File(&'a Path),
+    Inline(&'a str),
+}
+
+pub(in crate::render) type ImageKey<'a> = (ImageSrc<'a>, u32, u32, &'a str);
+
+fn is_svg(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("svg"))
+}
 
 impl<'a> Renderer<'a> {
     pub(in crate::render) fn cache_image(&mut self, key: &ImageKey<'a>) -> Result<()> {
-        let (path, w, h, fit) = *key;
+        let (src, w, h, fit) = *key;
         if !self.images.contains_key(key) {
             let pixel_bytes = (w as usize)
                 .checked_mul(h as usize)
@@ -34,38 +47,57 @@ impl<'a> Renderer<'a> {
             let row_bytes = h as usize * std::mem::size_of::<(u32, u32, bool)>();
             let cache_rows = row_bytes <= CACHE_LIMIT - pixel_bytes;
             let bytes = pixel_bytes + if cache_rows { row_bytes } else { 0 };
-            check_image(path)?;
-            let image = image::open(path)
-                .with_context(|| format!("could not open image {}", path.display()))?
-                .to_rgba8();
-            let fitted = match fit {
-                "fill" => imageops::resize(&image, w, h, imageops::FilterType::Triangle),
-                "contain" | "cover" => {
-                    let sx = w as f32 / image.width() as f32;
-                    let sy = h as f32 / image.height() as f32;
-                    let factor = if fit == "contain" {
-                        sx.min(sy)
-                    } else {
-                        sx.max(sy)
-                    };
-                    let nw = ((image.width() as f32 * factor).round() as u32).max(1);
-                    let nh = ((image.height() as f32 * factor).round() as u32).max(1);
-                    if u64::from(nw) * u64::from(nh) > (CACHE_LIMIT / 4) as u64 {
-                        return Err(anyhow!(
-                            "intermediate image exceeds 64 MiB; adjust object-fit or --scale"
-                        ));
-                    }
-                    let resized = imageops::resize(&image, nw, nh, imageops::FilterType::Triangle);
-                    let mut canvas = RgbaImage::from_pixel(w, h, Rgba([0, 0, 0, 0]));
-                    imageops::overlay(
-                        &mut canvas,
-                        &resized,
-                        (w as i64 - nw as i64) / 2,
-                        (h as i64 - nh as i64) / 2,
-                    );
-                    canvas
+            let vector = match src {
+                ImageSrc::Inline(markup) => Some(svg::parse_svg(markup.as_bytes())?),
+                ImageSrc::File(path) if is_svg(path) => Some(
+                    svg::parse_svg(&svg::read_limited(path)?)
+                        .with_context(|| format!("in {}", path.display()))?,
+                ),
+                ImageSrc::File(_) => None,
+            };
+            let image = match (&vector, src) {
+                (Some(_), _) => RgbaImage::new(1, 1),
+                (None, ImageSrc::File(path)) => {
+                    check_image(path)?;
+                    image::open(path)
+                        .with_context(|| format!("could not open image {}", path.display()))?
+                        .to_rgba8()
                 }
-                _ => return Err(anyhow!("unsupported object-fit: {fit}")),
+                (None, ImageSrc::Inline(_)) => unreachable!("inline sources are always vector"),
+            };
+            let fitted = if let Some(tree) = &vector {
+                svg::rasterize(tree, w, h, fit)?
+            } else {
+                match fit {
+                    "fill" => imageops::resize(&image, w, h, imageops::FilterType::Triangle),
+                    "contain" | "cover" => {
+                        let sx = w as f32 / image.width() as f32;
+                        let sy = h as f32 / image.height() as f32;
+                        let factor = if fit == "contain" {
+                            sx.min(sy)
+                        } else {
+                            sx.max(sy)
+                        };
+                        let nw = ((image.width() as f32 * factor).round() as u32).max(1);
+                        let nh = ((image.height() as f32 * factor).round() as u32).max(1);
+                        if u64::from(nw) * u64::from(nh) > (CACHE_LIMIT / 4) as u64 {
+                            return Err(anyhow!(
+                                "intermediate image exceeds 64 MiB; adjust object-fit or --scale"
+                            ));
+                        }
+                        let resized =
+                            imageops::resize(&image, nw, nh, imageops::FilterType::Triangle);
+                        let mut canvas = RgbaImage::from_pixel(w, h, Rgba([0, 0, 0, 0]));
+                        imageops::overlay(
+                            &mut canvas,
+                            &resized,
+                            (w as i64 - nw as i64) / 2,
+                            (h as i64 - nh as i64) / 2,
+                        );
+                        canvas
+                    }
+                    _ => return Err(anyhow!("unsupported object-fit: {fit}")),
+                }
             };
             while bytes > CACHE_LIMIT.saturating_sub(self.image_cache_bytes)
                 || self.images.len() >= 4096
@@ -114,14 +146,14 @@ impl<'a> Renderer<'a> {
 
     pub(in crate::render) fn draw_image(
         &mut self,
-        path: &'a Path,
+        src: ImageSrc<'a>,
         rect: Rect,
         fit: &'a str,
         alpha: f32,
     ) -> Result<()> {
         let w = (rect.w * self.scale).round().max(1.0) as u32;
         let h = (rect.h * self.scale).round().max(1.0) as u32;
-        let key = (path, w, h, fit);
+        let key = (src, w, h, fit);
         self.cache_image(&key)?;
         let x0 = (rect.x * self.scale).round() as i32;
         let y0 = (rect.y * self.scale).round() as i32;
@@ -199,7 +231,7 @@ mod tests {
         let composition = parse_file(&html).unwrap();
         let mut renderer = Renderer::new(&composition, 1.0).unwrap();
         for width in 1..=4096 {
-            let key = (path.as_path(), width, 1, "fill");
+            let key = (ImageSrc::File(path.as_path()), width, 1, "fill");
             renderer.images.insert(
                 key,
                 CachedImage {
@@ -211,13 +243,13 @@ mod tests {
             renderer.image_order.push_back(key);
             renderer.image_cache_bytes += 4;
         }
-        let key = (path.as_path(), 4097, 1, "fill");
+        let key = (ImageSrc::File(path.as_path()), 4097, 1, "fill");
         renderer.cache_image(&key).unwrap();
         assert_eq!(renderer.images.len(), 4096);
         assert_eq!(renderer.image_order.len(), 4096);
         assert!(!renderer
             .images
-            .contains_key(&(path.as_path(), 1, 1, "fill")));
+            .contains_key(&(ImageSrc::File(path.as_path()), 1, 1, "fill")));
         assert!(renderer.images.contains_key(&key));
         assert_eq!(
             renderer.image_cache_bytes,

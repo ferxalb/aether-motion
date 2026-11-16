@@ -1,6 +1,7 @@
 //! Scene traversal: places each element, applies its pose, and draws its box, content, and children.
 
 use super::geometry::Rect;
+use super::paint::ImageSrc;
 use super::Renderer;
 use crate::model::{Background, Color, Content};
 use anyhow::Result;
@@ -181,7 +182,13 @@ impl<'a> Renderer<'a> {
         let element = &self.composition.elements[idx];
         match &element.content {
             Content::Image(path) => self.draw_image(
-                path,
+                ImageSrc::File(path),
+                rect,
+                element.style.object_fit.as_deref().unwrap_or("fill"),
+                alpha,
+            )?,
+            Content::InlineSvg(markup) => self.draw_image(
+                ImageSrc::Inline(markup),
                 rect,
                 element.style.object_fit.as_deref().unwrap_or("fill"),
                 alpha,

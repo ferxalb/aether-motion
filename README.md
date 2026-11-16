@@ -153,7 +153,7 @@ AETHER Motion uses the [HyperFrames](https://github.com/heygen-com/hyperframes) 
 | HTML/CSS coverage | Documented subset; anything else fails with an error | Everything a browser can render |
 | Animation | Native keyframes, camera, text, transitions, CSS `@keyframes` | GSAP, CSS, Lottie, Three.js, WAAPI, adapters |
 | Audio | `<audio>` clips mixed sample-accurately into AAC | Supported |
-| Video, SVG, scripts | Not supported | Supported |
+| Video, scripts, animated or text SVG | Not supported (static SVG is supported) | Supported |
 | Agent integration | MCP server | Agent skills and CLI |
 | License | Apache 2.0 | Apache 2.0 |
 

@@ -14,7 +14,8 @@ mod rotate;
 mod shadow;
 mod shape;
 mod surface;
+pub(crate) mod svg;
 mod tile_cache;
 
-pub(super) use images::{CachedImage, ImageKey};
+pub(super) use images::{CachedImage, ImageKey, ImageSrc};
 pub(super) use surface::Surface;

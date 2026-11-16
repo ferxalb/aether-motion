@@ -40,7 +40,7 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
         fs::read_to_string(path).with_context(|| format!("could not read {}", path.display()))?;
     let document = kuchiki::parse_html().one(html);
     if let Some(unsupported) = document
-        .select("script, video, canvas, svg, iframe")
+        .select("script, video, canvas, iframe")
         .map_err(|_| anyhow!("error selecting HTML elements"))?
         .next()
     {
@@ -151,7 +151,9 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
         .filter_map(|(idx, p)| {
             p.duration
                 .or_else(|| {
-                    if p.start_expr.is_some() && matches!(p.element.content, Content::Image(_)) {
+                    if p.start_expr.is_some()
+                        && matches!(p.element.content, Content::Image(_) | Content::InlineSvg(_))
+                    {
                         Some(3.0)
                     } else {
                         None
@@ -187,7 +189,9 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
         p.element.start = memo[idx].unwrap();
         p.element.end = if let Some(d) = p.duration {
             p.element.start + d
-        } else if p.start_expr.is_some() && matches!(p.element.content, Content::Image(_)) {
+        } else if p.start_expr.is_some()
+            && matches!(p.element.content, Content::Image(_) | Content::InlineSvg(_))
+        {
             p.element.start + 3.0
         } else {
             duration

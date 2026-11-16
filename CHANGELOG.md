@@ -38,3 +38,10 @@ First stable release.
 - 1080p and 4K export presets, multi-threaded rendering with a low-priority default.
 - Tile cache, reduced-resolution wide blurs, and identical-frame reuse; see `BENCHMARK.md`.
 - `examples/audio.html`.
+- Static SVG. Local `<img src="file.svg">` and inline `<svg>` are rasterized deterministically with `resvg`
+  at the target size (sharp at any `--scale`; `object-fit`, fades, keyframes, and transitions apply). Shapes,
+  paths, strokes, gradients, clip paths, masks, and filters render; `<text>`, SMIL animation,
+  `<foreignObject>`, `<script>`, event handlers, and external references are rejected or ignored. `check`
+  validates SVG files and inline markup. `examples/svg.html`.
+- Clearer errors for unsupported scripts and SVG content: the `fix` hint points to the native `data-hf-*`
+  motion and CSS `@keyframes` equivalents.

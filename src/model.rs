@@ -183,6 +183,8 @@ pub enum Content {
     Container,
     Text(String),
     Image(PathBuf),
+    /// Serialized `<svg>` markup from the document, rasterized at the target size.
+    InlineSvg(std::sync::Arc<str>),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

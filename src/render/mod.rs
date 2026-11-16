@@ -17,6 +17,7 @@ use anyhow::{anyhow, Context, Result};
 use fontdb::Database;
 use frame_state::FrameState;
 use geometry::Rect;
+pub(crate) use paint::svg;
 use paint::{CachedImage, ImageKey, Surface};
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;

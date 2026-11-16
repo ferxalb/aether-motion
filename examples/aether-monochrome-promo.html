@@ -132,6 +132,15 @@
 </head>
 <body>
 <div id="root" data-composition-id="aether-monochrome-promo" data-width="1920" data-height="1080" data-duration="30" data-hf-vignette="0.24" data-hf-grain="0.012">
+  <!-- Subtle ambience and scene pings use the bundled audio assets; the loop fades in and out with the film. -->
+  <audio id="ambient-pad" src="audio/pad.wav" data-start="0" data-duration="30" data-hf-loop="true" data-volume="0.22" data-hf-fade-in="2.2" data-hf-fade-out="2"></audio>
+  <audio id="opening-ping" src="audio/ping.wav" data-start="0" data-volume="0.16"></audio>
+  <audio id="section-ping-1" src="audio/ping.wav" data-start="5" data-volume="0.16"></audio>
+  <audio id="section-ping-2" src="audio/ping.wav" data-start="10" data-volume="0.16"></audio>
+  <audio id="section-ping-3" src="audio/ping.wav" data-start="15" data-volume="0.16"></audio>
+  <audio id="section-ping-4" src="audio/ping.wav" data-start="20" data-volume="0.16"></audio>
+  <audio id="section-ping-5" src="audio/ping.wav" data-start="25" data-volume="0.16"></audio>
+
   <!-- Built-in ambient glow block, recolored through the monochrome root variables. -->
   <style>
     @keyframes mono-glow-drift {

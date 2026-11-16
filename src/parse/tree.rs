@@ -54,10 +54,7 @@ pub(in crate::parse) fn walk(
         audio.push(parse_audio(node, parent, base)?);
         return Ok(());
     }
-    if matches!(
-        tag.as_str(),
-        "script" | "video" | "canvas" | "svg" | "iframe"
-    ) {
+    if matches!(tag.as_str(), "script" | "video" | "canvas" | "iframe") {
         bail!("<{tag}> requires a browser/JavaScript and is not supported by the native backend");
     }
     if !matches!(
@@ -76,6 +73,7 @@ pub(in crate::parse) fn walk(
             | "small"
             | "strong"
             | "img"
+            | "svg"
     ) {
         bail!("unsupported HTML element: <{tag}>");
     }
@@ -135,7 +133,9 @@ pub(in crate::parse) fn walk(
         .map(|s| s.parse::<i32>().context("invalid data-track-index"))
         .transpose()?
         .unwrap_or(0);
-    let content = if tag == "img" {
+    let content = if tag == "svg" {
+        Content::InlineSvg(inline_svg_markup(node)?.into())
+    } else if tag == "img" {
         let src = attr(node, "src").ok_or_else(|| anyhow!("<img> requires src"))?;
         if src.starts_with("data:") || src.contains("://") {
             bail!("only local images are supported: {src}");
@@ -246,8 +246,47 @@ pub(in crate::parse) fn walk(
     if let (Some(spec), Some(text)) = (&split, &split_text) {
         return spec.expand(text, idx, out);
     }
+    // SVG children belong to the vector graphic, not to the HTML tree.
+    if matches!(out[idx].element.content, Content::InlineSvg(_)) {
+        return Ok(());
+    }
     for child in node.children() {
         walk(&child, Some(idx), base, sheet, &vars, out, audio)?;
     }
     Ok(())
+}
+
+/// Serializes an inline `<svg>` to standalone XML that the SVG rasterizer accepts. Scripts,
+/// event handlers, and external references are rejected so output stays deterministic.
+fn inline_svg_markup(node: &NodeRef) -> Result<String> {
+    for d in node.descendants() {
+        let Some(el) = d.as_element() else { continue };
+        let name = el.name.local.to_string();
+        if matches!(
+            name.as_str(),
+            "script" | "foreignObject" | "animate" | "set" | "animateTransform" | "animateMotion"
+        ) {
+            bail!("<{name}> inside <svg> requires a browser/JavaScript and is not supported by the native backend");
+        }
+        for (key, value) in el.attributes.borrow().map.iter() {
+            let key = &*key.local;
+            if key.starts_with("on") {
+                bail!("event handler {key} inside <svg> requires JavaScript and is not supported");
+            }
+            if matches!(key, "href") && !value.value.starts_with('#') {
+                bail!(
+                    "only local #fragment references are supported inside <svg>: {}",
+                    value.value
+                );
+            }
+        }
+    }
+    let mut out = Vec::new();
+    node.serialize(&mut out)
+        .context("could not serialize <svg>")?;
+    let mut markup = String::from_utf8(out).context("<svg> is not valid UTF-8")?;
+    if !markup.contains("xmlns=") {
+        markup = markup.replacen("<svg", "<svg xmlns=\"http://www.w3.org/2000/svg\"", 1);
+    }
+    Ok(markup)
 }

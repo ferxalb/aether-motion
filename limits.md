@@ -1,5 +1,6 @@
 # Limits
 
+- SVG (`<img src="x.svg">` or inline `<svg>`) is static: no `<text>`, SMIL animation, scripts, `<foreignObject>`, or external resources. Scripts of any kind remain unsupported by design (determinism); use the native `data-hf-*` motion instead.
 - Descendants of a rotated element are clipped to its box plus its shadow reach. This is a deliberate, documented limitation.
 - There is no skew, 3D, percent translation, or other transform origin; these return an explicit error.
 - `filter` supports only `blur()` (not on the root); children that stick out of the element by more than the blur reach plus the element's shadow reach are cut, and the blur is not animatable.
