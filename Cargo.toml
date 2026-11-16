@@ -29,7 +29,9 @@ lto = "thin"
 codegen-units = 1
 strip = true
 
-# oxideav-aac 0.1.7 with a table-driven forward MDCT (about 6x faster encoding); see
+# oxideav-aac 0.1.7 with an FFT-based forward MDCT (about 70x faster than upstream); see
 # vendor/oxideav-aac/AETHER-PATCH.md.
 [patch.crates-io]
 oxideav-aac = { path = "vendor/oxideav-aac" }
+# openh264 0.9.10 with a `base_qp` option for the fixed quantizer; see vendor/openh264/AETHER-PATCH.md.
+openh264 = { path = "vendor/openh264" }

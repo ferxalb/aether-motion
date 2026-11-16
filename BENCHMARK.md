@@ -578,3 +578,84 @@ Measured with the release build and `--threads 1` (`bench --frame START --count 
 | 15 frames starting 15 frames into a GOP (decode from the keyframe first) | about 9 ms (0.13 s) |
 
 The full 15 s render of the downscaled case takes 15.1 s with `--threads 1` and 5.7 s with `--threads 3`, with byte-identical MP4s. The resize replacement differs from `imageops::resize` by at most 6 levels per channel on test gradients (a unit test checks this); the resize dominates the cost whenever source and box sizes differ, so matching them (`fill` at the source size) is the cheap path. A request that goes backward or jumps ahead restarts decoding at the keyframe of its GOP, so cost grows with GOP length; sequential rendering decodes every frame once.
+
+## FFT MDCT, call-free pixel rounding, and quality presets (2026-11-16)
+
+Release builds, one thread, `nice 10`, on a shared 4-core cloud container (wall times there vary by
+about ±10% between runs, so instruction counts from `valgrind --tool=callgrind` are reported too).
+"Before" is the build at the start of this change.
+
+### AAC: FFT-based forward MDCT
+
+The vendored `oxideav-aac` evaluated its forward MDCT as an O(N²) sum over a cosine table (about
+two million multiply-adds per channel and frame). Every AAC-LC transform length (2048 and 256) is a
+power of two, so it now folds the input into a DCT-IV and evaluates that with one N/4-point complex
+FFT. Other lengths keep the table sum. Against the direct formula the coefficients agree to about
+1e-13 relative (the test bound is 1e-11, for lengths 8 to 2048 and the 960 fallback).
+
+| Case (64×36 video, so the time is almost all audio) | Before | After |
+| --- | ---: | ---: |
+| 60 s stereo WAV at 44.1 kHz, looped, to AAC-LC 192 kbit/s, native MP4 | 16.7 s | 1.43 s (two runs: 1.43, 1.41) |
+
+The MP4s are byte-identical, as are the MP4s of `examples/audio.html` and `examples/video.html` (whose
+clip carries an AAC track). AAC now costs about 2.4% of real time per track instead of 28%.
+
+### Drawing: exact call-free `round` and `hypot`
+
+On the baseline x86-64 target, `f32::round` is a call into the soft-float runtime and `f32::hypot`
+calls libm. A callgrind profile of `premium-promo.html` (frames 280–282, 1080p) put about 16% of
+instructions in `roundf` and 5% in `hypotf`, nearly all from the direct (uncached) gradient loop, which
+fractional glow motion uses every frame. `paint/float_ops.rs` now holds `round_to_u8` (moved from the
+backdrop blur, exact for every input, also used by `blend_pixel` and small translucent fills) and an
+inlined `hypot` that evaluates `sqrt(x² + y²)` in `f64`, the same evaluation as glibc's `hypotf`
+(100 million random inputs and a unit test: no bit differs). The gradient loop also hoists its
+per-row dither and vertical coverage.
+
+| Composition (frames 280–282, 1080p) | Instructions before | After | Change |
+| --- | ---: | ---: | ---: |
+| `premium-promo.html` | 3.450 G | 3.056 G | −11.4% |
+| `aether-monochrome-promo.html` | 4.500 G | 4.006 G | −11.0% |
+
+`bench --frame 60 --count 20` at 1080p, three runs each (seconds): `premium-promo` 1.555 / 1.475 /
+1.462 before, 1.393 / 1.462 / 1.264 after (median −5.6%); `aether-monochrome-promo` 1.935 / 1.923 /
+2.067 before, 2.036 / 1.799 / 1.711 after (−7.0%); `glass` 1.462 / 1.371 / 1.530 before, 1.295 /
+1.328 / 1.339 after (−9.2%). These are within the noise threshold individually; the instruction
+counts are the firmer evidence. PNGs of every example and benchmark composition at frames 0, 17, 45,
+90, and 200 (136 frames at `--scale 0.5`) are byte-identical to the previous build.
+
+Rejected: replacing every `round`/`floor`/`ceil` under `src/render` with a generic exact inline
+version (truncate, then correct the fraction and the sign of zero). It executed as many instructions
+as the runtime calls it replaced, and `glass.html` drew 20–30% slower with both a branching and a
+branch-free correction; it was reverted. Only the specialized, already clamped `round_to_u8` pays off.
+
+### Quality presets
+
+With rate control off, OpenH264 encodes every frame at the layer QP `iDLayerQp`, which the `openh264`
+crate never set: exports always used QP 26, and the configured `24..32` range only bounds
+adaptive-quantization changes to P frames. Changing that range produced byte-identical files. The
+crate initializes the encoder inside its first `encode_at`, so the wrapper is vendored with a
+`base_qp` option (`vendor/openh264/AETHER-PATCH.md`), and `--quality` picks QP 30, 26, 22, or 18.
+
+Fidelity against the lossless PNG frames (FFmpeg `psnr` on luma and `ssim`, references converted to
+yuv420p by FFmpeg), 1080p, 30 fps, one thread; size in bytes:
+
+| Composition | QP 26 (`standard`) | QP 22 (`high`) | QP 18 (`max`) |
+| --- | --- | --- | --- |
+| `kinetic-text.html` (5 s) | 249,904 B, 51.98 dB, SSIM 0.99892 | 329,731 B, 55.42 dB, 0.99936 | 425,624 B, 58.08 dB, 0.99961 |
+| `camera.html` (6 s) | 495,553 B, 52.95 dB, 0.99864 | 666,900 B, 54.82 dB, 0.99893 | 843,552 B, 54.62 dB, 0.99901 |
+| `motion.html` (3 s) | 272,640 B, 52.22 dB, 0.99886 | 336,574 B, 53.68 dB, 0.99928 | 406,152 B, 54.22 dB, 0.99953 |
+| `transitions.html` (9 s) | 453,862 B, 49.17 dB, 0.99699 | 844,928 B, 51.22 dB, 0.99739 | 831,849 B, 50.24 dB, 0.99721 |
+| `glass.html` (4 s, film grain) | 346,785 B, 43.37 dB, 0.97774 | 507,374 B, 43.90 dB, 0.97827 | 1,998,077 B, 43.77 dB, 0.97735 |
+
+SSIM rises with every step except on the two outliers: `transitions.html`, where OpenH264's
+mode decisions in fast slides make QP 22 slightly better than QP 18 to 21, and `glass.html`, whose
+per-frame grain is incompressible noise, so the error floor stays near 43.5 dB while the file grows.
+Turning off background or scene-change detection did not change that pattern. `Complexity::High`
+(on `transitions.html` at QP 18 to 24) made files 1% to 11% smaller with luma PSNR within 0.07 dB,
+at 1% to 12% more encoding time, so the encoder stays at `Complexity::Low`.
+
+Full native export of `premium-promo.html` (450 frames, 1080p, 30 fps, `--threads 1`, one run each):
+before 41.6 s and 2,347,124 bytes; `--quality standard` 38.5 s and the same bytes (byte-identical
+file); `--quality max` (the new default) 39.4 s and 6,617,373 bytes. The quantizer barely changes CPU
+time because drawing dominates (37.7 s of the export is drawing). Both files decode to 450 frames.
+No measurements were made on older PCs or other operating systems.

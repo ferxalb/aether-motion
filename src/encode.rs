@@ -1,5 +1,6 @@
-//! Native H.264/MP4 encoding of rendered frames, including segmented parallel encoding, and the
-//! optional AAC audio track mixed from the composition's `<audio>` clips (see `crate::audio`).
+//! Native H.264/MP4 encoding of rendered frames, including segmented parallel encoding, the
+//! [`Quality`] presets (fixed quantizers), and the optional AAC audio track mixed from the
+//! composition's `<audio>` clips (see `crate::audio`). [`EncodeOptions`] collects the settings.
 
 use crate::audio::aac::AacStream;
 use crate::audio::{self, mux as audio_mux};
@@ -47,6 +48,81 @@ impl NalFrame {
     }
 }
 
+/// H.264 quality preset. OpenH264 runs without rate control, so each preset is a fixed quantizer
+/// (QP): lower is sharper and larger, and the encoding CPU cost barely changes (see `BENCHMARK.md`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Quality {
+    /// QP 30: small files for quick previews.
+    Draft,
+    /// QP 26: OpenH264's default, byte-identical to exports before presets existed.
+    Standard,
+    /// QP 22.
+    High,
+    /// QP 18: the default; fine text, gradients, and grain survive compression.
+    #[default]
+    Max,
+}
+
+impl Quality {
+    /// Names accepted by `--quality` and the MCP `quality` argument.
+    pub const NAMES: &'static str = "draft, standard, high, or max";
+
+    /// The fixed quantizer of every frame.
+    pub const fn base_qp(self) -> u8 {
+        match self {
+            Self::Draft => 30,
+            Self::Standard => 26,
+            Self::High => 22,
+            Self::Max => 18,
+        }
+    }
+
+    /// Bounds for OpenH264's adaptive-quantization adjustment of P frames, centered like the
+    /// historical `24..=32` around QP 26.
+    const fn qp_range(self) -> QpRange {
+        let qp = self.base_qp();
+        QpRange::new(qp - 2, qp + 6)
+    }
+}
+
+impl std::str::FromStr for Quality {
+    type Err = anyhow::Error;
+
+    fn from_str(value: &str) -> Result<Self> {
+        match value {
+            "draft" => Ok(Self::Draft),
+            "standard" => Ok(Self::Standard),
+            "high" => Ok(Self::High),
+            "max" => Ok(Self::Max),
+            _ => bail!("quality must be {}", Self::NAMES),
+        }
+    }
+}
+
+/// Settings of a native MP4 export.
+#[derive(Clone, Copy, Debug)]
+pub struct EncodeOptions {
+    /// Frames per second, 1 to 60.
+    pub fps: u32,
+    /// Render and encode workers, 1 to 64 (see [`default_threads`]).
+    pub threads: u32,
+    /// AAC bitrate in bits per second (stereo, 64 to 320 kbit/s).
+    pub audio_bitrate: u32,
+    pub quality: Quality,
+}
+
+impl EncodeOptions {
+    /// Options with the default audio bitrate and quality.
+    pub fn new(fps: u32, threads: u32) -> Self {
+        Self {
+            fps,
+            threads,
+            audio_bitrate: audio::DEFAULT_BITRATE,
+            quality: Quality::default(),
+        }
+    }
+}
+
 /// Encodes the composition to H.264/MP4, with AAC audio when it has `<audio>` clips.
 pub fn encode_native(
     renderer: &mut Renderer<'_>,
@@ -54,7 +130,7 @@ pub fn encode_native(
     fps: u32,
     threads: u32,
 ) -> Result<()> {
-    encode_native_with_audio(renderer, output, fps, threads, audio::DEFAULT_BITRATE)
+    encode_native_with_options(renderer, output, &EncodeOptions::new(fps, threads))
 }
 
 /// [`encode_native`] with an explicit AAC bitrate in bits per second (stereo, 64 to 320 kbit/s).
@@ -65,6 +141,25 @@ pub fn encode_native_with_audio(
     threads: u32,
     audio_bitrate: u32,
 ) -> Result<()> {
+    let options = EncodeOptions {
+        audio_bitrate,
+        ..EncodeOptions::new(fps, threads)
+    };
+    encode_native_with_options(renderer, output, &options)
+}
+
+/// [`encode_native`] with every export setting explicit.
+pub fn encode_native_with_options(
+    renderer: &mut Renderer<'_>,
+    output: &Path,
+    options: &EncodeOptions,
+) -> Result<()> {
+    let EncodeOptions {
+        fps,
+        threads,
+        audio_bitrate,
+        quality,
+    } = *options;
     if !(64_000..=320_000).contains(&audio_bitrate) {
         bail!("audio bitrate must be between 64 and 320 kbit/s");
     }
@@ -101,7 +196,7 @@ pub fn encode_native_with_audio(
             let (rasterized, reused) = write_segmented(
                 renderer,
                 &partial,
-                fps,
+                (fps, quality),
                 threads as usize,
                 frame_count,
                 audio,
@@ -124,7 +219,7 @@ pub fn encode_native_with_audio(
                 let result = write_video(
                     &partial,
                     (width, height),
-                    fps,
+                    (fps, quality),
                     threads - 1,
                     frame_count,
                     receiver,
@@ -140,7 +235,7 @@ pub fn encode_native_with_audio(
             write_video(
                 &partial,
                 (width, height),
-                fps,
+                (fps, quality),
                 threads,
                 frame_count,
                 video_frames(renderer, fps),
@@ -200,13 +295,14 @@ struct EncodedSegment {
     pps: Vec<u8>,
 }
 
-fn make_encoder(fps: u32, threads: u32) -> Result<Encoder> {
+fn make_encoder(fps: u32, threads: u32, quality: Quality) -> Result<Encoder> {
     let config = EncoderConfig::new()
         .skip_frames(false)
         .max_frame_rate(FrameRate::from_hz(fps as f32))
         .num_threads(threads as u16)
         .rate_control_mode(RateControlMode::Off)
-        .qp(QpRange::new(24, 32))
+        .base_qp(quality.base_qp())
+        .qp(quality.qp_range())
         .complexity(Complexity::Low)
         // openh264::formats converts RGB to limited-range BT.601 YUV.
         .vui(VuiConfig::bt601());
@@ -343,13 +439,13 @@ fn write_sample(writer: &mut Mp4Writer<File>, frame: usize, (bytes, sync): Sampl
 fn write_video(
     partial: &Path,
     dimensions: (u32, u32),
-    fps: u32,
+    (fps, quality): (u32, Quality),
     threads: u32,
     frame_count: usize,
     frames: impl IntoIterator<Item = Result<Arc<YUVBuffer>>>,
     audio: Option<&AacStream>,
 ) -> Result<()> {
-    let mut encoder = make_encoder(fps, threads)?;
+    let mut encoder = make_encoder(fps, threads, quality)?;
     let mut writer = None;
     let mut written = 0;
     for (frame, yuv) in frames.into_iter().enumerate() {
@@ -404,11 +500,11 @@ fn encode_segment(
     renderer: &mut Renderer<'_>,
     index: usize,
     range: std::ops::Range<usize>,
-    fps: u32,
+    (fps, quality): (u32, Quality),
 ) -> Result<EncodedSegment> {
     let (width, height) = renderer.dimensions();
     let dims = (width as usize, height as usize);
-    let mut encoder = make_encoder(fps, 1)?;
+    let mut encoder = make_encoder(fps, 1, quality)?;
     let mut yuv = YUVBuffer::new(dims.0, dims.1);
     let mut last_revision = None;
     let before = (renderer.stats().rasterized, renderer.stats().reused);
@@ -444,7 +540,7 @@ fn encode_segment(
 fn write_segmented(
     renderer: &Renderer<'_>,
     partial: &Path,
-    fps: u32,
+    (fps, quality): (u32, Quality),
     workers: usize,
     frame_count: usize,
     audio: Option<&AacStream>,
@@ -471,7 +567,7 @@ fn write_segmented(
                     }
                     let start = index * segment_len;
                     let end = (start + segment_len).min(frame_count);
-                    let result = encode_segment(&mut fork, index, start..end, fps);
+                    let result = encode_segment(&mut fork, index, start..end, (fps, quality));
                     if result.is_err() {
                         failed.store(true, Ordering::Relaxed);
                     }

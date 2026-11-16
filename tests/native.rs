@@ -602,3 +602,32 @@ fn rotate_animates_and_stays_deterministic() {
     assert_eq!(red_at(&mut r, 1.5, 7, 6), 255, "forwards holds 90 degrees");
     assert_eq!(r.render_at(0.5).unwrap(), mid, "same time, same bytes");
 }
+
+#[test]
+fn quality_presets_trade_file_size_for_fidelity() {
+    use aether_motion::encode::{encode_native_with_options, EncodeOptions, Quality};
+    let dir = std::env::temp_dir().join(format!("aether-hf-quality-test-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let composition = parse_file(fixture()).unwrap();
+    let mut sizes = Vec::new();
+    for quality in [Quality::Draft, Quality::Standard, Quality::High, Quality::Max] {
+        let mut renderer = Renderer::new(&composition, 1.0).unwrap();
+        let output = dir.join(format!("{quality:?}.mp4"));
+        let options = EncodeOptions {
+            quality,
+            ..EncodeOptions::new(12, 1)
+        };
+        encode_native_with_options(&mut renderer, &output, &options).unwrap();
+        let file = File::open(&output).unwrap();
+        let size = file.metadata().unwrap().len();
+        let mp4 = mp4::Mp4Reader::read_header(BufReader::new(file), size).unwrap();
+        assert_eq!(mp4.sample_count(1).unwrap(), 48, "{quality:?}");
+        sizes.push(size);
+    }
+    // A lower quantizer keeps more detail, so each preset is larger than the one before.
+    assert!(sizes.windows(2).all(|pair| pair[0] < pair[1]), "{sizes:?}");
+    assert_eq!(Quality::default(), Quality::Max);
+    assert_eq!("standard".parse::<Quality>().unwrap().base_qp(), 26);
+    assert!("ultra".parse::<Quality>().is_err());
+    std::fs::remove_dir_all(dir).unwrap();
+}

@@ -1,5 +1,5 @@
 //! MCP stdio server for the current stateless protocol and legacy clients.
-use crate::encode::encode_native_with_audio;
+use crate::encode::{encode_native_with_options, EncodeOptions};
 use crate::model::Composition;
 use crate::parse::parse_file;
 use crate::render::Renderer;
@@ -87,7 +87,7 @@ fn tools() -> Value {
         {"name": "aether_block", "description": "List ready-made blocks and themes, or render one as HTML to paste into a composition. Without name it returns the catalog with parameters and defaults.", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "params": {"type": "object", "additionalProperties": {"type": "string"}}}}},
         {"name": "aether_check", "description": "Validate the composition; return JSON with an error and fix on failure. On success it also probes text and returns layout.findings: outside_safe_zone warnings (TikTok, Reels, Shorts on 9:16 frames; 10% margins on other frames) and, with captionZone, caption_zone_collision. Opt out with data-layout-allow-safe-zone or data-layout-allow-caption-zone.", "inputSchema": {"type": "object", "properties": {"path": path, "safeZone": {"type": "string", "description": "tiktok, reels, shorts, standard (comma list), or off. Default: all platform zones on 9:16, standard otherwise."}, "captionZone": {"type": "string", "description": "Fractional band, for example x0=0;y0=0.7;x1=1;y1=1 (optional ;severity=error)"}, "samples": {"type": "integer", "minimum": 1, "maximum": 200, "description": "Midpoint sample count (default 9)"}, "at": {"type": "array", "items": {"type": "number"}, "description": "Exact sample times in seconds, instead of samples"}}, "required": ["path"]}},
         {"name": "aether_snapshot", "description": "Render the exact second t (0 <= t < duration) and return a PNG.", "inputSchema": {"type": "object", "properties": {"path": path, "t": {"type": "number"}, "scale": {"type": "number"}, "size": {"type": "string", "enum": ["1080p", "4k"]}}, "required": ["path"]}},
-        {"name": "aether_render", "description": "Render to MP4 (native H.264). Does not overwrite existing outputs.", "inputSchema": {"type": "object", "properties": {"path": path, "output": {"type": "string"}, "fps": {"type": "integer", "minimum": 1, "maximum": 60}, "threads": {"type": "integer", "minimum": 1, "maximum": 64}, "scale": {"type": "number"}, "size": {"type": "string", "enum": ["1080p", "4k"]}, "audioBitrate": {"type": "integer", "minimum": 64, "maximum": 320, "description": "AAC bitrate in kbit/s for compositions with <audio> (default 192)"}}, "required": ["path", "output"]}}
+        {"name": "aether_render", "description": "Render to MP4 (native H.264). Does not overwrite existing outputs.", "inputSchema": {"type": "object", "properties": {"path": path, "output": {"type": "string"}, "fps": {"type": "integer", "minimum": 1, "maximum": 60}, "threads": {"type": "integer", "minimum": 1, "maximum": 64}, "scale": {"type": "number"}, "size": {"type": "string", "enum": ["1080p", "4k"]}, "audioBitrate": {"type": "integer", "minimum": 64, "maximum": 320, "description": "AAC bitrate in kbit/s for compositions with <audio> (default 192)"}, "quality": {"type": "string", "enum": ["draft", "standard", "high", "max"], "description": "H.264 quality preset: fixed quantizer 30, 26, 22, or 18 (default max); lower quantizers give sharper, larger files at about the same CPU cost"}}, "required": ["path", "output"]}}
     ])
 }
 
@@ -180,17 +180,23 @@ fn call(name: &str, args: &Value) -> Result<Value> {
             let fps = integer("fps", 30)?;
             let threads = integer("threads", crate::encode::default_threads())?;
             let audio_bitrate = integer("audioBitrate", crate::audio::DEFAULT_BITRATE / 1000)?;
+            let quality = string_arg("quality")
+                .map(str::parse)
+                .transpose()?
+                .unwrap_or_default();
             crate::encode::lower_priority();
             let composition = parse_file(path)?;
             let mut renderer = renderer_for(&composition, args)?;
             let started = std::time::Instant::now();
             match output.extension().and_then(|extension| extension.to_str()) {
-                Some("mp4") => encode_native_with_audio(
+                Some("mp4") => encode_native_with_options(
                     &mut renderer,
                     output,
-                    fps,
-                    threads,
-                    audio_bitrate * 1000,
+                    &EncodeOptions {
+                        audio_bitrate: audio_bitrate * 1000,
+                        quality,
+                        ..EncodeOptions::new(fps, threads)
+                    },
                 )?,
                 _ => {
                     return Err(anyhow!(

@@ -1,6 +1,6 @@
 //! Command-line entry point: short project commands live in `cli`; this file keeps the legacy flag-based `inspect`, `render --output`, `bench`, `block`, and `mcp`.
 
-use aether_motion::encode::encode_native_with_audio;
+use aether_motion::encode::{encode_native_with_options, EncodeOptions, Quality};
 use aether_motion::parse::parse_file;
 use aether_motion::render::{OutputSize, Renderer};
 use anyhow::{anyhow, bail, Context, Result};
@@ -16,7 +16,7 @@ fn usage() -> &'static str {
 Quick start:\n\
   aether-motion init [dir]                 create a project with a sample video, agent skills, and MCP config\n\
   aether-motion preview [file] [--at 2.5] [--watch]   render one frame to .aether/preview.png and open it\n\
-  aether-motion render [file] [-o out.mp4] [--size 1080p|4k] [--fps 30]   (defaults from aether.json; writes out/<name>.mp4)\n\
+  aether-motion render [file] [-o out.mp4] [--size 1080p|4k] [--fps 30] [--quality max]   (defaults from aether.json; writes out/<name>.mp4)\n\
   aether-motion check [file]               validate (summary on a terminal, JSON when piped or with --json)\n\
   aether-motion add [block] [--set k=v]    list blocks, or append one to the composition\n\
   aether-motion captions <file> [--to srt]  convert a transcript (JSON, SRT, VTT) to JSON, SRT, or VTT\n\
@@ -26,13 +26,13 @@ Quick start:\n\
 `file` defaults to aether.json \"entry\", then index.html.\n\
 Advanced:\n\
   aether-motion inspect <composition.html>\n\
-  aether-motion render <composition.html> --output <video.mp4|frame.png> [--fps 30] [--scale 1 | --size 1080p|4k] [--threads N (default: cores/4, 1 to 4)] [--priority low|normal (default: low)] [--encoder native|ffmpeg] [--audio-bitrate 192] [--frame N]\n\
+  aether-motion render <composition.html> --output <video.mp4|frame.png> [--fps 30] [--scale 1 | --size 1080p|4k] [--threads N (default: cores/4, 1 to 4)] [--priority low|normal (default: low)] [--encoder native|ffmpeg] [--quality draft|standard|high|max (default: max)] [--audio-bitrate 192] [--frame N]\n\
   aether-motion bench <composition.html> [--fps 30] [--scale 1 | --size 1080p|4k] [--frame START --count N]\n\
   aether-motion check <composition.html>   (JSON; exits with 1 on failure)\n\
   aether-motion block [list | <name> [--set key=value]...]   (print a ready-made block or theme as HTML)\n\
   aether-motion mcp                        (MCP server over stdio for agents)\n\
 The native backend accepts an explicit subset of HyperFrames HTML/CSS.\n\
-MP4 uses built-in OpenH264 and AAC-LC by default (--audio-bitrate in kbit/s, 64 to 320). --encoder ffmpeg requires FFmpeg on PATH and does not support <audio>.")
+MP4 uses built-in OpenH264 and AAC-LC by default (--quality sets the H.264 quantizer: draft 30, standard 26, high 22, max 18; --audio-bitrate in kbit/s, 64 to 320). --encoder ffmpeg requires FFmpeg on PATH and does not support <audio>.")
 }
 
 #[derive(Debug)]
@@ -47,6 +47,8 @@ struct Options {
     encoder: String,
     /// AAC bitrate in kbit/s for compositions with `<audio>`.
     audio_bitrate: u32,
+    /// H.264 quality preset for MP4 output.
+    quality: Quality,
     low_priority: bool,
     frame: Option<usize>,
     /// `bench` only: how many frames to draw from `frame` (default: all of them).
@@ -84,6 +86,7 @@ fn options() -> Result<Option<Options>> {
         threads: aether_motion::encode::default_threads(),
         encoder: "native".to_string(),
         audio_bitrate: aether_motion::audio::DEFAULT_BITRATE / 1000,
+        quality: Quality::default(),
         low_priority: true,
         frame: None,
         count: None,
@@ -102,6 +105,7 @@ fn options() -> Result<Option<Options>> {
             "--audio-bitrate" => {
                 opts.audio_bitrate = value.parse().context("invalid --audio-bitrate")?
             }
+            "--quality" => opts.quality = value.parse()?,
             "--priority" => {
                 opts.low_priority = match value.as_str() {
                     "low" => true,
@@ -132,7 +136,23 @@ fn options() -> Result<Option<Options>> {
     Ok(Some(opts))
 }
 
-fn mp4_ffmpeg(renderer: &mut Renderer<'_>, output: &Path, fps: u32, threads: u32) -> Result<()> {
+/// libx264 CRF for each preset; `standard` keeps the historical CRF 25.
+fn ffmpeg_crf(quality: Quality) -> &'static str {
+    match quality {
+        Quality::Draft => "28",
+        Quality::Standard => "25",
+        Quality::High => "21",
+        Quality::Max => "18",
+    }
+}
+
+fn mp4_ffmpeg(
+    renderer: &mut Renderer<'_>,
+    output: &Path,
+    fps: u32,
+    threads: u32,
+    quality: Quality,
+) -> Result<()> {
     let (w, h) = renderer.dimensions();
     if w % 2 != 0 || h % 2 != 0 {
         bail!("MP4 yuv420p requires even dimensions; change --scale");
@@ -170,7 +190,7 @@ fn mp4_ffmpeg(renderer: &mut Renderer<'_>, output: &Path, fps: u32, threads: u32
             "-preset",
             "veryfast",
             "-crf",
-            "25",
+            ffmpeg_crf(quality),
             "-pix_fmt",
             "yuv420p",
             "-threads",
@@ -314,18 +334,17 @@ fn main() -> Result<()> {
                     bail!("--frame only applies to PNG");
                 }
                 if opts.encoder == "native" {
-                    encode_native_with_audio(
-                        &mut renderer,
-                        output,
-                        opts.fps,
-                        opts.threads,
-                        opts.audio_bitrate * 1000,
-                    )?;
+                    let options = EncodeOptions {
+                        audio_bitrate: opts.audio_bitrate * 1000,
+                        quality: opts.quality,
+                        ..EncodeOptions::new(opts.fps, opts.threads)
+                    };
+                    encode_native_with_options(&mut renderer, output, &options)?;
                 } else {
                     if !composition.audio.is_empty() {
                         bail!("<audio> requires the native encoder; remove --encoder ffmpeg");
                     }
-                    mp4_ffmpeg(&mut renderer, output, opts.fps, opts.threads)?;
+                    mp4_ffmpeg(&mut renderer, output, opts.fps, opts.threads, opts.quality)?;
                 }
             }
             _ => bail!("output must end in .png or .mp4"),

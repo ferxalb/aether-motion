@@ -5,6 +5,24 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/); while the version is `0.x`, the `data-hf-*` attributes and
 CLI/MCP output may still change between minor releases.
 
+## [Unreleased]
+
+### Added
+
+- `--quality draft|standard|high|max` (CLI), `"quality"` in `aether.json`, and `quality` in `aether_render`:
+  H.264 quality presets with fixed quantizers 30, 26, 22, and 18 (CRF 28, 25, 21, and 18 with
+  `--encoder ffmpeg`). `standard` is byte-identical to earlier exports.
+
+### Changed
+
+- MP4 exports default to `--quality max` (quantizer 18). Earlier releases always encoded at OpenH264's
+  default quantizer 26: the `24..32` range the encoder was configured with never applied with rate control
+  off. Files are larger (about 1.7 times for typical scenes); CPU time is essentially unchanged.
+- AAC encoding is about 12 times faster (60 s of stereo audio: 16.7 s down to 1.4 s on one core) with
+  byte-identical output: the vendored `oxideav-aac` computes its forward MDCT with an FFT.
+- Gradient, glyph, and small translucent fills avoid soft-float `round` and libm `hypot` calls in their
+  per-pixel loops, cutting drawing instructions by about 11% on the promo examples with identical pixels.
+
 ## [0.1.0] - 2026-11-15
 
 First stable release.
