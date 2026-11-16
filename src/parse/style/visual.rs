@@ -1,29 +1,33 @@
-//! Visual properties: background, border, radius, shadow, opacity, object-fit, and transform.
+//! Visual properties: background, border, radius, shadow, opacity, filters, blend mode, object-fit, and transform.
 
-use crate::model::{Background, Length, Style};
+use crate::model::{Background, BlendMode, Length, Style};
 use crate::parse::values::background::parse_background;
 use crate::parse::values::color::parse_color;
+use crate::parse::values::filter::{parse_backdrop_filter, parse_filter};
 use crate::parse::values::length::{parse_length, spacing_px};
 use crate::parse::values::shadow::parse_box_shadows;
 use crate::parse::values::tokens::split_top;
 use crate::parse::values::transform::parse_transform;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Context, Result};
 
-/// `backdrop-filter` and `filter`: only `none` or a single `blur(<px>)` (at most 200 px) is supported.
-fn parse_blur_filter(value: &str, property: &str) -> Result<f32> {
-    let value = value.trim();
-    if value == "none" {
-        return Ok(0.0);
-    }
-    let inner = value
-        .strip_prefix("blur(")
-        .and_then(|rest| rest.strip_suffix(')'))
-        .ok_or_else(|| anyhow!("unsupported {property} (only blur(<px>) or none): {value}"))?;
-    let blur = spacing_px(inner, property)?;
-    if blur > 200.0 {
-        bail!("{property}: blur radius is limited to 200px");
-    }
-    Ok(blur)
+/// `mix-blend-mode` keywords; the non-separable modes (`hue`, `color`, ...) are rejected.
+fn parse_blend_mode(value: &str) -> Result<BlendMode> {
+    Ok(match value.trim() {
+        "normal" => BlendMode::Normal,
+        "multiply" => BlendMode::Multiply,
+        "screen" => BlendMode::Screen,
+        "overlay" => BlendMode::Overlay,
+        "darken" => BlendMode::Darken,
+        "lighten" => BlendMode::Lighten,
+        "color-dodge" => BlendMode::ColorDodge,
+        "color-burn" => BlendMode::ColorBurn,
+        "hard-light" => BlendMode::HardLight,
+        "soft-light" => BlendMode::SoftLight,
+        "difference" => BlendMode::Difference,
+        "exclusion" => BlendMode::Exclusion,
+        "plus-lighter" => BlendMode::PlusLighter,
+        other => bail!("unsupported mix-blend-mode: {other} (hue, saturation, color, and luminosity are not supported)"),
+    })
 }
 
 /// Applies a visual declaration to `style`; `Ok(false)` means the property is not a visual property.
@@ -53,9 +57,15 @@ pub(super) fn apply(key: &str, value: &str, style: &mut Style) -> Result<bool> {
         }
         "box-shadow" => style.shadows = parse_box_shadows(value)?,
         "backdrop-filter" | "-webkit-backdrop-filter" => {
-            style.backdrop_blur = parse_blur_filter(value, key)?
+            style.backdrop_blur = parse_backdrop_filter(value, key)?
         }
-        "filter" | "-webkit-filter" => style.filter_blur = parse_blur_filter(value, key)?,
+        "filter" | "-webkit-filter" => {
+            let chain = parse_filter(value, key)?;
+            style.filter_blur = chain.blur;
+            style.filter_colors = chain.colors;
+            style.drop_shadow = chain.drop_shadow;
+        }
+        "mix-blend-mode" => style.blend = parse_blend_mode(value)?,
         "border" => {
             (style.border_width, style.border_color) = (0.0, None);
             for token in split_top(value, ' ') {

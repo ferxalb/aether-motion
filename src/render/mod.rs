@@ -1,8 +1,9 @@
 //! Software renderer: turns a parsed composition into RGBA frames, one pure function of time.
 //!
-//! Submodules: `draw` (scene traversal), `layout` (flex sizing and placement), `paint` (the `Surface`, fills, gradients, rotation and `overflow` layers),
-//! `text` (fonts, measurement, glyph painting), `allocation` (checked buffer sizes),
+//! Submodules: `draw` (scene traversal), `layout` (flex sizing and placement), `paint` (the `Surface`, fills, gradients, rotation and `overflow` layers,
+//! filters and blend modes), `text` (fonts, measurement, glyph painting), `shutter` (motion blur), `allocation` (checked buffer sizes),
 //! `geometry` and `frame_state` (shared small types). `paint/video.rs` draws `<video>` frames.
+//! A frame is drawn by `draw_scene` and finished by `finish_frame` (root color grade, vignette, grain).
 
 mod allocation;
 mod draw;
@@ -11,6 +12,7 @@ mod geometry;
 mod layout;
 mod paint;
 pub mod probe;
+mod shutter;
 mod text;
 
 use crate::model::{Composition, Content, Element};
@@ -99,6 +101,12 @@ pub struct Renderer<'a> {
     layer_shift: (f32, f32),
     /// Visible window `[left, top, right, bottom]` (composition px) of the layers being probed.
     layer_clip: [f32; 4],
+    /// Number of offscreen layers (of any kind) currently being drawn into; blend modes need 0.
+    isolated: u32,
+    /// The root's `filter` color functions, graded onto every finished frame.
+    grade: paint::ColorChain,
+    /// Per-channel sums of the sub-frame samples while a motion-blurred frame is accumulated.
+    shutter_sums: Vec<u16>,
 }
 
 pub(crate) fn check_image(path: &Path) -> Result<()> {
@@ -207,6 +215,9 @@ impl<'a> Renderer<'a> {
                 f32::INFINITY,
                 f32::INFINITY,
             ],
+            isolated: 0,
+            grade: paint::ColorChain::new(&composition.grade),
+            shutter_sums: Vec::new(),
         })
     }
 
@@ -262,7 +273,7 @@ impl<'a> Renderer<'a> {
         if frame >= self.frame_count(fps) {
             return Err(anyhow!("frame is outside the composition duration"));
         }
-        self.render_time(frame as f64 / fps as f64)?;
+        self.render_shuttered(frame as f64 / fps as f64, fps)?;
         Ok((&self.surface.pixels, self.stats.rasterized))
     }
 
@@ -270,10 +281,11 @@ impl<'a> Renderer<'a> {
         if !time.is_finite() || time < 0.0 || time >= self.composition.duration {
             return Err(anyhow!("time is outside the composition duration"));
         }
-        self.render_time(time)
+        self.render_shuttered(time, shutter::SNAPSHOT_FPS)
     }
 
-    pub(in crate::render) fn render_time(&mut self, time: f64) -> Result<&[u8]> {
+    /// Fills `current` with every element's state at `time`.
+    pub(in crate::render) fn sample_states(&mut self, time: f64) {
         self.current.clear();
         for element in &self.composition.elements {
             let parent_alpha = element.parent.map_or(1.0, |idx| self.current[idx].alpha);
@@ -289,12 +301,26 @@ impl<'a> Renderer<'a> {
                 FrameState::default()
             });
         }
+    }
+
+    /// Draws the frame at `time` without motion blur.
+    pub(in crate::render) fn render_time(&mut self, time: f64) -> Result<&[u8]> {
+        self.sample_states(time);
         // Grain is reseeded every frame, so identical element states no longer mean identical pixels.
         if self.previous == self.current && self.composition.grain <= 0.0 {
             self.stats.reused += 1;
             return Ok(&self.surface.pixels);
         }
         self.previous.clear();
+        self.draw_scene()?;
+        self.finish_frame(time);
+        std::mem::swap(&mut self.previous, &mut self.current);
+        self.stats.rasterized += 1;
+        Ok(&self.surface.pixels)
+    }
+
+    /// Clears what the last frame painted and draws every element in its `current` state.
+    pub(in crate::render) fn draw_scene(&mut self) -> Result<()> {
         self.reset_background();
         let root = Rect {
             x: 0.0,
@@ -302,13 +328,18 @@ impl<'a> Renderer<'a> {
             w: self.composition.width as f32,
             h: self.composition.height as f32,
         };
-        self.draw_node(0, root, 1.0, None)?;
+        self.draw_node(0, root, 1.0, None)
+    }
+
+    /// Frame-wide passes after drawing: the root's color grade, then vignette and grain.
+    pub(in crate::render) fn finish_frame(&mut self, time: f64) {
+        if !self.grade.is_identity() {
+            self.grade.grade_frame(&mut self.surface.pixels);
+            self.surface.mark_all_painted();
+        }
         let seed = (time * 1000.0).round() as u32;
         self.surface
             .apply_finish(self.composition.vignette, self.composition.grain, seed);
-        std::mem::swap(&mut self.previous, &mut self.current);
-        self.stats.rasterized += 1;
-        Ok(&self.surface.pixels)
     }
 
     pub(in crate::render) fn reset_background(&mut self) {

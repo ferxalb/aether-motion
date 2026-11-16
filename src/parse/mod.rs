@@ -20,7 +20,7 @@ mod video;
 
 pub use values::color::parse_color;
 
-use crate::model::{Background, Color, Composition, Content};
+use crate::model::{Background, BlendMode, Color, Composition, Content, MotionBlur};
 use animation::camera::motion_from_camera;
 use animation::motion::{build_motion, motion_from_keyframes};
 use anyhow::{anyhow, bail, Context, Result};
@@ -147,6 +147,8 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
     };
     let vignette = effect("data-hf-vignette")?;
     let grain = effect("data-hf-grain")?;
+    let motion_blur = parse_motion_blur(metadata.as_node())?;
+    let mut grade = Vec::new();
     let inferred_duration = pending
         .iter()
         .enumerate()
@@ -233,8 +235,26 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
             }
             p.element.motion = motion_from_camera(rest, &p.camera);
         }
-        if idx == 0 && p.element.style.filter_blur > 0.0 {
-            bail!("filter: blur cannot be on the root; add a container inside it");
+        if idx == 0 {
+            let style = &mut p.element.style;
+            if style.filter_blur > 0.0 {
+                bail!("filter: blur cannot be on the root; add a container inside it");
+            }
+            if style.drop_shadow.is_some() {
+                bail!("filter: drop-shadow cannot be on the root; add a container inside it");
+            }
+            if style.blend != BlendMode::Normal {
+                bail!("mix-blend-mode cannot be on the root; add a container inside it");
+            }
+            if style
+                .filter_colors
+                .iter()
+                .any(|f| matches!(f, crate::model::ColorFilter::Opacity(_)))
+            {
+                bail!("filter: opacity() cannot be on the root; use it on a container inside it");
+            }
+            // Color functions on the root grade every finished frame instead of a layer.
+            grade = std::mem::take(&mut style.filter_colors);
         }
         if let Some(spec) = p.reveal.take() {
             if idx == 0 {
@@ -254,6 +274,7 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
         elements.push(p.element);
     }
     apply_transitions(&mut elements, &transitions, &ids, (width, height))?;
+    check_blend_isolation(&elements)?;
     let background = match elements[0].style.background {
         Some(Background::Solid(color)) => color,
         _ => Color::BLACK,
@@ -265,8 +286,78 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
         background,
         vignette,
         grain,
+        grade,
+        motion_blur,
         elements,
         ids,
         audio,
     })
+}
+
+/// `data-motion-blur="on"` with optional `data-motion-blur-shutter` (degrees, default 180) and
+/// `data-motion-blur-samples` (2 to 64; automatic when omitted) on the composition root.
+fn parse_motion_blur(node: &kuchiki::NodeRef) -> Result<Option<MotionBlur>> {
+    let shutter = attr(node, "data-motion-blur-shutter")
+        .map(|raw| number(&raw, "data-motion-blur-shutter"))
+        .transpose()?;
+    let samples = attr(node, "data-motion-blur-samples")
+        .map(|raw| number(&raw, "data-motion-blur-samples"))
+        .transpose()?;
+    match attr(node, "data-motion-blur").as_deref().map(str::trim) {
+        None | Some("off") => {
+            if shutter.is_some() || samples.is_some() {
+                bail!("data-motion-blur-shutter and -samples need data-motion-blur=\"on\"");
+            }
+            return Ok(None);
+        }
+        Some("on" | "") => {}
+        Some(other) => bail!("data-motion-blur must be on or off, not {other}"),
+    }
+    let shutter = shutter.unwrap_or(180.0);
+    if !(shutter > 0.0 && shutter <= 720.0) {
+        bail!("data-motion-blur-shutter must be above 0 and at most 720 degrees");
+    }
+    if samples.is_some_and(|n| n.fract() != 0.0 || !(2.0..=64.0).contains(&n)) {
+        bail!("data-motion-blur-samples must be a whole number from 2 to 64");
+    }
+    Ok(Some(MotionBlur {
+        shutter: shutter as f32,
+        samples: samples.map(|n| n as u32),
+    }))
+}
+
+/// Blend modes need the real backdrop, which an ancestor drawn through an offscreen layer hides.
+fn check_blend_isolation(elements: &[crate::model::Element]) -> Result<()> {
+    for element in elements
+        .iter()
+        .filter(|e| e.style.blend != BlendMode::Normal)
+    {
+        let mut parent = element.parent;
+        while let Some(idx) = parent {
+            let ancestor = &elements[idx];
+            let style = &ancestor.style;
+            let layered = style.overflow_hidden
+                || style.rotate != 0.0
+                || ancestor.motion.base.rotate != 0.0
+                || !ancestor.motion.rotate.0.is_empty()
+                || ancestor.motion.wipe.is_some()
+                || style.filter_blur > 0.0
+                || !style.filter_colors.is_empty()
+                || style.drop_shadow.is_some()
+                || style.blend != BlendMode::Normal;
+            if idx != 0 && layered {
+                let name = |e: &crate::model::Element| {
+                    e.id.as_ref()
+                        .map_or_else(|| format!("<{}>", e.tag), |id| format!("#{id}"))
+                };
+                bail!(
+                    "mix-blend-mode on {} cannot be inside {} (overflow: hidden, rotation, a reveal, a wipe, a filter, or a blend mode); move it out of that element",
+                    name(element),
+                    name(ancestor)
+                );
+            }
+            parent = ancestor.parent;
+        }
+    }
+    Ok(())
 }

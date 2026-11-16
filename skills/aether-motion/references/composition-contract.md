@@ -24,6 +24,8 @@ Use supported elements (`div`, text, local PNG, JPEG, WebP, or SVG images, and i
 
 Use the native motion attributes for keyframes, camera moves, split text, reveals, counters, captions (`data-hf-captions` with a local `.json`, `.srt`, or `.vtt` transcript; times are seconds from the clip start; see AGENTS.md for options), and scene transitions. Keyframe times are seconds relative to the element's resolved start and must increase strictly within the clip duration. Keep all animation seekable from time alone: no `<script>`, timers, network, `Date.now()`, or unseeded randomness.
 
+For finish, use `filter` on an element in the fixed order `[blur()] [color functions] [drop-shadow()]` (for example `filter: saturate(1.2) drop-shadow(0 12px 24px rgba(0,0,0,.5))`), color functions alone on the root to grade every frame, `mix-blend-mode` (separable modes and `plus-lighter`, not inside `overflow: hidden`, rotated, revealed, filtered, or blended ancestors), and `data-motion-blur="on"` on the root for shutter motion blur (`data-motion-blur-shutter` in degrees, default 180; `data-motion-blur-samples="8"` for fast drafts). See `examples/effects.html`.
+
 CSS animation is limited to the documented transform, opacity, and timing-function subset. Static transforms support translation, uniform scale, and rotation. Unsupported CSS and HTML return explicit errors; do not replace unsupported behavior with a browser-only implementation and claim the native renderer supports it.
 
 ## Assets and audio

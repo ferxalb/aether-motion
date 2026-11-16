@@ -33,6 +33,7 @@ impl<'a> Renderer<'a> {
         origin: (f32, f32),
         window: Option<[f32; 4]>,
     ) -> Option<SavedLayer> {
+        self.isolated += 1;
         if pass > 0 {
             self.layer_depth += 1;
             return None;
@@ -57,6 +58,7 @@ impl<'a> Renderer<'a> {
 
     /// Undoes [`Self::begin_layer_pass`].
     pub(in crate::render) fn end_layer_pass(&mut self, saved: Option<SavedLayer>) {
+        self.isolated -= 1;
         match saved {
             Some(saved) => {
                 self.layer_shift = saved.shift;

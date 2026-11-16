@@ -105,6 +105,43 @@ pub struct Shadow {
     pub inset: bool,
 }
 
+/// One CSS `filter` color function, applied to unpremultiplied sRGB values in 0..=1.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ColorFilter {
+    Brightness(f32),
+    Contrast(f32),
+    Saturate(f32),
+    /// Amount in 0..=1.
+    Grayscale(f32),
+    /// Amount in 0..=1.
+    Sepia(f32),
+    /// Angle in degrees.
+    HueRotate(f32),
+    /// Amount in 0..=1.
+    Invert(f32),
+    /// Amount in 0..=1; multiplies alpha.
+    Opacity(f32),
+}
+
+/// `mix-blend-mode` separable blend functions (W3C Compositing Level 1), plus `plus-lighter`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BlendMode {
+    #[default]
+    Normal,
+    Multiply,
+    Screen,
+    Overlay,
+    Darken,
+    Lighten,
+    ColorDodge,
+    ColorBurn,
+    HardLight,
+    SoftLight,
+    Difference,
+    Exclusion,
+    PlusLighter,
+}
+
 /// `line-height`: a multiple of the font size (unitless) or an absolute size in px.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum LineHeight {
@@ -161,6 +198,12 @@ pub struct Style {
     /// `filter: blur(<px>)` radius (standard deviation) in composition px applied to the whole element
     /// (box, shadows, content, children); 0 means none.
     pub filter_blur: f32,
+    /// `filter` color functions after the optional blur, applied in order; empty means none.
+    pub filter_colors: Vec<ColorFilter>,
+    /// `filter: drop-shadow()`: a shadow of the element's painted shape (alpha), drawn under it.
+    pub drop_shadow: Option<Shadow>,
+    /// `mix-blend-mode`: how the element (with its subtree) combines with what is behind it.
+    pub blend: BlendMode,
     /// Solid border drawn inside the box (border-box sizing); `None` color means white.
     pub border_width: f32,
     pub border_color: Option<Color>,
@@ -335,10 +378,52 @@ pub struct Composition {
     pub vignette: f32,
     /// `data-hf-grain` on the root: film grain amplitude, 0..=1.
     pub grain: f32,
+    /// `filter` color functions on the root: a grade applied to every finished frame.
+    pub grade: Vec<ColorFilter>,
+    /// `data-motion-blur` on the root: shutter settings, or `None` for sharp frames.
+    pub motion_blur: Option<MotionBlur>,
     pub elements: Vec<Element>,
     pub ids: HashMap<String, usize>,
     /// `<audio>` clips in document order; they take no part in layout or painting.
     pub audio: Vec<AudioClip>,
+}
+
+/// Shutter for `data-motion-blur`: each output frame averages several instants spread evenly
+/// over a window of `shutter` degrees of one frame, centered on the frame time.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MotionBlur {
+    /// Shutter angle in degrees, in (0, 720]; 360 spans one whole frame interval.
+    pub shutter: f32,
+    /// Sub-frame samples per frame, 2..=64; `None` sizes them to the motion in each frame.
+    pub samples: Option<u32>,
+}
+
+impl MotionBlur {
+    /// Fewest and most samples chosen automatically.
+    pub const AUTO_SAMPLES: (u32, u32) = (8, 64);
+
+    /// `(first, last)` instants of the shutter window for the frame at `time`, clamped like samples.
+    pub fn window(&self, time: f64, fps: u32, duration: f64) -> (f64, f64) {
+        let half = f64::from(self.shutter) / 720.0 / f64::from(fps.max(1));
+        let last = (duration - 1e-6).max(0.0);
+        (
+            (time - half).clamp(0.0, last),
+            (time + half).clamp(0.0, last),
+        )
+    }
+
+    /// `n` sample instants for the frame at `time` (seconds) at `fps`, clamped to `[0, duration)`.
+    pub fn sample_times(&self, time: f64, fps: u32, duration: f64, n: u32) -> Vec<f64> {
+        let window = f64::from(self.shutter) / 360.0 / f64::from(fps.max(1));
+        let n = n.max(1);
+        let last = (duration - 1e-6).max(0.0);
+        (0..n)
+            .map(|i| {
+                let offset = (f64::from(i) + 0.5) / f64::from(n) - 0.5;
+                (time + offset * window).clamp(0.0, last)
+            })
+            .collect()
+    }
 }
 
 /// One `<audio>` clip on the composition timeline. Times are in seconds; the mixer converts

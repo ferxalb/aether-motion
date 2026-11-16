@@ -18,6 +18,12 @@ fn fix_hint(message: &str) -> &'static str {
         "use data-hf-counter=<end value> on an empty element, with optional data-hf-counter-from, -duration (0.05 to 10), -delay, -decimals (0 to 6), -prefix, -suffix, -separator, and -easing"
     } else if message.contains("backdrop-filter") {
         "use backdrop-filter: blur(<px>) or none (at most 200px); no other filter functions are supported"
+    } else if message.contains("mix-blend-mode") {
+        "use mix-blend-mode: normal|multiply|screen|overlay|darken|lighten|color-dodge|color-burn|hard-light|soft-light|difference|exclusion|plus-lighter on a non-root element that is not inside overflow: hidden, rotation, a reveal, a wipe, or another filter"
+    } else if message.contains("filter") || message.contains("drop-shadow") {
+        "write filter as [blur(<px>)] [brightness|contrast|saturate|grayscale|sepia|invert|opacity(<n or %>)] [hue-rotate(<angle>)] [drop-shadow(x y [blur] color)], in that order; on the root only color functions (except opacity) are allowed"
+    } else if message.contains("data-motion-blur") {
+        "set data-motion-blur=\"on\" on the composition root, with optional data-motion-blur-shutter (degrees, above 0 to 720, default 180) and data-motion-blur-samples (2 to 64; automatic when omitted)"
     } else if message.contains("data-hf-vignette") || message.contains("data-hf-grain") {
         "set data-hf-vignette and data-hf-grain on the composition root to a number between 0 and 1"
     } else if message.contains("data-hf-transition") || message.contains("transition ") {
@@ -176,6 +182,22 @@ pub fn check(path: &Path) -> Value {
             .filter(|e| e.parent.is_some() && (e.end - e.start) < c.duration)
             .map(|e| json!({"id": e.id, "tag": e.tag, "start": e.start, "end": e.end, "track": e.track}))
             .collect();
+        let blends = c
+            .elements
+            .iter()
+            .filter(|e| e.style.blend != crate::model::BlendMode::Normal)
+            .count();
+        let filters = c
+            .elements
+            .iter()
+            .filter(|e| !e.style.filter_colors.is_empty() || e.style.drop_shadow.is_some())
+            .count();
+        let effects = json!({
+            "motionBlur": c.motion_blur.map(|m| json!({"shutter": m.shutter, "samples": m.samples.map_or_else(|| json!("auto"), |n| json!(n))})),
+            "rootGrade": c.grade.len(),
+            "colorFilters": filters,
+            "blendModes": blends,
+        });
         let animations: Vec<Value> = c
             .elements
             .iter()
@@ -186,7 +208,7 @@ pub fn check(path: &Path) -> Value {
             })
             .collect();
         Ok(
-            json!({"animations": animations, "ok": true, "width": c.width, "height": c.height, "duration": c.duration, "elements": c.elements.len(), "clips": clips, "audio": audio, "videos": videos}),
+            json!({"animations": animations, "ok": true, "width": c.width, "height": c.height, "duration": c.duration, "elements": c.elements.len(), "clips": clips, "audio": audio, "videos": videos, "effects": effects}),
         )
     };
     match run() {

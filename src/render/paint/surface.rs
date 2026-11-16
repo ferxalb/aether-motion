@@ -62,6 +62,16 @@ impl Surface {
         self.painted = Some(self.painted.map_or(rect, |painted| painted.union(rect)));
     }
 
+    /// Marks every pixel as painted, after a pass that rewrote the whole frame.
+    pub(in crate::render) fn mark_all_painted(&mut self) {
+        self.mark_painted(PixelRect {
+            x0: 0,
+            y0: 0,
+            x1: self.width as usize,
+            y1: self.height as usize,
+        });
+    }
+
     pub(in crate::render) fn blend_at(
         pixels: &mut [u8],
         width: u32,

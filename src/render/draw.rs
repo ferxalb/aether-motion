@@ -69,8 +69,8 @@ impl<'a> Renderer<'a> {
             cumulative *= state.scale;
         }
         let sigma = self.composition.elements[idx].style.filter_blur * cumulative * self.scale;
-        if idx != 0 && sigma > 0.0 {
-            return self.draw_filtered(idx, rect, cumulative, sigma);
+        if self.has_effects(idx, sigma) {
+            return self.draw_with_effects(idx, rect, cumulative, sigma);
         }
         self.draw_posed(idx, rect, cumulative)
     }

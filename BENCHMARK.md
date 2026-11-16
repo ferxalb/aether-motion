@@ -661,3 +661,37 @@ time because drawing dominates (37.7 s of the export is drawing). Both files dec
 The default stays `standard`: the higher presets mostly grow the file (SSIM gains of 0.0003 to 0.0007
 above, none on grain or fast slides), which was not judged worth the size.
 No measurements were made on older PCs or other operating systems.
+
+## Filters, blend modes, root grade, and motion blur (2026-11-16)
+
+New features, so there is no earlier timing to compare against; the numbers below set the baseline and
+show that existing compositions are untouched. All runs: `bench --threads 1`, 1080p, 30 fps, release
+build, three runs each (seconds).
+
+Existing output: PNGs of every example and benchmark composition at frames 0, 20, and 50 (111 frames
+at `--scale 0.5`, plus 66 at full size) and the `glass.html` MP4 are byte-identical to the previous
+build. `glass.html` `--frame 60 --count 20`: 1.511 / 1.586 / 1.540 before, 1.524 / 1.559 / 1.556
+after (within noise; the only change on that path is one extra check per element).
+
+`examples/effects.html` (`--frame 10 --count 20`) with motion blur removed costs 2.623–2.727 s, against
+0.369–0.387 s for the same scene with every filter and blend mode removed. With the first version of
+the effects code, removing single features showed where the time goes: the three blended elements
+(about 1.1 megapixels of layers, each drawn on black and on white) about 78 ms per frame, the
+two-function root grade about 45 ms per frame.
+
+A callgrind profile of frames 10–12 (one thread) guided three exact optimizations; instruction totals:
+
+| Step | Instructions | Change |
+| --- | ---: | ---: |
+| First version | 4.442 G | |
+| Blend loop monomorphized per mode (no indirect call per channel), one division per pixel, `round_to_u8` instead of `round`, prefix of channel-wise grade steps read from per-channel tables, last grade result reused for repeated pixels | 4.051 G | −8.8% |
+| Layer planes filled through iterator zips into zeroed allocations instead of indexed writes | 3.673 G | −17.3% in total |
+
+The grade tables hold the exact float results of the channel-wise steps for each 8-bit input, and a
+unit test compares the table path with the direct float path on every input value, so the output is
+unchanged by these optimizations. Still dominant: drawing gradients twice per layer (black and white
+passes recover premultiplied alpha), which the existing filter blur shares.
+
+Motion blur multiplies drawing by the sample count on frames where something moves: the same 20 frames
+take 16.3–17.0 s with `data-motion-blur-samples="8"` and 34.1–34.5 s with automatic samples (the puck
+travels fast enough to ask for more), against 2.6–2.7 s sharp. Static frames are drawn once.

@@ -56,9 +56,12 @@ fn blur_includes_shadows_and_children() {
 #[test]
 fn unsupported_filters_fail_explicitly() {
     let cases = [
-        (".a { filter: grayscale(1) }", "filter"),
+        (".a { filter: url(#f) }", "url()"),
         (".a { filter: blur(300px) }", "limited to 200px"),
-        (".a { filter: blur(2px) brightness(2) }", "filter"),
+        (
+            ".a { filter: brightness(2) blur(2px) }",
+            "blur() must come first",
+        ),
     ];
     for (i, (css, expected)) in cases.iter().enumerate() {
         let path = write(

@@ -12,6 +12,15 @@ CLI/MCP output may still change between minor releases.
 - `--quality draft|standard|high|max` (CLI), `"quality"` in `aether.json`, and `quality` in `aether_render`:
   H.264 quality presets with fixed quantizers 30, 26, 22, and 18 (CRF 28, 25, 21, and 18 with
   `--encoder ffmpeg`). `standard` is the default and byte-identical to earlier exports.
+- `filter` color functions (`brightness`, `contrast`, `saturate`, `grayscale`, `sepia`, `invert`,
+  `opacity`, `hue-rotate`) and `drop-shadow()`, after an optional `blur()`. On the root, color functions
+  grade every finished frame.
+- `mix-blend-mode` with the separable modes (`multiply`, `screen`, `overlay`, `darken`, `lighten`,
+  `color-dodge`, `color-burn`, `hard-light`, `soft-light`, `difference`, `exclusion`) and `plus-lighter`.
+- `data-motion-blur` on the root: deterministic shutter motion blur with `data-motion-blur-shutter`
+  (degrees) and `data-motion-blur-samples` (automatic from the fastest motion when omitted).
+- `check` reports `effects` (motion blur settings, root grade, color filters, and blend modes).
+- `examples/effects.html`.
 
 ### Changed
 
