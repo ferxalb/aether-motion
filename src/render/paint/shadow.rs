@@ -173,7 +173,9 @@ impl Surface {
             element[3] + shadow.y * unit + spread,
         ];
         let edge = GaussianEdge::new(sigma)?;
-        if sigma >= MIN_CACHED_SIGMA {
+        // Cached masks live on an integer grid. Fractional geometry must retain its phase
+        // on the direct path, including the first draw, to avoid cache-dependent jumps.
+        if sigma >= MIN_CACHED_SIGMA && element.iter().all(|value| value.fract() == 0.0) {
             let strength = alpha * f32::from(shadow.color.a) / 255.0;
             if strength <= 0.0 {
                 return Ok(());

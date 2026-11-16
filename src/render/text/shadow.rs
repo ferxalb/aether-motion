@@ -5,8 +5,7 @@
 //! the run's cache key, which keeps frames independent of the order they are rendered in.
 
 use crate::model::{Color, Shadow};
-use crate::render::geometry::{clip_pixels, PixelRect};
-use crate::render::paint::Surface;
+use crate::render::geometry::PixelRect;
 use crate::render::text::raster::{baseline_offset, pen_offset, Glyph, RunLine};
 use anyhow::{anyhow, Result};
 
@@ -151,34 +150,21 @@ impl ShadowMask {
         painted: &mut Option<PixelRect>,
         origin: (f32, f32),
         alpha: f32,
+        zoom: f32,
     ) {
-        let left = (origin.0 + self.offset.0).round() as i32 + self.x0;
-        let top = (origin.1 + self.offset.1).round() as i32 + self.y0;
-        let Some(bounds) = clip_pixels(
+        super::mask::paint_mask(
+            pixels,
             (width, height),
-            left,
-            top,
-            left.saturating_add(self.width as i32),
-            top.saturating_add(self.height as i32),
-        ) else {
-            return;
-        };
-        *painted = Some(painted.map_or(bounds, |area| area.union(bounds)));
-        // Coverage is 0..=255, so fold the 1/255 and the shadow color's alpha into one factor.
-        let factor = alpha * f32::from(self.color.a) / 255.0 / 255.0;
-        let first = (bounds.x0 as i32 - left) as usize;
-        let span = bounds.x1 - bounds.x0;
-        for y in bounds.y0..bounds.y1 {
-            let source = (y as i32 - top) as usize * self.width + first;
-            let target = (y * width as usize + bounds.x0) * 4;
-            let coverage = &self.alpha[source..source + span];
-            let row = &mut pixels[target..target + span * 4];
-            for (&value, pixel) in coverage.iter().zip(row.as_chunks_mut::<4>().0) {
-                if value > 0 {
-                    Surface::blend_pixel(pixel, self.color, (factor * f32::from(value)).min(1.0));
-                }
-            }
-        }
+            painted,
+            &self.alpha,
+            (self.width, self.height),
+            (
+                origin.0 + (self.offset.0 + self.x0 as f32) * zoom,
+                origin.1 + (self.offset.1 + self.y0 as f32) * zoom,
+            ),
+            (self.color, alpha),
+            zoom,
+        );
     }
 }
 

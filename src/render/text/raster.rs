@@ -1,8 +1,9 @@
-//! Glyph rasterization, run caching, and painting of laid-out text lines.
+//! Stable glyph rasterization and run caching; fractional translation and zoom resample fixed coverage.
 
 use crate::model::{Color, Content};
-use crate::render::geometry::{clip_pixels, PixelRect, Rect};
+use crate::render::geometry::{PixelRect, Rect};
 use crate::render::layout::in_flow;
+#[cfg(test)]
 use crate::render::paint::Surface;
 use crate::render::text::block::TextBlock;
 use crate::render::text::props::TextProps;
@@ -140,16 +141,18 @@ impl<'a> Renderer<'a> {
         let props = self.text_props(idx);
         // Only shadows depend on the box width (through alignment), so only they key on it.
         let width_px = if props.shadow.is_some() {
-            (rect.w * self.scale).round() as i32
+            (rect.w * self.scale / zoom).round() as i32
         } else {
             0
         };
-        let key = (idx, zoom.to_bits(), block.limit_key, width_px);
+        // Rasterize at the composition's output resolution, independent of animated zoom.
+        // Re-rasterizing every zoom step changes glyph metrics discretely and makes type wobble.
+        let key = (idx, 1.0_f32.to_bits(), block.limit_key, width_px);
         let uncached;
         let run = if let Some(run) = self.text_runs.get(&key) {
             run
         } else {
-            let prepared = self.prepare_text(idx, zoom, &block, &props, width_px)?;
+            let prepared = self.prepare_text(idx, 1.0, &block, &props, width_px)?;
             let bytes = prepared
                 .glyphs
                 .iter()
@@ -167,7 +170,7 @@ impl<'a> Renderer<'a> {
             }
         };
         let scale = self.scale;
-        let total = run.line_height * run.lines.len() as f32;
+        let total = run.line_height * zoom * run.lines.len() as f32;
         let top = rect.y * scale
             + if run.center_y {
                 (rect.h * scale - total) / 2.0
@@ -176,26 +179,28 @@ impl<'a> Renderer<'a> {
             };
         let mut painted = self.surface.painted;
         if let Some(shadow) = &run.shadow {
-            let origin = ((rect.x * scale).round(), top.round());
+            let origin = (rect.x * scale, top);
             shadow.paint(
                 &mut self.surface.pixels,
                 (self.surface.width, self.surface.height),
                 &mut painted,
                 origin,
                 alpha,
+                zoom,
             );
         }
         for (index, line) in run.lines.iter().enumerate() {
-            let pen =
-                rect.x * scale + pen_offset(run.center_x, run.right, rect.w * scale, line.advance);
-            let baseline = top + baseline_offset(index, run.line_height, run.size);
-            paint_line(
+            let pen = rect.x * scale
+                + pen_offset(run.center_x, run.right, rect.w * scale, line.advance * zoom);
+            let baseline = top + baseline_offset(index, run.line_height, run.size) * zoom;
+            paint_scaled_line(
                 &mut self.surface.pixels,
                 (self.surface.width, self.surface.height),
                 &mut painted,
                 &run.glyphs[line.first..line.last],
                 (pen, baseline),
                 (run.color, alpha),
+                zoom,
             );
         }
         self.surface.painted = painted;
@@ -204,49 +209,52 @@ impl<'a> Renderer<'a> {
 }
 
 /// Blits one line of glyphs, starting at pen x and sitting on the baseline y.
+#[cfg(test)]
 fn paint_line(
     pixels: &mut [u8],
     (width, height): (u32, u32),
     painted: &mut Option<PixelRect>,
     glyphs: &[Glyph],
-    (mut pen, baseline): (f32, f32),
+    (pen, baseline): (f32, f32),
     (color, alpha): (Color, f32),
+) {
+    paint_scaled_line(
+        pixels,
+        (width, height),
+        painted,
+        glyphs,
+        (pen, baseline),
+        (color, alpha),
+        1.0,
+    );
+}
+
+/// Keeps glyph shapes and advances stable during zooms; resamples their coverage at fractional positions.
+fn paint_scaled_line(
+    pixels: &mut [u8],
+    dimensions: (u32, u32),
+    painted: &mut Option<PixelRect>,
+    glyphs: &[Glyph],
+    (mut pen, baseline): (f32, f32),
+    color: (Color, f32),
+    zoom: f32,
 ) {
     for glyph in glyphs {
         let metrics = glyph.metrics;
-        let gx = (pen + metrics.xmin as f32).round() as i32;
-        let gy = (baseline - metrics.ymin as f32 - metrics.height as f32).round() as i32;
-        pen += metrics.advance_width;
-        let Some(bounds) = clip_pixels(
-            (width, height),
-            gx,
-            gy,
-            gx.saturating_add(metrics.width as i32),
-            gy.saturating_add(metrics.height as i32),
-        ) else {
-            continue;
-        };
-        *painted = Some(painted.map_or(bounds, |area| area.union(bounds)));
-        let stride = width as usize * 4;
-        for y in bounds.y0..bounds.y1 {
-            let source_start = (y as i64 - i64::from(gy)) as usize * metrics.width
-                + (bounds.x0 as i64 - i64::from(gx)) as usize;
-            let count = bounds.x1 - bounds.x0;
-            let source = &glyph.coverage[source_start..source_start + count];
-            let dest = &mut pixels[y * stride + bounds.x0 * 4..y * stride + bounds.x1 * 4];
-            for (pixel, &coverage) in dest.as_chunks_mut::<4>().0.iter_mut().zip(source) {
-                if coverage == 0 {
-                    continue;
-                }
-                // Bounds were clipped once per glyph. Preserve blend_at's arithmetic order
-                // without rechecking coordinates and recomputing offsets for every pixel.
-                let a =
-                    ((alpha * (coverage as f32 / 255.0)) * color.a as f32 / 255.0).clamp(0.0, 1.0);
-                if a > 0.0 {
-                    Surface::blend_pixel(pixel, color, a);
-                }
-            }
-        }
+        super::mask::paint_mask(
+            pixels,
+            dimensions,
+            painted,
+            &glyph.coverage,
+            (metrics.width, metrics.height),
+            (
+                pen + metrics.xmin as f32 * zoom,
+                baseline - (metrics.ymin as f32 + metrics.height as f32) * zoom,
+            ),
+            color,
+            zoom,
+        );
+        pen += metrics.advance_width * zoom;
     }
 }
 

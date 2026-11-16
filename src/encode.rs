@@ -355,8 +355,8 @@ fn encode_segment(
         rasterized: renderer.stats().rasterized - before.0,
         reused: renderer.stats().reused - before.1,
         samples,
-        sps: sps.ok_or_else(|| anyhow!("missing H.264 SPS en segmento {index}"))?,
-        pps: pps.ok_or_else(|| anyhow!("missing H.264 PPS en segmento {index}"))?,
+        sps: sps.ok_or_else(|| anyhow!("missing H.264 SPS in segment {index}"))?,
+        pps: pps.ok_or_else(|| anyhow!("missing H.264 PPS in segment {index}"))?,
     })
 }
 

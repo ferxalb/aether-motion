@@ -64,7 +64,10 @@ fn blur_plane_reduced(plane: &mut [f32], width: usize, height: usize, sigma: f32
     let (columns, rows) = (taps(width, rw), taps(height, rh));
     for (y, out) in plane.chunks_exact_mut(width).enumerate() {
         let (ra, rb, ty) = rows[y];
-        let (top, bottom) = (&small[ra * rw..(ra + 1) * rw], &small[rb * rw..(rb + 1) * rw]);
+        let (top, bottom) = (
+            &small[ra * rw..(ra + 1) * rw],
+            &small[rb * rw..(rb + 1) * rw],
+        );
         for (value, &(ca, cb, tx)) in out.iter_mut().zip(&columns) {
             let upper = top[ca] + (top[cb] - top[ca]) * tx;
             let lower = bottom[ca] + (bottom[cb] - bottom[ca]) * tx;
@@ -97,7 +100,10 @@ fn box_lines<const N: usize>(mut lines: [&mut [f32]; N], tmp: &mut Vec<f32>, rad
     let interior_from = (r + 1).min(n as isize) as usize;
     let interior_to = ((n as isize - r - 1).max(interior_from as isize) as usize).min(n);
     for i in 0..interior_from {
-        let (add, sub) = ((i as isize + r + 1).min(last) as usize, (i as isize - r).max(0) as usize);
+        let (add, sub) = (
+            (i as isize + r + 1).min(last) as usize,
+            (i as isize - r).max(0) as usize,
+        );
         for k in 0..N {
             tmp[k * n + i] = sums[k] / window;
             sums[k] += lines[k][add] - lines[k][sub];
@@ -110,7 +116,10 @@ fn box_lines<const N: usize>(mut lines: [&mut [f32]; N], tmp: &mut Vec<f32>, rad
         }
     }
     for i in interior_to.max(interior_from)..n {
-        let (add, sub) = ((i as isize + r + 1).min(last) as usize, (i as isize - r).max(0) as usize);
+        let (add, sub) = (
+            (i as isize + r + 1).min(last) as usize,
+            (i as isize - r).max(0) as usize,
+        );
         for k in 0..N {
             tmp[k * n + i] = sums[k] / window;
             sums[k] += lines[k][add] - lines[k][sub];
@@ -291,7 +300,10 @@ impl Surface {
                 for (i, pixel) in row.as_chunks_mut::<4>().0.iter_mut().enumerate() {
                     for (c, plane) in planes.iter().enumerate() {
                         let old = f32::from(pixel[c]);
-                        pixel[c] = round_to_u8(plane[blurred..blurred + count][i] * mix_inner + old * (1.0 - mix_inner));
+                        pixel[c] = round_to_u8(
+                            plane[blurred..blurred + count][i] * mix_inner
+                                + old * (1.0 - mix_inner),
+                        );
                     }
                     pixel[3] = 255;
                 }
@@ -321,7 +333,11 @@ mod tests {
             let r = radius as isize;
             let mut sum: f32 = (-r..=r).map(|k| src[k.clamp(0, 12) as usize]).sum();
             for i in 0..13isize {
-                assert_eq!(fast[i as usize], sum / (2 * radius + 1) as f32, "r={radius} i={i}");
+                assert_eq!(
+                    fast[i as usize],
+                    sum / (2 * radius + 1) as f32,
+                    "r={radius} i={i}"
+                );
                 sum += src[(i + r + 1).min(12) as usize] - src[(i - r).max(0) as usize];
             }
         }
@@ -341,7 +357,11 @@ mod tests {
     #[test]
     fn lockstep_lines_match_single_lines_bit_for_bit() {
         let rows: Vec<Vec<f32>> = (0..4)
-            .map(|r| (0..37).map(|i| ((i * 31 + r * 17) % 255) as f32 * 0.37).collect())
+            .map(|r| {
+                (0..37)
+                    .map(|i| ((i * 31 + r * 17) % 255) as f32 * 0.37)
+                    .collect()
+            })
             .collect();
         for radius in [1, 3, 18, 40] {
             let mut single = rows.clone();

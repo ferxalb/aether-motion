@@ -237,7 +237,13 @@ impl Surface {
         };
         self.mark_painted(bounds);
         let width = self.width as usize;
-        if radius == 0.0 {
+        let float_edges = [
+            rect.x * self.scale,
+            rect.y * self.scale,
+            (rect.x + rect.w) * self.scale,
+            (rect.y + rect.h) * self.scale,
+        ];
+        if radius == 0.0 && float_edges.iter().all(|edge| edge.fract() == 0.0) {
             let (w, h) = (
                 (i64::from(x1) - i64::from(x0)) as usize,
                 (i64::from(y1) - i64::from(y0)) as usize,
@@ -303,7 +309,6 @@ impl Surface {
                 return Ok(());
             }
         }
-        let float_edges = edges.map(|edge| edge as f32);
         let mapper = Mapper::new(&gradient.kind, float_edges);
         let sampler = Sampler::new(&gradient.stops);
         for y in bounds.y0..bounds.y1 {
@@ -311,7 +316,10 @@ impl Surface {
             let first = (left.floor().max(bounds.x0 as f32)) as usize;
             let last = (right.ceil().min(bounds.x1 as f32)) as usize;
             for x in first..last {
-                let coverage = (right.min(x as f32 + 1.0) - left.max(x as f32)).clamp(0.0, 1.0);
+                let vertical = (float_edges[3].min(y as f32 + 1.0) - float_edges[1].max(y as f32))
+                    .clamp(0.0, 1.0);
+                let coverage =
+                    (right.min(x as f32 + 1.0) - left.max(x as f32)).clamp(0.0, 1.0) * vertical;
                 let [pr, pg, pb, pa] = sampler.sample(mapper.t(x as f32 + 0.5, y as f32 + 0.5));
                 // `pa` carries the stop alpha; the premultiplied colors already include it.
                 let a = (alpha * coverage).clamp(0.0, 1.0);

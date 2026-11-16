@@ -15,6 +15,34 @@ impl Surface {
         let Some(bounds) = clip_pixels((self.width, self.height), x0, y0, x1, y1) else {
             return;
         };
+        let float_edges = [
+            rect.x * self.scale,
+            rect.y * self.scale,
+            (rect.x + rect.w) * self.scale,
+            (rect.y + rect.h) * self.scale,
+        ];
+        if float_edges.iter().any(|edge| edge.fract() != 0.0) {
+            self.mark_painted(bounds);
+            let radius = (radius).min((rect.w.min(rect.h) * self.scale * 0.5).max(0.0));
+            for y in bounds.y0..bounds.y1 {
+                let vertical = (float_edges[3].min(y as f32 + 1.0) - float_edges[1].max(y as f32))
+                    .clamp(0.0, 1.0);
+                let (left, right) = Self::rounded_span(float_edges, radius, y);
+                for x in bounds.x0..bounds.x1 {
+                    let coverage =
+                        (right.min(x as f32 + 1.0) - left.max(x as f32)).clamp(0.0, 1.0) * vertical;
+                    if coverage > 0.0 {
+                        let offset = (y * self.width as usize + x) * 4;
+                        Self::blend_pixel(
+                            &mut self.pixels[offset..offset + 4],
+                            color,
+                            a * coverage,
+                        );
+                    }
+                }
+            }
+            return;
+        }
         let uniform_background = self.painted.is_none();
         self.mark_painted(bounds);
         if radius > 0.0 {

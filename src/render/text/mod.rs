@@ -1,7 +1,8 @@
-//! Text support: font lookup, inherited properties, wrapping and block layout, and glyph painting, and `text-shadow`.
+//! Text layout, fonts, stable glyph coverage, subpixel mask sampling, and text shadows.
 
 mod block;
 mod fonts;
+mod mask;
 mod props;
 mod raster;
 mod shadow;
