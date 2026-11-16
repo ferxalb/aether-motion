@@ -21,6 +21,7 @@ Quick start:\n\
   aether-motion add [block] [--set k=v]    list blocks, or append one to the composition\n\
   aether-motion agent setup|status         install skills and MCP config for coding agents\n\
   aether-motion doctor                     diagnose the installation and project\n\
+  aether-motion --version                  print the installed version\n\
 `file` defaults to aether.json \"entry\", then index.html.\n\
 Advanced:\n\
   aether-motion inspect <composition.html>\n\
@@ -59,6 +60,10 @@ fn options() -> Result<Option<Options>> {
     };
     if command == "--help" || command == "-h" || command == "help" {
         println!("{}", usage());
+        return Ok(None);
+    }
+    if command == "--version" {
+        println!("AETHER Motion {}", env!("CARGO_PKG_VERSION"));
         return Ok(None);
     }
     if !matches!(command.as_str(), "inspect" | "render" | "bench") {
