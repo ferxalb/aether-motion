@@ -21,7 +21,7 @@ pub(in crate::render) mod blend;
 pub(in crate::render) mod color;
 pub(in crate::render) mod exact_blur;
 
-use crate::model::{BlendMode, Color, ColorFilter, FilterChannel, Shadow};
+use crate::model::{BlendMode, Color, ColorFilter, Content, FilterChannel, Shadow};
 use crate::render::geometry::{clip_pixels, Rect};
 use crate::render::paint::backdrop::{blur_plane, box_radius};
 use crate::render::paint::Surface;
@@ -81,11 +81,12 @@ impl LayerShadow {
     fn new(shadow: Shadow, k: f32) -> Result<Self> {
         let offset =
             |v: f32| crate::render::allocation::pixel_edge((v * k).round(), "filter: drop-shadow");
-        // As for `text-shadow`, the blur radius is twice the gaussian's standard deviation.
+        // Unlike `box-shadow` and `text-shadow`, the `drop-shadow()` length is the gaussian's
+        // standard deviation itself (Filter Effects), so it is not halved.
         Ok(Self {
             dx: offset(shadow.x)?,
             dy: offset(shadow.y)?,
-            box_r: box_radius(shadow.blur * k / 2.0),
+            box_r: box_radius(shadow.blur * k),
             color: shadow.color,
         })
     }
@@ -204,13 +205,18 @@ impl<'a> Renderer<'a> {
             .ok_or_else(|| anyhow::anyhow!("filter layer height is too large"))?;
         let edge =
             |value: f32| crate::render::allocation::pixel_edge(value, "filter").map(i64::from);
+        // A rotated element is drawn around its center, so the layer must hold its rotated bounds.
+        let (sin, cos) = self.current[idx].rotate.to_radians().sin_cos();
+        let (half_w, half_h) = (
+            (rect.w * cos.abs() + rect.h * sin.abs()) / 2.0,
+            (rect.w * sin.abs() + rect.h * cos.abs()) / 2.0,
+        );
+        let (cx, cy) = (rect.x + rect.w / 2.0, rect.y + rect.h / 2.0);
         let wanted = [
-            (edge((rect.x * k).floor())? - i64::from(margin)).max(-i64::from(pad)) as i32,
-            (edge((rect.y * k).floor())? - i64::from(margin)).max(-i64::from(pad)) as i32,
-            (edge(((rect.x + rect.w) * k).ceil())? + i64::from(margin)).min(i64::from(max_x))
-                as i32,
-            (edge(((rect.y + rect.h) * k).ceil())? + i64::from(margin)).min(i64::from(max_y))
-                as i32,
+            (edge(((cx - half_w) * k).floor())? - i64::from(margin)).max(-i64::from(pad)) as i32,
+            (edge(((cy - half_h) * k).floor())? - i64::from(margin)).max(-i64::from(pad)) as i32,
+            (edge(((cx + half_w) * k).ceil())? + i64::from(margin)).min(i64::from(max_x)) as i32,
+            (edge(((cy + half_h) * k).ceil())? + i64::from(margin)).min(i64::from(max_y)) as i32,
         ];
         let [x0, y0, x1, y1] = wanted;
         if x1 <= x0 || y1 <= y0 {
@@ -334,6 +340,18 @@ impl<'a> Renderer<'a> {
                 .checked_add(1)
                 .ok_or_else(|| anyhow::anyhow!("box-shadow reach is too large"))?;
             reach = reach.max(value);
+        }
+        // The element's own `text-shadow` can also fall outside its box.
+        if matches!(self.composition.elements[idx].content, Content::Text(_)) {
+            if let Some(s) = self.text_props(idx).shadow {
+                let value = crate::render::allocation::pixel_edge(
+                    ((s.x.abs().max(s.y.abs()) + s.blur * 1.5) * k).ceil(),
+                    "text-shadow",
+                )?
+                .checked_add(1)
+                .ok_or_else(|| anyhow::anyhow!("text-shadow reach is too large"))?;
+                reach = reach.max(value);
+            }
         }
         Ok(reach)
     }

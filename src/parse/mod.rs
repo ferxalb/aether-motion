@@ -358,17 +358,20 @@ fn check_blend_isolation(elements: &[crate::model::Element]) -> Result<()> {
         while let Some(idx) = parent {
             let ancestor = &elements[idx];
             let style = &ancestor.style;
+            // The root is drawn without rotation, wipe, or filter layers (those are rejected or
+            // ignored there), but `overflow: hidden` still renders its content on a layer.
             let layered = style.overflow_hidden
-                || !ancestor.motion.filter.is_static()
-                || style.rotate != 0.0
-                || ancestor.motion.base.rotate != 0.0
-                || !ancestor.motion.rotate.0.is_empty()
-                || ancestor.motion.wipe.is_some()
-                || style.filter_blur > 0.0
-                || !style.filter_colors.is_empty()
-                || style.drop_shadow.is_some()
-                || style.blend != BlendMode::Normal;
-            if idx != 0 && layered {
+                || (idx != 0
+                    && (!ancestor.motion.filter.is_static()
+                        || style.rotate != 0.0
+                        || ancestor.motion.base.rotate != 0.0
+                        || !ancestor.motion.rotate.0.is_empty()
+                        || ancestor.motion.wipe.is_some()
+                        || style.filter_blur > 0.0
+                        || !style.filter_colors.is_empty()
+                        || style.drop_shadow.is_some()
+                        || style.blend != BlendMode::Normal));
+            if layered {
                 let name = |e: &crate::model::Element| {
                     e.id.as_ref()
                         .map_or_else(|| format!("<{}>", e.tag), |id| format!("#{id}"))

@@ -16,13 +16,22 @@ use super::Renderer;
 use crate::model::MotionBlur;
 use anyhow::Result;
 
-/// Whether any element visible in two samples has a different geometry in them.
-fn moves(samples: &[Vec<FrameState>]) -> bool {
+/// Whether any element visible in two samples (the `center` state counts as one) has a different
+/// geometry in them, or is visible at the center but in none of the samples. Drawing once at the
+/// center is only equivalent to the average when this is false.
+fn moves(samples: &[Vec<FrameState>], center: &[FrameState]) -> bool {
     let Some(first) = samples.first() else {
         return false;
     };
     (0..first.len()).any(|i| {
-        let mut visible = samples.iter().map(|s| s[i]).filter(|s| s.alpha > 0.0);
+        if center[i].alpha > 0.0 && samples.iter().all(|s| s[i].alpha <= 0.0) {
+            return true;
+        }
+        let mut visible = samples
+            .iter()
+            .map(|s| s[i])
+            .chain(std::iter::once(center[i]))
+            .filter(|s| s.alpha > 0.0);
         let Some(reference) = visible.next() else {
             return false;
         };
@@ -75,7 +84,7 @@ impl<'a> Renderer<'a> {
                 let travel = travel(
                     &start,
                     &self.current,
-                    self.surface.width.min(self.surface.height),
+                    self.composition.width.min(self.composition.height),
                 );
                 let (low, high) = MotionBlur::AUTO_SAMPLES;
                 ((travel * self.scale / 2.0).ceil() as u32).clamp(low, high)
@@ -87,7 +96,8 @@ impl<'a> Renderer<'a> {
             self.sample_states(t);
             samples.push(self.current.clone());
         }
-        if !moves(&samples) {
+        self.sample_states(time);
+        if !moves(&samples, &self.current) {
             return self.render_time(time);
         }
         let len = self.surface.pixels.len();
@@ -140,8 +150,18 @@ mod tests {
             ..at(10.0, 0.0)
         };
         let hidden = FrameState::default();
-        assert!(!moves(&[vec![at(10.0, 0.0)], vec![faded], vec![hidden]]));
-        assert!(moves(&[vec![at(10.0, 0.0)], vec![at(10.0, 5.0)]]));
+        let rest = [at(10.0, 0.0)];
+        assert!(!moves(&[vec![at(10.0, 0.0)], vec![faded], vec![hidden]], &rest));
+        assert!(moves(&[vec![at(10.0, 0.0)], vec![at(10.0, 5.0)]], &rest));
+    }
+
+    #[test]
+    fn center_state_must_match_the_samples() {
+        let samples = [vec![at(10.0, 0.0)], vec![at(10.0, 0.0)]];
+        assert!(moves(&samples, &[at(20.0, 0.0)]));
+        let hidden = [vec![FrameState::default()], vec![FrameState::default()]];
+        assert!(moves(&hidden, &[at(10.0, 0.0)]));
+        assert!(!moves(&hidden, &[FrameState::default()]));
     }
 
     #[test]
