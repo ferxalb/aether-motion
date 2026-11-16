@@ -82,7 +82,12 @@ mod tests {
 
     #[test]
     fn breaks_on_sentence_end_and_pause() {
-        let words = [w("Hi", 0.0, 0.2), w("there.", 0.2, 0.5), w("Next", 0.6, 0.9), w("one", 2.5, 2.8)];
+        let words = [
+            w("Hi", 0.0, 0.2),
+            w("there.", 0.2, 0.5),
+            w("Next", 0.6, 0.9),
+            w("one", 2.5, 2.8),
+        ];
         let cues = group(&words, GroupOptions::default());
         let texts: Vec<_> = cues.iter().map(Cue::text).collect();
         assert_eq!(texts, ["Hi there.", "Next", "one"]);
@@ -90,11 +95,25 @@ mod tests {
 
     #[test]
     fn respects_word_and_char_limits() {
-        let words: Vec<_> = (0..5).map(|i| w("abcd", i as f64, i as f64 + 0.5)).collect();
-        let by_words = group(&words, GroupOptions { max_words: 2, ..Default::default() });
+        let words: Vec<_> = (0..5)
+            .map(|i| w("abcd", i as f64, i as f64 + 0.5))
+            .collect();
+        let by_words = group(
+            &words,
+            GroupOptions {
+                max_words: 2,
+                ..Default::default()
+            },
+        );
         assert_eq!(by_words.len(), 3);
         // "abcd abcd" is 9 chars, so a limit of 8 keeps one word per cue.
-        let by_chars = group(&words, GroupOptions { max_chars: 8, ..Default::default() });
+        let by_chars = group(
+            &words,
+            GroupOptions {
+                max_chars: 8,
+                ..Default::default()
+            },
+        );
         assert_eq!(by_chars.len(), 5);
     }
 

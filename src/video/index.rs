@@ -148,7 +148,9 @@ impl VideoIndex {
             for entry in &ctts.entries {
                 let repeat = entry.sample_count as usize;
                 if at + repeat > count {
-                    bail!("{name}: the composition-offset table lists more frames than the file has");
+                    bail!(
+                        "{name}: the composition-offset table lists more frames than the file has"
+                    );
                 }
                 for p in &mut pts[at..at + repeat] {
                     *p += i64::from(entry.sample_offset);
@@ -232,9 +234,7 @@ impl VideoIndex {
     /// The display frame shown at `media` seconds: the last frame whose time is not after it,
     /// clamped to the first and last frame.
     pub fn frame_at(&self, media: f64) -> usize {
-        let shown = self
-            .frame_times
-            .partition_point(|&t| t <= media + 1e-6);
+        let shown = self.frame_times.partition_point(|&t| t <= media + 1e-6);
         shown.saturating_sub(1)
     }
 

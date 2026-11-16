@@ -319,8 +319,8 @@ impl Surface {
             let first = (left.floor().max(bounds.x0 as f32)) as usize;
             let last = (right.ceil().min(bounds.x1 as f32)) as usize;
             // Row invariants, hoisted out of the pixel loop (same expressions, same values).
-            let vertical = (float_edges[3].min(y as f32 + 1.0) - float_edges[1].max(y as f32))
-                .clamp(0.0, 1.0);
+            let vertical =
+                (float_edges[3].min(y as f32 + 1.0) - float_edges[1].max(y as f32)).clamp(0.0, 1.0);
             let dither_row = [0, 1, 2, 3].map(|i| dither(i, y));
             for x in first..last {
                 let coverage =

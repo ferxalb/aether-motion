@@ -58,7 +58,13 @@ mod tests {
         // The values on both sides of every rounding boundary.
         for k in -2..=257 {
             let half = k as f32 + 0.5;
-            for v in [half.next_down(), half, half.next_up(), (k as f32).next_down(), k as f32] {
+            for v in [
+                half.next_down(),
+                half,
+                half.next_up(),
+                (k as f32).next_down(),
+                k as f32,
+            ] {
                 assert_eq!(round_to_u8(v), v.round() as u8, "{v}");
             }
         }
@@ -74,10 +80,21 @@ mod tests {
             state ^= state << 5;
             let x = (state % 40_000) as f32 / 13.0 - 1500.0;
             let y = ((state >> 8) % 40_000) as f32 / 7.0 - 2800.0;
-            assert_eq!(hypot(x, y).to_bits(), x.hypot(y).to_bits(), "hypot({x}, {y})");
-            let (a, b) = (f32::from_bits(state >> 1), f32::from_bits(state.rotate_left(7) >> 1));
+            assert_eq!(
+                hypot(x, y).to_bits(),
+                x.hypot(y).to_bits(),
+                "hypot({x}, {y})"
+            );
+            let (a, b) = (
+                f32::from_bits(state >> 1),
+                f32::from_bits(state.rotate_left(7) >> 1),
+            );
             if a.is_finite() && b.is_finite() {
-                assert_eq!(hypot(a, b).to_bits(), a.hypot(b).to_bits(), "hypot({a:e}, {b:e})");
+                assert_eq!(
+                    hypot(a, b).to_bits(),
+                    a.hypot(b).to_bits(),
+                    "hypot({a:e}, {b:e})"
+                );
             }
         }
     }

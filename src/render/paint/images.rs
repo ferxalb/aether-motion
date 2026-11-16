@@ -261,4 +261,3 @@ pub(in crate::render) fn blit(
         }
     }
 }
-

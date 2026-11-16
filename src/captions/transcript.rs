@@ -28,7 +28,8 @@ pub struct Transcript {
 
 /// Reads and normalizes the transcript at `path`.
 pub fn load(path: &Path) -> Result<Transcript> {
-    let meta = std::fs::metadata(path).with_context(|| format!("could not read {}", path.display()))?;
+    let meta =
+        std::fs::metadata(path).with_context(|| format!("could not read {}", path.display()))?;
     if meta.len() > MAX_BYTES {
         bail!("{} is larger than {} MiB", path.display(), MAX_BYTES >> 20);
     }
@@ -103,7 +104,9 @@ fn from_json(value: &Value) -> Result<Transcript> {
                 Ok(spread(text, start, end))
             })
             .collect::<Result<Vec<_>>>()?;
-        return Ok(from_cues(cues.into_iter().filter(|c| !c.words.is_empty()).collect()));
+        return Ok(from_cues(
+            cues.into_iter().filter(|c| !c.words.is_empty()).collect(),
+        ));
     }
     if let Some(items) = value.get("transcription").and_then(Value::as_array) {
         return whisper_cpp(items);
@@ -191,9 +194,11 @@ fn whisper_cpp(items: &[Value]) -> Result<Transcript> {
         }
     }
     // Token-level files describe words; segment-level files describe cues.
-    let token_level = items
-        .iter()
-        .any(|i| i.get("tokens").and_then(Value::as_array).is_some_and(|t| !t.is_empty()));
+    let token_level = items.iter().any(|i| {
+        i.get("tokens")
+            .and_then(Value::as_array)
+            .is_some_and(|t| !t.is_empty())
+    });
     let words: Vec<Word> = cues.iter().flat_map(|c| c.words.iter().cloned()).collect();
     Ok(Transcript {
         words,
@@ -230,7 +235,11 @@ fn timestamp(raw: &str) -> Result<f64> {
     let parts: Vec<&str> = normalized.split(':').collect();
     let bad = || anyhow!("invalid timestamp: {raw}");
     let (h, m, s) = match parts.as_slice() {
-        [h, m, s] => (h.parse::<f64>().map_err(|_| bad())?, m.parse::<f64>().map_err(|_| bad())?, s),
+        [h, m, s] => (
+            h.parse::<f64>().map_err(|_| bad())?,
+            m.parse::<f64>().map_err(|_| bad())?,
+            s,
+        ),
         [m, s] => (0.0, m.parse::<f64>().map_err(|_| bad())?, s),
         _ => return Err(bad()),
     };
@@ -294,7 +303,8 @@ mod tests {
 
     #[test]
     fn spreads_segments_by_length() {
-        let t = from_json(&json!({"segments":[{"start":0.0,"end":4.0,"text":"aa bbbbbb"}]})).unwrap();
+        let t =
+            from_json(&json!({"segments":[{"start":0.0,"end":4.0,"text":"aa bbbbbb"}]})).unwrap();
         let w = &t.words;
         assert!((w[0].end - 1.0).abs() < 1e-9 && (w[1].start - 1.0).abs() < 1e-9);
         assert!((w[1].end - 4.0).abs() < 1e-9);
@@ -331,8 +341,16 @@ mod tests {
     #[test]
     fn rejects_unordered_words() {
         let words = vec![
-            Word { text: "a".into(), start: 2.0, end: 3.0 },
-            Word { text: "b".into(), start: 1.0, end: 1.5 },
+            Word {
+                text: "a".into(),
+                start: 2.0,
+                end: 3.0,
+            },
+            Word {
+                text: "b".into(),
+                start: 1.0,
+                end: 1.5,
+            },
         ];
         assert!(validate(&words).unwrap_err().to_string().contains("sort"));
     }

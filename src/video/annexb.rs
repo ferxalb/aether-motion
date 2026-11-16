@@ -20,7 +20,9 @@ pub(super) fn sample_to_annex_b(sample: &[u8], nal_length: usize, out: &mut Vec<
             bail!("truncated NAL length prefix in a video sample");
         }
         let (prefix, tail) = rest.split_at(nal_length);
-        let length = prefix.iter().fold(0usize, |n, &b| (n << 8) | usize::from(b));
+        let length = prefix
+            .iter()
+            .fold(0usize, |n, &b| (n << 8) | usize::from(b));
         if length == 0 || length > tail.len() {
             bail!("invalid NAL unit length {length} in a video sample");
         }

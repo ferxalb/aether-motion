@@ -220,7 +220,14 @@ impl CaptionsSpec {
         Ok(())
     }
 
-    fn push_word(&self, out: &mut Vec<Pending>, row: usize, word: &Word, next: Option<f64>, hide: f64) {
+    fn push_word(
+        &self,
+        out: &mut Vec<Pending>,
+        row: usize,
+        word: &Word,
+        next: Option<f64>,
+        hide: f64,
+    ) {
         let text = || Content::Text(word.text.clone());
         let tag = &self.tag;
         match self.mode {
@@ -256,7 +263,14 @@ impl CaptionsSpec {
                     holder_style,
                     self.pop_motion(word.start, end),
                 );
-                push_piece(out, tag, holder, text(), Style::default(), Motion::default());
+                push_piece(
+                    out,
+                    tag,
+                    holder,
+                    text(),
+                    Style::default(),
+                    Motion::default(),
+                );
                 let overlay = Style {
                     position: Some("absolute".to_string()),
                     left: Some(Length::Px(0.0)),
@@ -324,7 +338,12 @@ mod tests {
                 },
             ],
             mode,
-            highlight: Color { r: 255, g: 0, b: 0, a: 255 },
+            highlight: Color {
+                r: 255,
+                g: 0,
+                b: 0,
+                a: 255,
+            },
             pop: 1.1,
             linger: 0.3,
             gap: 8.0,
@@ -364,7 +383,12 @@ mod tests {
     #[test]
     fn rows_show_only_during_their_cue_and_never_overlap() {
         let out = expanded(Mode::Plain);
-        let rows: Vec<_> = out[0].element.children.iter().map(|&i| &out[i].element.motion).collect();
+        let rows: Vec<_> = out[0]
+            .element
+            .children
+            .iter()
+            .map(|&i| &out[i].element.motion)
+            .collect();
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].pose(0.5).opacity, 0.0);
         assert_eq!(rows[0].pose(1.2).opacity, 1.0);

@@ -31,10 +31,22 @@ impl Colour {
             Matrix::Bt601
         };
         match matrix {
-            Some(1) => Self { matrix: Matrix::Bt709, full_range, tagged: true },
-            Some(5 | 6) => Self { matrix: Matrix::Bt601, full_range, tagged: true },
+            Some(1) => Self {
+                matrix: Matrix::Bt709,
+                full_range,
+                tagged: true,
+            },
+            Some(5 | 6) => Self {
+                matrix: Matrix::Bt601,
+                full_range,
+                tagged: true,
+            },
             // Unspecified (2), absent, or a matrix this renderer does not model.
-            _ => Self { matrix: guess, full_range, tagged: false },
+            _ => Self {
+                matrix: guess,
+                full_range,
+                tagged: false,
+            },
         }
     }
 
@@ -110,7 +122,10 @@ fn parse_vui(sps: &[u8]) -> Option<(Option<u8>, bool)> {
     let profile = r.bits(8)?;
     r.bits(16)?; // constraint flags and level_idc
     r.ue()?; // seq_parameter_set_id
-    if matches!(profile, 100 | 110 | 122 | 244 | 44 | 83 | 86 | 118 | 128 | 138 | 139 | 134 | 135) {
+    if matches!(
+        profile,
+        100 | 110 | 122 | 244 | 44 | 83 | 86 | 118 | 128 | 138 | 139 | 134 | 135
+    ) {
         let chroma = r.ue()?;
         if chroma == 3 {
             r.bit()?;
@@ -228,9 +243,21 @@ mod tests {
         [out[0], out[1], out[2]]
     }
 
-    const LIMITED_709: Colour = Colour { matrix: Matrix::Bt709, full_range: false, tagged: true };
-    const LIMITED_601: Colour = Colour { matrix: Matrix::Bt601, full_range: false, tagged: true };
-    const FULL_601: Colour = Colour { matrix: Matrix::Bt601, full_range: true, tagged: true };
+    const LIMITED_709: Colour = Colour {
+        matrix: Matrix::Bt709,
+        full_range: false,
+        tagged: true,
+    };
+    const LIMITED_601: Colour = Colour {
+        matrix: Matrix::Bt601,
+        full_range: false,
+        tagged: true,
+    };
+    const FULL_601: Colour = Colour {
+        matrix: Matrix::Bt601,
+        full_range: true,
+        tagged: true,
+    };
 
     #[test]
     fn limited_range_maps_black_and_white() {
@@ -244,9 +271,15 @@ mod tests {
     fn matrices_differ_on_saturated_colors() {
         // BT.709 red is Y 63, Cb 102, Cr 240 (limited range); BT.601 red is Y 81, Cb 90, Cr 240.
         let red_709 = one(LIMITED_709, 63, 102, 240);
-        assert!(red_709[0] >= 250 && red_709[1] <= 6 && red_709[2] <= 6, "{red_709:?}");
+        assert!(
+            red_709[0] >= 250 && red_709[1] <= 6 && red_709[2] <= 6,
+            "{red_709:?}"
+        );
         let red_601 = one(LIMITED_601, 81, 90, 240);
-        assert!(red_601[0] >= 250 && red_601[1] <= 6 && red_601[2] <= 6, "{red_601:?}");
+        assert!(
+            red_601[0] >= 250 && red_601[1] <= 6 && red_601[2] <= 6,
+            "{red_601:?}"
+        );
         // Reading BT.601 red with the 709 matrix gives a visibly different color.
         assert_ne!(one(LIMITED_709, 81, 90, 240), red_601);
     }
@@ -263,7 +296,10 @@ mod tests {
         // 1 -> 0, 010 -> 1, 011 -> 2, 00100 -> 3 (bits: 1 010 011 00100 + padding).
         let data = [0b1010_0110, 0b0100_0000];
         let mut r = Bits { data: &data, at: 0 };
-        assert_eq!([r.ue(), r.ue(), r.ue(), r.ue()], [Some(0), Some(1), Some(2), Some(3)]);
+        assert_eq!(
+            [r.ue(), r.ue(), r.ue(), r.ue()],
+            [Some(0), Some(1), Some(2), Some(3)]
+        );
         let mut s = Bits { data: &data, at: 0 };
         assert_eq!([s.se(), s.se(), s.se()], [Some(0), Some(1), Some(-1)]);
     }

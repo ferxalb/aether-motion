@@ -138,7 +138,9 @@ pub fn parse_caption_zone(raw: &str) -> Result<CaptionZone> {
                 .parse::<f32>()
                 .ok()
                 .filter(|v| (0.0..=1.0).contains(v))
-                .ok_or_else(|| anyhow!("--caption-zone {key} must be a fraction from 0 to 1: {value}"))
+                .ok_or_else(|| {
+                    anyhow!("--caption-zone {key} must be a fraction from 0 to 1: {value}")
+                })
         };
         match key.trim() {
             "x0" => x0 = Some(number()?),
@@ -152,7 +154,9 @@ pub fn parse_caption_zone(raw: &str) -> Result<CaptionZone> {
                     other => bail!("--caption-zone severity must be warning or error: {other}"),
                 }
             }
-            other => bail!("--caption-zone does not support {other}; use x0, y0, x1, y1, and severity"),
+            other => {
+                bail!("--caption-zone does not support {other}; use x0, y0, x1, y1, and severity")
+            }
         }
     }
     let (Some(x0), Some(y0), Some(x1), Some(y1)) = (x0, y0, x1, y1) else {
@@ -170,7 +174,10 @@ pub fn parse_caption_zone(raw: &str) -> Result<CaptionZone> {
 /// Sample times: `at` when given, otherwise `samples` midpoints of equal slices of the duration.
 pub fn sample_times(duration: f64, samples: usize, at: &[f64]) -> Result<Vec<f64>> {
     if !at.is_empty() {
-        if let Some(bad) = at.iter().find(|t| !t.is_finite() || **t < 0.0 || **t >= duration) {
+        if let Some(bad) = at
+            .iter()
+            .find(|t| !t.is_finite() || **t < 0.0 || **t >= duration)
+        {
             bail!("--at time {bad} is outside the composition (0 to {duration} s)");
         }
         return Ok(at.to_vec());
@@ -212,7 +219,11 @@ impl ZoneRequest<'_> {
 
 /// Adds `layout` (findings, truncated, notes, samples) to a successful `agent::check` report.
 /// Reports that failed validation are left alone. Returns the zone report when zones ran.
-pub fn attach(report: &mut Value, path: &Path, request: &ZoneRequest) -> Result<Option<ZoneReport>> {
+pub fn attach(
+    report: &mut Value,
+    path: &Path,
+    request: &ZoneRequest,
+) -> Result<Option<ZoneReport>> {
     if report["ok"] != true {
         return Ok(None);
     }
@@ -278,7 +289,11 @@ fn owner_of(c: &Composition, mut idx: usize) -> usize {
     idx
 }
 
-fn allowed(c: &Composition, mut idx: usize, pick: impl Fn(&crate::model::LayoutHints) -> bool) -> bool {
+fn allowed(
+    c: &Composition,
+    mut idx: usize,
+    pick: impl Fn(&crate::model::LayoutHints) -> bool,
+) -> bool {
     loop {
         if pick(&c.elements[idx].layout) {
             return true;
@@ -322,7 +337,12 @@ fn merge(drafts: &mut Vec<Draft>, new: Draft) {
         }
     }
     let r = &mut existing.rect;
-    *r = [r[0].min(new.rect[0]), r[1].min(new.rect[1]), r[2].max(new.rect[2]), r[3].max(new.rect[3])];
+    *r = [
+        r[0].min(new.rect[0]),
+        r[1].min(new.rect[1]),
+        r[2].max(new.rect[2]),
+        r[3].max(new.rect[3]),
+    ];
 }
 
 fn box_json(rect: [f32; 4]) -> Value {
@@ -374,16 +394,35 @@ pub fn check_zones(path: &Path, options: &ZoneOptions) -> Result<ZoneReport> {
                 if !hits.is_empty() {
                     merge(
                         &mut safe,
-                        Draft { owner, time, rect: text.rect, text: snippet(&c, text.element), zones: hits },
+                        Draft {
+                            owner,
+                            time,
+                            rect: text.rect,
+                            text: snippet(&c, text.element),
+                            zones: hits,
+                        },
                     );
                 }
             }
             if let Some(zone) = options.caption {
-                let region = [zone.rect[0] * w, zone.rect[1] * h, zone.rect[2] * w, zone.rect[3] * h];
-                if overlap(text.rect, region) && !allowed(&c, text.element, |l| l.allow_caption_zone) {
+                let region = [
+                    zone.rect[0] * w,
+                    zone.rect[1] * h,
+                    zone.rect[2] * w,
+                    zone.rect[3] * h,
+                ];
+                if overlap(text.rect, region)
+                    && !allowed(&c, text.element, |l| l.allow_caption_zone)
+                {
                     merge(
                         &mut band,
-                        Draft { owner, time, rect: text.rect, text: snippet(&c, text.element), zones: Vec::new() },
+                        Draft {
+                            owner,
+                            time,
+                            rect: text.rect,
+                            text: snippet(&c, text.element),
+                            zones: Vec::new(),
+                        },
                     );
                 }
             }
@@ -412,7 +451,11 @@ pub fn check_zones(path: &Path, options: &ZoneOptions) -> Result<ZoneReport> {
             "fix": "move the text inside the safe area, or add data-layout-allow-safe-zone to the text or an ancestor if it is intentional",
         }));
     }
-    let severity = if options.caption.is_some_and(|z| z.error) { "error" } else { "warning" };
+    let severity = if options.caption.is_some_and(|z| z.error) {
+        "error"
+    } else {
+        "warning"
+    };
     for d in &band {
         findings.push(json!({
             "code": "caption_zone_collision",
@@ -475,7 +518,10 @@ mod tests {
         assert!(zone.error);
         assert!(parse_caption_zone("x0=0;y0=0.7;x1=1").is_err());
         assert!(parse_caption_zone("x0=0.5;y0=0;x1=0.5;y1=1").is_err());
-        assert!(parse_caption_zone("x0=0;y0=0;x1=1;y1=1;seek=2").unwrap_err().to_string().contains("seek"));
+        assert!(parse_caption_zone("x0=0;y0=0;x1=1;y1=1;seek=2")
+            .unwrap_err()
+            .to_string()
+            .contains("seek"));
     }
 
     #[test]

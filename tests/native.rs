@@ -610,7 +610,12 @@ fn quality_presets_trade_file_size_for_fidelity() {
     std::fs::create_dir_all(&dir).unwrap();
     let composition = parse_file(fixture()).unwrap();
     let mut sizes = Vec::new();
-    for quality in [Quality::Draft, Quality::Standard, Quality::High, Quality::Max] {
+    for quality in [
+        Quality::Draft,
+        Quality::Standard,
+        Quality::High,
+        Quality::Max,
+    ] {
         let mut renderer = Renderer::new(&composition, 1.0).unwrap();
         let output = dir.join(format!("{quality:?}.mp4"));
         let options = EncodeOptions {

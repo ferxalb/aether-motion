@@ -58,7 +58,9 @@ pub(in crate::parse) fn parse_video(
                 attr(s, "type").is_none_or(|t| t.contains("mp4") || t.contains("quicktime"))
             })
             .find_map(|s| attr(s, "src"))
-            .ok_or_else(|| anyhow!("<video> requires src, or a <source src> that is an MP4 file"))?,
+            .ok_or_else(|| {
+                anyhow!("<video> requires src, or a <source src> that is an MP4 file")
+            })?,
     };
     if src.starts_with("data:") || src.contains("://") {
         bail!("only local video files are supported: {src}");

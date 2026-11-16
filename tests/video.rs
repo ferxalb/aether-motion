@@ -74,7 +74,15 @@ fn frames_follow_source_time_in_any_order() {
     let composition = parse_file(&page(&dir, r#"data-duration="2""#, 2.0)).unwrap();
     let mut renderer = Renderer::new(&composition, 1.0).unwrap();
     // Forward, then backward, then a jump: each must show the source frame at that time.
-    for (time, wanted) in [(0.1, 0), (0.6, 1), (1.1, 2), (1.7, 3), (0.1, 0), (1.6, 3), (0.7, 1)] {
+    for (time, wanted) in [
+        (0.1, 0),
+        (0.6, 1),
+        (1.1, 2),
+        (1.7, 3),
+        (0.1, 0),
+        (1.6, 3),
+        (0.7, 1),
+    ] {
         let color = center(&mut renderer, time);
         assert!(near(color, COLORS[wanted].1), "t={time}: {color:?}");
     }
@@ -83,7 +91,12 @@ fn frames_follow_source_time_in_any_order() {
 #[test]
 fn media_start_trims_and_the_last_frame_holds() {
     let dir = source();
-    let composition = parse_file(&page(&dir, r#"data-media-start="1" data-duration="2""#, 2.0)).unwrap();
+    let composition = parse_file(&page(
+        &dir,
+        r#"data-media-start="1" data-duration="2""#,
+        2.0,
+    ))
+    .unwrap();
     let mut renderer = Renderer::new(&composition, 1.0).unwrap();
     for (time, wanted) in [(0.1, 2), (0.6, 3), (1.5, 3)] {
         let color = center(&mut renderer, time);
@@ -107,7 +120,12 @@ fn clip_length_defaults_to_the_source() {
     let dir = source();
     let composition = parse_file(&page(&dir, r#"data-media-start="0.5""#, 3.0)).unwrap();
     let video = &composition.elements[1];
-    assert!((video.end - video.start - 1.5).abs() < 1e-6, "{} .. {}", video.start, video.end);
+    assert!(
+        (video.end - video.start - 1.5).abs() < 1e-6,
+        "{} .. {}",
+        video.start,
+        video.end
+    );
 }
 
 #[test]
@@ -122,7 +140,13 @@ fn check_reports_the_video_and_rejects_bad_sources() {
 
     let no_length = agent::check(&page(&dir, "loop", 2.0));
     assert_eq!(no_length["ok"], false);
-    assert!(no_length["error"].as_str().unwrap().contains("data-duration"), "{no_length}");
+    assert!(
+        no_length["error"]
+            .as_str()
+            .unwrap()
+            .contains("data-duration"),
+        "{no_length}"
+    );
 
     std::fs::write(dir.join("src.mp4"), b"not a video").unwrap();
     let junk = agent::check(&page(&dir, r#"data-duration="2""#, 2.0));
@@ -148,7 +172,8 @@ fn tone(path: &Path, seconds: f64) {
     bytes.extend_from_slice(b"data");
     bytes.extend_from_slice(&data.to_le_bytes());
     for n in 0..samples {
-        let value = (f64::sin(n as f64 * 440.0 * std::f64::consts::TAU / 48_000.0) * 12_000.0) as i16;
+        let value =
+            (f64::sin(n as f64 * 440.0 * std::f64::consts::TAU / 48_000.0) * 12_000.0) as i16;
         bytes.extend_from_slice(&value.to_le_bytes());
     }
     std::fs::write(path, bytes).unwrap();
@@ -174,8 +199,14 @@ fn the_audio_track_is_mixed_unless_muted() {
     assert_eq!(with_sound["videos"][0]["audioMixed"], true);
     let clips = with_sound["audio"]["clips"].as_array().unwrap();
     assert_eq!(clips.len(), 1, "{with_sound}");
-    assert!((clips[0]["end"].as_f64().unwrap() - 2.0).abs() < 0.05, "{with_sound}");
-    assert!(with_sound["audio"]["peak"].as_f64().unwrap() > 0.1, "{with_sound}");
+    assert!(
+        (clips[0]["end"].as_f64().unwrap() - 2.0).abs() < 0.05,
+        "{with_sound}"
+    );
+    assert!(
+        with_sound["audio"]["peak"].as_f64().unwrap() > 0.1,
+        "{with_sound}"
+    );
 
     let muted = agent::check(&page_without_muted(&dir, "muted"));
     assert_eq!(muted["videos"][0]["audioMixed"], false);
@@ -222,7 +253,10 @@ fn rotation_metadata_turns_the_picture_upright() {
     encode_native(&mut renderer, &dir.join("src.mp4"), 10, 1).unwrap();
     let one = 0x1_0000;
     // 90 degrees clockwise: the left half ends up on top.
-    set_matrix(&dir.join("src.mp4"), [0, one, 0, -one, 0, 0, 0, 0, 0x4000_0000]);
+    set_matrix(
+        &dir.join("src.mp4"),
+        [0, one, 0, -one, 0, 0, 0, 0, 0x4000_0000],
+    );
     let html = dir.join("index.html");
     std::fs::write(
         &html,
@@ -233,7 +267,13 @@ fn rotation_metadata_turns_the_picture_upright() {
     let composition = parse_file(&html).unwrap();
     let mut renderer = Renderer::new(&composition, 1.0).unwrap();
     let frame = renderer.render_at(0.3).unwrap();
-    let at = |x: usize, y: usize| [frame[(y * 32 + x) * 4], frame[(y * 32 + x) * 4 + 1], frame[(y * 32 + x) * 4 + 2]];
+    let at = |x: usize, y: usize| {
+        [
+            frame[(y * 32 + x) * 4],
+            frame[(y * 32 + x) * 4 + 1],
+            frame[(y * 32 + x) * 4 + 2],
+        ]
+    };
     assert!(near(at(16, 5), [255, 0, 0]), "top: {:?}", at(16, 5));
     assert!(near(at(16, 27), [0, 0, 255]), "bottom: {:?}", at(16, 27));
 }

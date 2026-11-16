@@ -65,8 +65,16 @@ mod tests {
     fn cue() -> Cue {
         Cue {
             words: vec![
-                Word { text: "Hello".into(), start: 3661.5, end: 3662.0 },
-                Word { text: "world".into(), start: 3662.0, end: 3662.25 },
+                Word {
+                    text: "Hello".into(),
+                    start: 3661.5,
+                    end: 3662.0,
+                },
+                Word {
+                    text: "world".into(),
+                    start: 3662.0,
+                    end: 3662.25,
+                },
             ],
         }
     }
