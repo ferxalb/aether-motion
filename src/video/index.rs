@@ -200,7 +200,8 @@ impl VideoIndex {
         } else {
             1.0 / 30.0
         };
-        if !(step > 0.0) || !last.is_finite() {
+        // NaN fails `step > 0.0` too, so it is rejected explicitly.
+        if step.is_nan() || step <= 0.0 || !last.is_finite() {
             bail!("{name} has frame times that do not increase");
         }
         Ok(Self {
