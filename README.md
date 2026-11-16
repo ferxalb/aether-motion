@@ -34,6 +34,8 @@ claude mcp add aether-motion -- aether-motion mcp
 
 For other agents, add `aether-motion mcp` as a stdio MCP server in their settings.
 
+The server supports MCP `2026-07-28` and legacy clients that begin with `initialize`.
+
 Try a prompt like:
 
 > Using the AETHER Motion tools, make a 12-second 1080p product intro with a kinetic title, three glass feature cards, an animated counter, and a push transition between scenes.
@@ -133,6 +135,7 @@ aether-motion block theme-midnight
 - **Deterministic:** same input, same frames, same output. Generic fonts use an embedded Roboto, so text matches across machines.
 - **Honest errors:** unsupported HTML or CSS returns the exact problem and a suggested fix, never a silently wrong video.
 - **Native motion:** keyframes with expo, back, and `cubic-bezier` easing, CSS `@keyframes`, camera zoom and pan, kinetic text, reveals, counters, and crossfade, push, cover, wipe, and zoom transitions.
+- **Sample-accurate audio:** `<audio>` clips (WAV, FLAC, Ogg Vorbis, MP3) with volume, fades, trim, and loop are mixed and encoded to AAC with no FFmpeg; see `examples/audio.html`.
 - **Polished look:** flexbox, text wrapping, gradients, layered and inset shadows, blur, frosted glass, rotation, vignette, and film grain.
 - **Easy on your machine:** renders at low priority on a quarter of your cores by default. `--threads N` goes faster; `--scale 0.5` gives quick drafts.
 - **Fast:** the 15-second premium promo (450 frames at 1080p/30) renders to MP4 in about 15 seconds with default settings on a laptop. See [BENCHMARK.md](BENCHMARK.md).
@@ -148,11 +151,12 @@ AETHER Motion uses the [HyperFrames](https://github.com/heygen-com/hyperframes) 
 | Install | One binary | Node.js 22+, Chrome, FFmpeg |
 | HTML/CSS coverage | Documented subset; anything else fails with an error | Everything a browser can render |
 | Animation | Native keyframes, camera, text, transitions, CSS `@keyframes` | GSAP, CSS, Lottie, Three.js, WAAPI, adapters |
-| Video, audio, SVG, scripts | Not supported | Supported |
+| Audio | `<audio>` clips mixed sample-accurately into AAC | Supported |
+| Video, SVG, scripts | Not supported | Supported |
 | Agent integration | MCP server | Agent skills and CLI |
 | License | Apache 2.0 | Apache 2.0 |
 
-Use AETHER Motion when you want a lightweight, dependency-free, reproducible render of motion graphics. Use HyperFrames when you need media, audio, scripts, or full browser CSS.
+Use AETHER Motion when you want a lightweight, dependency-free, reproducible render of motion graphics. Use HyperFrames when you need embedded video, scripts, or full browser CSS.
 
 ## Output
 
@@ -185,6 +189,4 @@ CI builds and tests on Linux, macOS, and Windows. Read [AGENTS.md](AGENTS.md) fo
 
 ## License
 
-[Apache 2.0](LICENSE). Includes Roboto (Apache 2.0).
-
-AETHER Motion is an independent project and is not affiliated with HeyGen or the HyperFrames project.
+[Apache 2.0](LICENSE). Includes Roboto (Apache 2.0). Audio uses Symphonia (MPL-2.0) for decoding and `oxideav-aac` (MIT) for AAC encoding; AAC and MP3 are patent-licensed formats, so check your distribution needs.

@@ -4,6 +4,7 @@ use crate::parse::animation::camera::{parse_camera, CameraFrame};
 use crate::parse::animation::keyframes::parse_keyframes;
 use crate::parse::animation::reveal::{parse_reveal, RevealSpec};
 use crate::parse::animation::AnimationSpec;
+use crate::parse::audio::{parse_audio, PendingAudio};
 use crate::parse::counter::parse_counter;
 use crate::parse::css::{Stylesheet, Vars};
 use crate::parse::html::{attr, direct_text, number};
@@ -33,6 +34,7 @@ pub(in crate::parse) fn walk(
     sheet: &Stylesheet,
     vars: &Vars,
     out: &mut Vec<Pending>,
+    audio: &mut Vec<PendingAudio>,
 ) -> Result<()> {
     let Some(el) = node.as_element() else {
         return Ok(());
@@ -45,9 +47,16 @@ pub(in crate::parse) fn walk(
     ) {
         return Ok(());
     }
+    if tag == "audio" {
+        if node.children().any(|c| c.as_element().is_some()) {
+            bail!("<audio> cannot have child elements; set the file with src");
+        }
+        audio.push(parse_audio(node, parent, base)?);
+        return Ok(());
+    }
     if matches!(
         tag.as_str(),
-        "script" | "video" | "audio" | "canvas" | "svg" | "iframe"
+        "script" | "video" | "canvas" | "svg" | "iframe"
     ) {
         bail!("<{tag}> requires a browser/JavaScript and is not supported by the native backend");
     }
@@ -238,7 +247,7 @@ pub(in crate::parse) fn walk(
         return spec.expand(text, idx, out);
     }
     for child in node.children() {
-        walk(&child, Some(idx), base, sheet, &vars, out)?;
+        walk(&child, Some(idx), base, sheet, &vars, out, audio)?;
     }
     Ok(())
 }

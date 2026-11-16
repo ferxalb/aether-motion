@@ -1,0 +1,424 @@
+//! MCP stdio server for the current stateless protocol and legacy clients.
+use crate::encode::encode_native_with_audio;
+use crate::model::Composition;
+use crate::parse::parse_file;
+use crate::render::Renderer;
+use anyhow::{anyhow, Result};
+use image::{ColorType, ImageFormat};
+use serde_json::{json, Value};
+use std::io::{BufRead, Cursor, Write};
+use std::path::Path;
+
+const PROTOCOL_VERSION: &str = "2026-07-28";
+const PROTOCOL_VERSION_META: &str = "io.modelcontextprotocol/protocolVersion";
+const CLIENT_CAPABILITIES_META: &str = "io.modelcontextprotocol/clientCapabilities";
+const SERVER_INFO_META: &str = "io.modelcontextprotocol/serverInfo";
+const SUPPORTED_LEGACY_VERSIONS: [&str; 4] =
+    ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
+
+const GUIDE: &str = include_str!("../../AGENTS.md");
+
+const B64: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+fn base64(data: &[u8]) -> String {
+    let mut output = String::with_capacity(data.len() * 4 / 3 + 4);
+    for chunk in data.chunks(3) {
+        let value = (chunk[0] as u32) << 16
+            | (*chunk.get(1).unwrap_or(&0) as u32) << 8
+            | *chunk.get(2).unwrap_or(&0) as u32;
+        output.push(B64[(value >> 18) as usize & 63] as char);
+        output.push(B64[(value >> 12) as usize & 63] as char);
+        output.push(if chunk.len() > 1 {
+            B64[(value >> 6) as usize & 63] as char
+        } else {
+            '='
+        });
+        output.push(if chunk.len() > 2 {
+            B64[value as usize & 63] as char
+        } else {
+            '='
+        });
+    }
+    output
+}
+
+fn renderer_for<'a>(composition: &'a Composition, args: &Value) -> Result<Renderer<'a>> {
+    if let Some(size) = args.get("size") {
+        if args.get("scale").is_some() {
+            return Err(anyhow!("choose either size or scale"));
+        }
+        let size = size
+            .as_str()
+            .ok_or_else(|| anyhow!("size must be 1080p or 4k"))?;
+        return Renderer::with_output_size(composition, size.parse()?);
+    }
+    let scale = args.get("scale").and_then(Value::as_f64).unwrap_or(1.0) as f32;
+    Renderer::new(composition, scale)
+}
+
+fn snapshot(path: &Path, time: f64, args: &Value) -> Result<Value> {
+    let composition = parse_file(path)?;
+    let mut renderer = renderer_for(&composition, args)?;
+    let (width, height) = renderer.dimensions();
+    let pixels = renderer.render_at(time)?;
+    let mut png = Cursor::new(Vec::new());
+    image::write_buffer_with_format(
+        &mut png,
+        pixels,
+        width,
+        height,
+        ColorType::Rgba8,
+        ImageFormat::Png,
+    )?;
+    Ok(
+        json!({"content": [{"type": "image", "data": base64(&png.into_inner()), "mimeType": "image/png"}]}),
+    )
+}
+
+fn text(value: impl Into<String>) -> Value {
+    json!({"content": [{"type": "text", "text": value.into()}]})
+}
+
+fn tools() -> Value {
+    let path = json!({"type": "string", "description": "Path to the .html composition"});
+    json!([
+        {"name": "aether_guide", "description": "Format contract and work loop. Read it before writing a composition.", "inputSchema": {"type": "object", "properties": {}}},
+        {"name": "aether_write", "description": "Write an HTML composition and validate it. Do not overwrite unless overwrite=true.", "inputSchema": {"type": "object", "properties": {"path": path, "html": {"type": "string"}, "overwrite": {"type": "boolean"}}, "required": ["path", "html"]}},
+        {"name": "aether_block", "description": "List ready-made blocks and themes, or render one as HTML to paste into a composition. Without name it returns the catalog with parameters and defaults.", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "params": {"type": "object", "additionalProperties": {"type": "string"}}}}},
+        {"name": "aether_check", "description": "Validate the composition; return JSON with an error and fix on failure.", "inputSchema": {"type": "object", "properties": {"path": path}, "required": ["path"]}},
+        {"name": "aether_snapshot", "description": "Render the exact second t (0 <= t < duration) and return a PNG.", "inputSchema": {"type": "object", "properties": {"path": path, "t": {"type": "number"}, "scale": {"type": "number"}, "size": {"type": "string", "enum": ["1080p", "4k"]}}, "required": ["path"]}},
+        {"name": "aether_render", "description": "Render to MP4 (native H.264). Does not overwrite existing outputs.", "inputSchema": {"type": "object", "properties": {"path": path, "output": {"type": "string"}, "fps": {"type": "integer", "minimum": 1, "maximum": 60}, "threads": {"type": "integer", "minimum": 1, "maximum": 64}, "scale": {"type": "number"}, "size": {"type": "string", "enum": ["1080p", "4k"]}, "audioBitrate": {"type": "integer", "minimum": 64, "maximum": 320, "description": "AAC bitrate in kbit/s for compositions with <audio> (default 192)"}}, "required": ["path", "output"]}}
+    ])
+}
+
+fn call(name: &str, args: &Value) -> Result<Value> {
+    let string_arg = |key: &str| args.get(key).and_then(Value::as_str);
+    let path = Path::new(string_arg("path").unwrap_or(""));
+    match name {
+        "aether_guide" => Ok(text(GUIDE)),
+        "aether_write" => {
+            if path.extension().and_then(|extension| extension.to_str()) != Some("html") {
+                return Err(anyhow!("the path must end in .html"));
+            }
+            if path.exists() && args.get("overwrite").and_then(Value::as_bool) != Some(true) {
+                return Err(anyhow!(
+                    "{} already exists; use overwrite=true",
+                    path.display()
+                ));
+            }
+            std::fs::write(
+                path,
+                string_arg("html").ok_or_else(|| anyhow!("missing html"))?,
+            )?;
+            Ok(text(crate::agent::check(path).to_string()))
+        }
+        "aether_block" => match string_arg("name") {
+            None => Ok(text(crate::blocks::list_json()?.to_string())),
+            Some(name) => {
+                let mut values = std::collections::BTreeMap::new();
+                if let Some(params) = args.get("params") {
+                    let params = params
+                        .as_object()
+                        .ok_or_else(|| anyhow!("params must be an object of strings"))?;
+                    for (key, value) in params {
+                        let value = value
+                            .as_str()
+                            .map(str::to_string)
+                            .or_else(|| value.as_f64().map(|number| number.to_string()))
+                            .ok_or_else(|| anyhow!("params.{key} must be a string or number"))?;
+                        values.insert(key.clone(), value);
+                    }
+                }
+                Ok(text(crate::blocks::render(name, &values)?))
+            }
+        },
+        "aether_check" => Ok(text(crate::agent::check(path).to_string())),
+        "aether_snapshot" => snapshot(
+            path,
+            args.get("t").and_then(Value::as_f64).unwrap_or(0.0),
+            args,
+        ),
+        "aether_render" => {
+            let output = Path::new(string_arg("output").ok_or_else(|| anyhow!("missing output"))?);
+            let integer = |name: &str, default| -> Result<u32> {
+                match args.get(name) {
+                    None => Ok(default),
+                    Some(value) => value
+                        .as_u64()
+                        .and_then(|number| u32::try_from(number).ok())
+                        .ok_or_else(|| anyhow!("{name} must be a positive integer")),
+                }
+            };
+            let fps = integer("fps", 30)?;
+            let threads = integer("threads", crate::encode::default_threads())?;
+            let audio_bitrate = integer("audioBitrate", crate::audio::DEFAULT_BITRATE / 1000)?;
+            crate::encode::lower_priority();
+            let composition = parse_file(path)?;
+            let mut renderer = renderer_for(&composition, args)?;
+            let started = std::time::Instant::now();
+            match output.extension().and_then(|extension| extension.to_str()) {
+                Some("mp4") => encode_native_with_audio(
+                    &mut renderer,
+                    output,
+                    fps,
+                    threads,
+                    audio_bitrate * 1000,
+                )?,
+                _ => {
+                    return Err(anyhow!(
+                        "output must end in .mp4; use aether_snapshot for a frame"
+                    ))
+                }
+            }
+            Ok(text(format!(
+                "{} frames in {:.2}s -> {}",
+                renderer.frame_count(fps),
+                started.elapsed().as_secs_f64(),
+                output.display()
+            )))
+        }
+        _ => Err(anyhow!("unknown tool: {name}")),
+    }
+}
+
+fn is_known_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "aether_guide"
+            | "aether_write"
+            | "aether_block"
+            | "aether_check"
+            | "aether_snapshot"
+            | "aether_render"
+    )
+}
+
+fn rpc_error(code: i32, message: impl Into<String>, data: Option<Value>) -> Value {
+    let mut error = json!({"code": code, "message": message.into()});
+    if let Some(data) = data {
+        error["data"] = data;
+    }
+    error
+}
+
+fn invalid_params(message: impl Into<String>) -> Value {
+    rpc_error(-32602, message, None)
+}
+
+fn server_info() -> Value {
+    json!({"name": env!("CARGO_PKG_NAME"), "version": env!("CARGO_PKG_VERSION")})
+}
+
+fn complete_result(mut result: Value) -> Value {
+    result["resultType"] = json!("complete");
+    result["_meta"] = json!({});
+    result["_meta"][SERVER_INFO_META] = server_info();
+    result
+}
+
+fn tool_call(params: &Value) -> std::result::Result<Value, Value> {
+    let Some(name) = params.get("name").and_then(Value::as_str) else {
+        return Err(invalid_params("tools/call requires a string name"));
+    };
+    if !is_known_tool(name) {
+        return Err(invalid_params(format!("Unknown tool: {name}")));
+    }
+    let arguments = match params.get("arguments") {
+        None => json!({}),
+        Some(Value::Object(_)) => params["arguments"].clone(),
+        Some(_) => return Err(invalid_params("tools/call arguments must be an object")),
+    };
+    let mut result = match call(name, &arguments) {
+        Ok(result) => result,
+        Err(error) => {
+            json!({"content": [{"type": "text", "text": format!("{error:#}")}], "isError": true})
+        }
+    };
+    if result.get("isError").is_none() {
+        result["isError"] = json!(false);
+    }
+    Ok(complete_result(result))
+}
+
+fn modern_dispatch(method: &str, params: &Value) -> std::result::Result<Value, Value> {
+    let result = match method {
+        "server/discover" => json!({
+            "supportedVersions": [PROTOCOL_VERSION],
+            "capabilities": {"tools": {}},
+            "instructions": "Use aether_guide to read the composition contract and workflow before creating a composition.",
+            "ttlMs": 0,
+            "cacheScope": "private"
+        }),
+        "tools/list" => json!({
+            "tools": tools(),
+            "ttlMs": 0,
+            "cacheScope": "private"
+        }),
+        "tools/call" => return tool_call(params),
+        _ => {
+            return Err(rpc_error(
+                -32601,
+                format!("method not found: {method}"),
+                None,
+            ))
+        }
+    };
+    Ok(complete_result(result))
+}
+
+fn legacy_dispatch(method: &str, params: &Value) -> std::result::Result<Value, Value> {
+    match method {
+        "tools/list" => Ok(json!({"tools": tools()})),
+        "tools/call" => {
+            let Some(name) = params.get("name").and_then(Value::as_str) else {
+                return Err(invalid_params("tools/call requires a string name"));
+            };
+            if !is_known_tool(name) {
+                return Err(invalid_params(format!("Unknown tool: {name}")));
+            }
+            let arguments = match params.get("arguments") {
+                None => json!({}),
+                Some(Value::Object(_)) => params["arguments"].clone(),
+                Some(_) => return Err(invalid_params("tools/call arguments must be an object")),
+            };
+            match call(name, &arguments) {
+                Ok(result) => Ok(result),
+                Err(error) => Ok(
+                    json!({"content": [{"type": "text", "text": format!("{error:#}")}], "isError": true}),
+                ),
+            }
+        }
+        "ping" => Ok(json!({})),
+        _ => Err(rpc_error(
+            -32601,
+            format!("method not found: {method}"),
+            None,
+        )),
+    }
+}
+
+fn initialize(req: &Value, legacy_initialized: &mut bool) -> std::result::Result<Value, Value> {
+    let params = match req.get("params") {
+        Some(Value::Object(params)) => params,
+        _ => return Err(invalid_params("initialize requires object params")),
+    };
+    let Some(requested_version) = params.get("protocolVersion").and_then(Value::as_str) else {
+        return Err(invalid_params(
+            "initialize requires a protocolVersion string",
+        ));
+    };
+    if !params.get("capabilities").is_some_and(Value::is_object)
+        || !params.get("clientInfo").is_some_and(Value::is_object)
+    {
+        return Err(invalid_params(
+            "initialize requires object capabilities and clientInfo",
+        ));
+    }
+    *legacy_initialized = true;
+    let version = if SUPPORTED_LEGACY_VERSIONS.contains(&requested_version) {
+        requested_version
+    } else {
+        SUPPORTED_LEGACY_VERSIONS[0]
+    };
+    Ok(json!({
+        "protocolVersion": version,
+        "capabilities": {"tools": {}},
+        "serverInfo": server_info()
+    }))
+}
+
+fn modern_version_error(requested: &str) -> Value {
+    rpc_error(
+        -32022,
+        "Unsupported protocol version",
+        Some(json!({"supported": [PROTOCOL_VERSION], "requested": requested})),
+    )
+}
+
+fn request_params(req: &Value) -> std::result::Result<Value, Value> {
+    match req.get("params") {
+        None => Ok(json!({})),
+        Some(Value::Object(_)) => Ok(req["params"].clone()),
+        Some(_) => Err(invalid_params("request params must be an object")),
+    }
+}
+
+fn process_request(req: &Value, legacy_initialized: &mut bool) -> Option<Value> {
+    let id = req.get("id")?;
+    if !(id.is_string() || id.is_number()) {
+        return None;
+    }
+    let id = id.clone();
+    let method = req.get("method").and_then(Value::as_str).unwrap_or("");
+    let params = match request_params(req) {
+        Ok(params) => params,
+        Err(error) => return Some(json!({"jsonrpc": "2.0", "id": id, "error": error})),
+    };
+    let meta = match params.get("_meta") {
+        None => None,
+        Some(Value::Object(meta)) => Some(meta),
+        Some(_) => {
+            let error = invalid_params("request _meta must be an object");
+            return Some(json!({"jsonrpc": "2.0", "id": id, "error": error}));
+        }
+    };
+    let is_modern = meta.is_some_and(|meta| {
+        meta.contains_key(PROTOCOL_VERSION_META) || meta.contains_key(CLIENT_CAPABILITIES_META)
+    });
+
+    let result = if method == "initialize" && !is_modern {
+        initialize(req, legacy_initialized)
+    } else if is_modern {
+        let meta = meta.expect("modern requests have metadata");
+        let Some(version) = meta.get(PROTOCOL_VERSION_META).and_then(Value::as_str) else {
+            return Some(json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": invalid_params("request metadata requires a protocol version")
+            }));
+        };
+        if !meta
+            .get(CLIENT_CAPABILITIES_META)
+            .is_some_and(Value::is_object)
+        {
+            return Some(json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": invalid_params("request metadata requires object client capabilities")
+            }));
+        }
+        if version != PROTOCOL_VERSION {
+            Err(modern_version_error(version))
+        } else {
+            modern_dispatch(method, &params)
+        }
+    } else if *legacy_initialized {
+        legacy_dispatch(method, &params)
+    } else {
+        Err(invalid_params(
+            "send server/discover with per-request metadata or initialize a legacy session first",
+        ))
+    };
+
+    Some(match result {
+        Ok(result) => json!({"jsonrpc": "2.0", "id": id, "result": result}),
+        Err(error) => json!({"jsonrpc": "2.0", "id": id, "error": error}),
+    })
+}
+
+/// Serves newline-delimited MCP JSON-RPC messages over stdin and stdout.
+pub fn serve() -> Result<()> {
+    let mut output = std::io::stdout();
+    let mut legacy_initialized = false;
+    for line in std::io::stdin().lock().lines() {
+        let line = line?;
+        let Ok(request) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if let Some(response) = process_request(&request, &mut legacy_initialized) {
+            writeln!(output, "{response}")?;
+            output.flush()?;
+        }
+    }
+    Ok(())
+}

@@ -553,3 +553,15 @@ quarter-pixel motion at 60 fps, constant box area, stable text coverage/centroid
 continuous camera text zoom, cache-independent fractional shadows, and a decoded
 120-frame MP4 crossing a segment boundary. The promo passed composition checking;
 its 2.5-second snapshot was visually inspected at 1080p.
+
+## Audio
+
+Measured with the release build and `--threads 1` on a 64×36 static composition, so the time is almost all audio. The source is 60 s of stereo 16-bit 44.1 kHz WAV, mixed to 48 kHz and encoded to AAC-LC at 192 kbit/s. Without `<audio>` the same render takes 0.06 s.
+
+| Stage | Time for 60 s of audio |
+| --- | ---: |
+| Decode, resample 44.1 to 48 kHz, and mix (`check`, 10 s of audio: 0.12 s) | about 0.7 s |
+| AAC-LC encoding with upstream `oxideav-aac` 0.1.7 (direct `cos` per MDCT term) | about 96 s |
+| AAC-LC encoding with the vendored table-driven MDCT | about 19 s (3 runs: 20.3, 19.8, 19.8 s) |
+
+Peak memory for the 60 s case is about 96 MB (the mix and the decoded source are held as `f32`), against 11 MB without audio. The 753,080-byte MP4 is identical in size before and after the MDCT change. AAC encoding costs about one third of real time on one thread and runs before video encoding, so it adds to the render time; a 15-second composition with a full-length track adds about 5 s. Decoder-side verification: the burst-position tests in `tests/audio.rs` and a manual decode of the MP4 with the operating system's AAC decoder both place a 10 ms burst at the expected sample (centroid 35999.99 against 36000).

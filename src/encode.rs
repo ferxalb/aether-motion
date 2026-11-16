@@ -1,5 +1,8 @@
-//! Native H.264/MP4 encoding of rendered frames, including segmented parallel encoding.
+//! Native H.264/MP4 encoding of rendered frames, including segmented parallel encoding, and the
+//! optional AAC audio track mixed from the composition's `<audio>` clips (see `crate::audio`).
 
+use crate::audio::aac::AacStream;
+use crate::audio::{self, mux as audio_mux};
 use crate::render::Renderer;
 use anyhow::{anyhow, bail, Context, Result};
 use mp4::{AvcConfig, Bytes, Mp4Config, Mp4Sample, Mp4Writer, TrackConfig};
@@ -44,12 +47,27 @@ impl NalFrame {
     }
 }
 
+/// Encodes the composition to H.264/MP4, with AAC audio when it has `<audio>` clips.
 pub fn encode_native(
     renderer: &mut Renderer<'_>,
     output: &Path,
     fps: u32,
     threads: u32,
 ) -> Result<()> {
+    encode_native_with_audio(renderer, output, fps, threads, audio::DEFAULT_BITRATE)
+}
+
+/// [`encode_native`] with an explicit AAC bitrate in bits per second (stereo, 64 to 320 kbit/s).
+pub fn encode_native_with_audio(
+    renderer: &mut Renderer<'_>,
+    output: &Path,
+    fps: u32,
+    threads: u32,
+    audio_bitrate: u32,
+) -> Result<()> {
+    if !(64_000..=320_000).contains(&audio_bitrate) {
+        bail!("audio bitrate must be between 64 and 320 kbit/s");
+    }
     if !(1..=60).contains(&fps) {
         bail!("OpenH264 supports 1 to 60 fps");
     }
@@ -75,11 +93,19 @@ pub fn encode_native(
     }
     let partial = output.with_extension(format!("aether-{}.partial.mp4", std::process::id()));
     let frame_count = renderer.frame_count(fps);
+    let audio = audio::build_track(renderer.composition(), frame_count, fps, audio_bitrate)?;
+    let audio = audio.as_ref();
     let result = (|| -> Result<()> {
         if frame_count > fps as usize * SEGMENT_SECONDS {
             // Long enough for several independent GOPs: encode them in parallel.
-            let (rasterized, reused) =
-                write_segmented(renderer, &partial, fps, threads as usize, frame_count)?;
+            let (rasterized, reused) = write_segmented(
+                renderer,
+                &partial,
+                fps,
+                threads as usize,
+                frame_count,
+                audio,
+            )?;
             renderer.add_stats(rasterized, reused);
         } else if threads > 1 && width as u64 * height as u64 >= 1920 * 1080 {
             std::thread::scope(|scope| -> Result<()> {
@@ -102,6 +128,7 @@ pub fn encode_native(
                     threads - 1,
                     frame_count,
                     receiver,
+                    audio,
                 );
                 producer
                     .join()
@@ -117,6 +144,7 @@ pub fn encode_native(
                 threads,
                 frame_count,
                 video_frames(renderer, fps),
+                audio,
             )?;
         }
         fs::rename(&partial, output).context("could not save MP4")?;
@@ -215,13 +243,58 @@ fn encode_one(
     Ok((nal, frame_type))
 }
 
-fn start_mp4(
+/// MP4 writer for the video track (id 1) and the optional audio track (id 2). Audio access units
+/// are written right after the video frame during which they start, so the file stays interleaved.
+struct Muxer<'a> {
+    writer: Mp4Writer<File>,
+    fps: u32,
+    audio: Option<&'a AacStream>,
+    audio_written: usize,
+}
+
+impl<'a> Muxer<'a> {
+    fn video(&mut self, frame: usize, sample: Sample) -> Result<()> {
+        write_sample(&mut self.writer, frame, sample)?;
+        if let Some(stream) = self.audio {
+            let due = audio_mux::units_due(frame, self.fps).min(stream.units.len());
+            self.flush_audio(due)?;
+        }
+        Ok(())
+    }
+
+    fn flush_audio(&mut self, upto: usize) -> Result<()> {
+        let Some(stream) = self.audio else {
+            return Ok(());
+        };
+        while self.audio_written < upto {
+            self.writer
+                .write_sample(2, &audio_mux::sample(stream, self.audio_written))?;
+            self.audio_written += 1;
+        }
+        Ok(())
+    }
+
+    /// Writes the remaining audio, closes the file, and aligns the audio track with the video.
+    fn finish(mut self, partial: &Path, frame_count: usize) -> Result<()> {
+        if let Some(stream) = self.audio {
+            self.flush_audio(stream.units.len())?;
+        }
+        self.writer.write_end()?;
+        if self.audio.is_some() {
+            audio_mux::patch_moov(partial, frame_count as u64)?;
+        }
+        Ok(())
+    }
+}
+
+fn start_mp4<'a>(
     partial: &Path,
     (width, height): (u32, u32),
     fps: u32,
     sps: Vec<u8>,
     pps: Vec<u8>,
-) -> Result<Mp4Writer<File>> {
+    audio: Option<&'a AacStream>,
+) -> Result<Muxer<'a>> {
     let file = File::create(partial).context("could not create MP4")?;
     let container = Mp4Config {
         major_brand: "isom".parse()?,
@@ -242,7 +315,15 @@ fn start_mp4(
     .into();
     track.timescale = fps;
     mp4.add_track(&track)?;
-    Ok(mp4)
+    if let Some(stream) = audio {
+        mp4.add_track(&audio_mux::track_config(stream))?;
+    }
+    Ok(Muxer {
+        writer: mp4,
+        fps,
+        audio,
+        audio_written: 0,
+    })
 }
 
 fn write_sample(writer: &mut Mp4Writer<File>, frame: usize, (bytes, sync): Sample) -> Result<()> {
@@ -266,6 +347,7 @@ fn write_video(
     threads: u32,
     frame_count: usize,
     frames: impl IntoIterator<Item = Result<Arc<YUVBuffer>>>,
+    audio: Option<&AacStream>,
 ) -> Result<()> {
     let mut encoder = make_encoder(fps, threads)?;
     let mut writer = None;
@@ -281,21 +363,19 @@ fn write_video(
                 nal.sps.ok_or_else(|| anyhow!("missing H.264 SPS"))?,
                 nal.pps.ok_or_else(|| anyhow!("missing H.264 PPS"))?,
             );
-            writer = Some(start_mp4(partial, dimensions, fps, sps, pps)?);
+            writer = Some(start_mp4(partial, dimensions, fps, sps, pps, audio)?);
         }
-        write_sample(
-            writer.as_mut().unwrap(),
-            frame,
-            (nal.sample, frame_type == FrameType::IDR),
-        )?;
+        writer
+            .as_mut()
+            .unwrap()
+            .video(frame, (nal.sample, frame_type == FrameType::IDR))?;
         written += 1;
     }
     if written != frame_count {
         bail!("produced {written} of {frame_count} frames");
     }
-    let mut writer = writer.ok_or_else(|| anyhow!("composition has no frames"))?;
-    writer.write_end()?;
-    Ok(())
+    let writer = writer.ok_or_else(|| anyhow!("composition has no frames"))?;
+    writer.finish(partial, frame_count)
 }
 
 /// Seconds of video per independently encoded segment (each starts with an IDR frame).
@@ -367,6 +447,7 @@ fn write_segmented(
     fps: u32,
     workers: usize,
     frame_count: usize,
+    audio: Option<&AacStream>,
 ) -> Result<(usize, usize)> {
     let segment_len = fps as usize * SEGMENT_SECONDS;
     let segments = frame_count.div_ceil(segment_len);
@@ -402,7 +483,7 @@ fn write_segmented(
         }
         drop(sender);
         let mut pending: BTreeMap<usize, EncodedSegment> = BTreeMap::new();
-        let mut writer: Option<Mp4Writer<File>> = None;
+        let mut writer: Option<Muxer<'_>> = None;
         let mut parameter_sets: Option<(Vec<u8>, Vec<u8>)> = None;
         let (mut want, mut frame) = (0, 0);
         let mut totals = (0, 0);
@@ -418,6 +499,7 @@ fn write_segmented(
                             fps,
                             segment.sps.clone(),
                             segment.pps.clone(),
+                            audio,
                         )?);
                         parameter_sets = Some((segment.sps, segment.pps));
                     }
@@ -429,7 +511,7 @@ fn write_segmented(
                 totals.0 += segment.rasterized;
                 totals.1 += segment.reused;
                 for sample in segment.samples {
-                    write_sample(writer.as_mut().unwrap(), frame, sample)?;
+                    writer.as_mut().unwrap().video(frame, sample)?;
                     frame += 1;
                 }
                 want += 1;
@@ -440,7 +522,7 @@ fn write_segmented(
         }
         writer
             .ok_or_else(|| anyhow!("composition has no frames"))?
-            .write_end()?;
+            .finish(partial, frame_count)?;
         Ok(totals)
     })
 }

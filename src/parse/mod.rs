@@ -2,9 +2,10 @@
 //!
 //! `parse_file` is the facade. Submodules: `html` (node helpers), `css` (stylesheet, selectors, cascade,
 //! variables), `values` (value parsers), `style` (property groups into `Style`), `animation`
-//! (CSS animation, `data-hf-keyframes`, and `data-hf-camera` into motion tracks), `split` (`data-hf-split` kinetic text), `counter` (`data-hf-counter` animated numbers; `data-hf-reveal` lives in `animation/reveal.rs`), `transition` (`data-hf-transition` scene transitions), `tree` (DOM walk), `timeline` (`data-start`).
+//! (CSS animation, `data-hf-keyframes`, and `data-hf-camera` into motion tracks), `split` (`data-hf-split` kinetic text), `audio` (`<audio>` clips for the mixer), `counter` (`data-hf-counter` animated numbers; `data-hf-reveal` lives in `animation/reveal.rs`), `transition` (`data-hf-transition` scene transitions), `tree` (DOM walk), `timeline` (`data-start`).
 
 mod animation;
+mod audio;
 mod counter;
 mod css;
 mod html;
@@ -30,7 +31,7 @@ use kuchiki::traits::*;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use timeline::resolve_start;
+use timeline::{resolve_audio_start, resolve_start};
 use transition::apply_transitions;
 use tree::walk;
 
@@ -39,7 +40,7 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
         fs::read_to_string(path).with_context(|| format!("could not read {}", path.display()))?;
     let document = kuchiki::parse_html().one(html);
     if let Some(unsupported) = document
-        .select("script, video, audio, canvas, svg, iframe")
+        .select("script, video, canvas, svg, iframe")
         .map_err(|_| anyhow!("error selecting HTML elements"))?
         .next()
     {
@@ -90,7 +91,16 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
     };
     let base = path.parent().unwrap_or_else(|| Path::new("."));
     let mut pending = Vec::new();
-    walk(&root, None, base, &sheet, &root_vars, &mut pending)?;
+    let mut pending_audio = Vec::new();
+    walk(
+        &root,
+        None,
+        base,
+        &sheet,
+        &root_vars,
+        &mut pending,
+        &mut pending_audio,
+    )?;
     if pending.is_empty() {
         bail!("empty composition");
     }
@@ -106,6 +116,19 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
     let mut visiting = vec![false; pending.len()];
     for idx in 0..pending.len() {
         resolve_start(idx, &pending, &ids, &mut memo, &mut visiting)?;
+    }
+    let mut audio = Vec::with_capacity(pending_audio.len());
+    for item in pending_audio {
+        let mut clip = item.clip;
+        clip.start = resolve_audio_start(
+            item.start_expr.as_deref(),
+            item.parent,
+            &pending,
+            &ids,
+            &mut memo,
+            &mut visiting,
+        )?;
+        audio.push(clip);
     }
     let explicit_duration = attr(metadata.as_node(), "data-duration")
         .map(|s| number(&s, "data-duration"))
@@ -136,10 +159,27 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
                 })
                 .map(|d| memo[idx].unwrap() + d)
         })
+        .chain(
+            audio
+                .iter()
+                .filter_map(|clip| clip.duration.map(|d| clip.start + d)),
+        )
         .fold(0.0_f64, f64::max);
     let duration = explicit_duration.unwrap_or(inferred_duration);
     if duration <= 0.0 {
         bail!("unknown duration: add data-duration to the root or clips");
+    }
+    for clip in &audio {
+        let label = clip.id.as_deref().unwrap_or("no id");
+        if clip.start >= duration {
+            bail!("audio clip {label} starts after the composition ends");
+        }
+        if clip
+            .duration
+            .is_some_and(|d| clip.start + d > duration + 1e-9)
+        {
+            bail!("audio clip {label} exceeds composition duration");
+        }
     }
     let mut elements = Vec::with_capacity(pending.len());
     let mut transitions = Vec::new();
@@ -221,5 +261,6 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
         grain,
         elements,
         ids,
+        audio,
     })
 }

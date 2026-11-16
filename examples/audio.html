@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+<head>
+<style>
+  :root { --bg: #0b1020; --accent: #7aa2ff; }
+  #title { left: 0; top: 130px; width: 640px; font-size: 56px; font-weight: bold; color: white; text-align: center; }
+  #sub { left: 0; top: 210px; width: 640px; font-size: 22px; color: var(--accent); text-align: center; }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="audio-demo" data-width="640" data-height="360" data-duration="6" style="background: var(--bg)">
+  <div id="title" class="clip" data-start="0" data-duration="6" data-track-index="1" data-hf-fade-in="0.6" data-hf-fade-out="0.8">Sound on</div>
+  <div id="sub" class="clip" data-start="2" data-duration="4" data-track-index="1" data-hf-fade-in="0.4">sample-accurate audio</div>
+
+  <!-- A 4 s pad looped to fill the whole video, faded in and out. -->
+  <audio id="pad" src="audio/pad.wav" data-start="0" data-duration="6" data-hf-loop="true" data-volume="0.8" data-hf-fade-in="0.5" data-hf-fade-out="1"></audio>
+  <!-- A ping that lands exactly when the subtitle appears. -->
+  <audio id="ping" src="audio/ping.wav" data-start="2" data-volume="0.7"></audio>
+</div>
+</body>
+</html>

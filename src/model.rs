@@ -301,6 +301,30 @@ pub struct Composition {
     pub grain: f32,
     pub elements: Vec<Element>,
     pub ids: HashMap<String, usize>,
+    /// `<audio>` clips in document order; they take no part in layout or painting.
+    pub audio: Vec<AudioClip>,
+}
+
+/// One `<audio>` clip on the composition timeline. Times are in seconds; the mixer converts
+/// them to whole samples (see `crate::audio`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct AudioClip {
+    pub id: Option<String>,
+    /// Local source file (WAV, FLAC, Ogg Vorbis, or MP3).
+    pub src: PathBuf,
+    /// Resolved start on the composition timeline.
+    pub start: f64,
+    /// `data-duration`; `None` plays the source (after the trim) to its end, capped at the
+    /// composition end.
+    pub duration: Option<f64>,
+    /// `data-hf-trim-start`: seconds skipped at the start of the source.
+    pub trim: f64,
+    /// `data-volume`: linear gain applied before the fades.
+    pub volume: f32,
+    pub fade_in: f64,
+    pub fade_out: f64,
+    /// `data-hf-loop`: repeat the trimmed source to fill `duration`.
+    pub looped: bool,
 }
 
 /// Edge a reveal grows from: `Left` uncovers the element starting at its left edge, and so on.

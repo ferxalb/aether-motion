@@ -1,6 +1,6 @@
 //! Command-line entry point: `inspect`, `render`, `bench`, `check`, `block`, and `mcp`.
 
-use aether_motion::encode::encode_native;
+use aether_motion::encode::encode_native_with_audio;
 use aether_motion::parse::parse_file;
 use aether_motion::render::{OutputSize, Renderer};
 use anyhow::{anyhow, bail, Context, Result};
@@ -16,13 +16,13 @@ fn usage() -> &'static str {
     concat!("AETHER Motion ", env!("CARGO_PKG_VERSION"), "\n\
 Usage:\n\
   aether-motion inspect <composition.html>\n\
-  aether-motion render <composition.html> --output <video.mp4|frame.png> [--fps 30] [--scale 1 | --size 1080p|4k] [--threads N (default: cores/4, 1 to 4)] [--priority low|normal (default: low)] [--encoder native|ffmpeg] [--frame N]\n\
+  aether-motion render <composition.html> --output <video.mp4|frame.png> [--fps 30] [--scale 1 | --size 1080p|4k] [--threads N (default: cores/4, 1 to 4)] [--priority low|normal (default: low)] [--encoder native|ffmpeg] [--audio-bitrate 192] [--frame N]\n\
   aether-motion bench <composition.html> [--fps 30] [--scale 1 | --size 1080p|4k] [--frame START --count N]\n\
   aether-motion check <composition.html>   (JSON; exits with 1 on failure)\n\
   aether-motion block [list | <name> [--set key=value]...]   (print a ready-made block or theme as HTML)\n\
   aether-motion mcp                        (MCP server over stdio for agents)\n\
 The native backend accepts an explicit subset of HyperFrames HTML/CSS.\n\
-MP4 uses built-in OpenH264 by default; --encoder ffmpeg requires FFmpeg on PATH.")
+MP4 uses built-in OpenH264 and AAC-LC by default (--audio-bitrate in kbit/s, 64 to 320). --encoder ffmpeg requires FFmpeg on PATH and does not support <audio>.")
 }
 
 #[derive(Debug)]
@@ -35,6 +35,8 @@ struct Options {
     size: Option<OutputSize>,
     threads: u32,
     encoder: String,
+    /// AAC bitrate in kbit/s for compositions with `<audio>`.
+    audio_bitrate: u32,
     low_priority: bool,
     frame: Option<usize>,
     /// `bench` only: how many frames to draw from `frame` (default: all of them).
@@ -67,6 +69,7 @@ fn options() -> Result<Option<Options>> {
         size: None,
         threads: aether_motion::encode::default_threads(),
         encoder: "native".to_string(),
+        audio_bitrate: aether_motion::audio::DEFAULT_BITRATE / 1000,
         low_priority: true,
         frame: None,
         count: None,
@@ -82,6 +85,9 @@ fn options() -> Result<Option<Options>> {
             "--size" => opts.size = Some(value.parse()?),
             "--threads" => opts.threads = value.parse().context("invalid --threads")?,
             "--encoder" => opts.encoder = value,
+            "--audio-bitrate" => {
+                opts.audio_bitrate = value.parse().context("invalid --audio-bitrate")?
+            }
             "--priority" => {
                 opts.low_priority = match value.as_str() {
                     "low" => true,
@@ -102,6 +108,9 @@ fn options() -> Result<Option<Options>> {
     }
     if opts.threads == 0 || opts.threads > 64 {
         bail!("--threads must be between 1 and 64");
+    }
+    if !(64..=320).contains(&opts.audio_bitrate) {
+        bail!("--audio-bitrate must be between 64 and 320 (kbit/s)");
     }
     if opts.encoder != "native" && opts.encoder != "ffmpeg" {
         bail!("--encoder must be native or ffmpeg");
@@ -227,6 +236,20 @@ fn main() -> Result<()> {
             composition.duration,
             composition.elements.len()
         );
+        for clip in &composition.audio {
+            let range = match clip.duration {
+                Some(duration) => format!("{:.3}..{:.3} s", clip.start, clip.start + duration),
+                None => format!("{:.3} s..source end", clip.start),
+            };
+            println!(
+                "  audio {} {range}, volume {}{}",
+                clip.id
+                    .clone()
+                    .unwrap_or_else(|| clip.src.display().to_string()),
+                clip.volume,
+                if clip.looped { ", loop" } else { "" }
+            );
+        }
         for element in &composition.elements {
             if element.parent.is_some() && (element.end - element.start) < composition.duration {
                 println!(
@@ -272,8 +295,17 @@ fn main() -> Result<()> {
                     bail!("--frame only applies to PNG");
                 }
                 if opts.encoder == "native" {
-                    encode_native(&mut renderer, output, opts.fps, opts.threads)?;
+                    encode_native_with_audio(
+                        &mut renderer,
+                        output,
+                        opts.fps,
+                        opts.threads,
+                        opts.audio_bitrate * 1000,
+                    )?;
                 } else {
+                    if !composition.audio.is_empty() {
+                        bail!("<audio> requires the native encoder; remove --encoder ffmpeg");
+                    }
                     mp4_ffmpeg(&mut renderer, output, opts.fps, opts.threads)?;
                 }
             }

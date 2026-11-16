@@ -200,6 +200,10 @@ impl<'a> Renderer<'a> {
         &self.stats
     }
 
+    pub fn composition(&self) -> &'a Composition {
+        self.composition
+    }
+
     pub fn frame_count(&self, fps: u32) -> usize {
         (self.composition.duration * fps as f64).ceil() as usize
     }
