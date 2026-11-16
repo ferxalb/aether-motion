@@ -12,13 +12,14 @@ use resvg::{tiny_skia, usvg};
 const MAX_SVG_BYTES: u64 = 8 * 1024 * 1024;
 
 pub(crate) fn svg_options() -> usvg::Options<'static> {
-    let mut options = usvg::Options::default();
     // Network and file access from inside an SVG would break determinism.
-    options.image_href_resolver = usvg::ImageHrefResolver {
-        resolve_data: Box::new(|_, _, _| None),
-        resolve_string: Box::new(|_, _| None),
-    };
-    options
+    usvg::Options {
+        image_href_resolver: usvg::ImageHrefResolver {
+            resolve_data: Box::new(|_, _, _| None),
+            resolve_string: Box::new(|_, _| None),
+        },
+        ..usvg::Options::default()
+    }
 }
 
 pub(crate) fn parse_svg(data: &[u8]) -> Result<usvg::Tree> {
@@ -67,7 +68,7 @@ pub(crate) fn rasterize(tree: &usvg::Tree, w: u32, h: u32, fit: &str) -> Result<
     );
     // tiny-skia stores premultiplied alpha; the image cache expects straight RGBA.
     let mut data = pixmap.take();
-    for px in data.chunks_exact_mut(4) {
+    for px in data.as_chunks_mut::<4>().0 {
         let a = u32::from(px[3]);
         if a != 0 && a != 255 {
             for c in &mut px[..3] {

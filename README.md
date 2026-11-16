@@ -16,12 +16,13 @@
   <a href="#blocks-and-themes">Blocks</a> |
   <a href="examples">Examples</a> |
   <a href="AGENTS.md">Composition Reference</a> |
+  <a href="#agent-skills">Agent Skills</a> |
   <a href="https://github.com/ferxalb/aether-hyperframes/releases">Download</a>
 </p>
 
 AETHER Motion is a free, open-source video renderer that turns HTML and CSS compositions into deterministic MP4 videos. It is a single native binary: no headless Chrome, no Node.js, no FFmpeg. It reads the HyperFrames composition format (clips, tracks, and timing as data attributes) and adds native motion: keyframes, camera moves, kinetic type, scene transitions, and glass.
 
-Using Claude Code, Codex, Cursor, or another coding agent? Connect `aether-motion mcp`, then ask your agent to make a video.
+Using a coding agent? Connect the local MCP server for direct tool access, or install the AETHER Motion Agent Skills for reusable composition, rendering, SVG, and import workflows.
 
 ## Quick Start
 
@@ -142,22 +143,21 @@ aether-motion block theme-midnight
 - **Fast:** the 15-second premium promo (450 frames at 1080p/30) renders to MP4 in about 15 seconds with default settings on a laptop. See [BENCHMARK.md](BENCHMARK.md).
 - **Open source:** Apache 2.0.
 
-## AETHER Motion vs HyperFrames
+## AETHER Motion vs HyperFrames and Remotion
 
-AETHER Motion uses the [HyperFrames](https://github.com/heygen-com/hyperframes) composition format but replaces the browser pipeline with a native renderer. Pick the one that fits the job:
+AETHER Motion uses the [HyperFrames](https://github.com/heygen-com/hyperframes) composition format but replaces its browser pipeline with a native renderer. Remotion takes a React-first, frame-driven approach. Choose based on the source format, runtime, and agent workflow you need:
 
-| | **AETHER Motion** | **HyperFrames** |
-| --- | --- | --- |
-| Rendering | Native Rust renderer | Headless Chrome + FFmpeg |
-| Install | One binary | Node.js 22+, Chrome, FFmpeg |
-| HTML/CSS coverage | Documented subset; anything else fails with an error | Everything a browser can render |
-| Animation | Native keyframes, camera, text, transitions, CSS `@keyframes` | GSAP, CSS, Lottie, Three.js, WAAPI, adapters |
-| Audio | `<audio>` clips mixed sample-accurately into AAC | Supported |
-| Video, scripts, animated or text SVG | Not supported (static SVG is supported) | Supported |
-| Agent integration | MCP server | Agent skills and CLI |
-| License | Apache 2.0 | Apache 2.0 |
+| | **AETHER Motion** | **HyperFrames** | **Remotion** |
+| --- | --- | --- | --- |
+| Authoring model | HTML composition with clips and native `data-hf-*` attributes | HTML compositions with browser-based JavaScript timelines | React components and frame-indexed composition code |
+| Rendering | Native Rust renderer; no browser, Node.js, or FFmpeg required | Browser rendering through the CLI, plus hosted cloud rendering | Browser-based video rendering through the CLI; Player and Studio provide interactive previews |
+| Runtime and scope | One binary; documented HTML/CSS subset, with explicit errors outside it | Node.js 22+, Chrome, and FFmpeg for the local CLI; full browser HTML/CSS/JS | Node.js and a React project; supports frame-driven components and browser media |
+| Motion | Native keyframes, camera, kinetic type, transitions, and limited CSS `@keyframes` | GSAP, CSS, Lottie, Three.js, WAAPI, and browser adapters | `useCurrentFrame()`, `interpolate()`, `spring()`, React components, and transition primitives |
+| Audio and video | Local `<audio>` mixed sample-accurately into AAC; static images/SVG; no `<video>` | Browser audio/video and other media elements | `<Audio>`, `<Video>`, images, and other React media components |
+| AI-agent integration | [Local stdio MCP server](#with-an-ai-coding-agent) **and** [Agent Skills](#agent-skills) | [Hosted MCP](https://hyperframes.heygen.com/tools/mcp-server-for-video); [CLI and Agent Skills](https://github.com/heygen-com/hyperframes#skills) for coding agents | [Agent Skills](https://www.remotion.dev/docs/ai/skills) and [Studio WebMCP](https://www.remotion.dev/docs/ai/webmcp) (agent support varies) |
+| Best fit | Reproducible native rendering with a small, explicit contract | Browser-powered HTML video projects and hosted agent rendering | Programmatic video built from React components and frame-based logic |
 
-Use AETHER Motion when you want a lightweight, dependency-free, reproducible render of motion graphics. Use HyperFrames when you need embedded video, scripts, or full browser CSS.
+Use AETHER Motion when you want a lightweight native renderer and its supported HTML contract. Use HyperFrames when you need browser features, embedded video, or its hosted MCP workflow. Use Remotion when the project is React-based or needs frame-driven React components. The agent integrations differ: AETHER Motion combines local MCP with installable skills, HyperFrames offers hosted MCP plus CLI skills, and Remotion offers Agent Skills plus Studio WebMCP.
 
 ## Output
 
@@ -179,7 +179,7 @@ Up to 60 fps, H.264 MP4 (yuv420p, constant frame rate), or a single PNG frame wi
 
 ## Agent skills
 
-Install the skill collection with `npx skills add ferxalb/aether-motion`, then select the workflows you want to add to your agent.
+Install the skill collection with `npx skills add ferxalb/aether-motion`, then select the workflows you want to add to your agent. The MCP server and Agent Skills are complementary: MCP exposes AETHER Motion tools, while the skills teach an agent how to use the composition contract and workflows.
 
 | Skill | Use it for |
 | --- | --- |
