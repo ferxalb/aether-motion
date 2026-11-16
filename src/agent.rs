@@ -49,7 +49,7 @@ fn fix_hint(message: &str) -> &'static str {
     {
         "use <audio src=\"file.wav\"> with a local WAV, FLAC, Ogg Vorbis, or MP3 file (mono or stereo), optional data-start, data-duration, data-volume (0 to 8), data-hf-fade-in, data-hf-fade-out, data-hf-trim-start, and data-hf-loop (needs data-duration); keep the clip inside the composition"
     } else if message.contains("<script>") {
-        "scripts (GSAP, Date.now, randomness) are not executed so output stays deterministic; replace them with data-hf-keyframes, data-hf-camera, data-hf-split, data-hf-counter, data-hf-transition, or CSS @keyframes"
+        "remove the <script> (GSAP, Date.now, and randomness are not executed so output stays deterministic) and use data-hf-keyframes, data-hf-camera, data-hf-split, data-hf-counter, data-hf-transition, or CSS @keyframes"
     } else if message.contains("invalid SVG")
         || message.contains("<svg>")
         || message.contains("inside <svg>")
