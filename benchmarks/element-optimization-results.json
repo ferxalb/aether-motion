@@ -1,0 +1,505 @@
+{
+  "settings": {
+    "output": "1920x1080",
+    "fps": [
+      30,
+      60
+    ],
+    "threads": 1,
+    "frames_per_drawing_run": 20,
+    "start_frame": "fps (one second)",
+    "drawing_runs": "three alternating baseline/updated pairs",
+    "export_duration_seconds": 2,
+    "export_runs": "one baseline/updated pair per scene and frame rate",
+    "cpu_priority": "low",
+    "older_pc_tested": false
+  },
+  "experimental_drawing_seconds": {
+    "fractional-glows:30": {
+      "before": [
+        0.513,
+        0.513,
+        0.506
+      ],
+      "after": [
+        0.482,
+        0.474,
+        0.481
+      ]
+    },
+    "fractional-glows:60": {
+      "before": [
+        1.185,
+        1.197,
+        1.2
+      ],
+      "after": [
+        1.037,
+        1.045,
+        1.038
+      ]
+    },
+    "half-opacity-glows:30": {
+      "before": [
+        0.771,
+        0.772,
+        0.765
+      ],
+      "after": [
+        0.507,
+        0.513,
+        0.535
+      ]
+    },
+    "half-opacity-glows:60": {
+      "before": [
+        0.796,
+        0.774,
+        0.775
+      ],
+      "after": [
+        0.521,
+        0.513,
+        0.514
+      ]
+    },
+    "grain:30": {
+      "before": [
+        0.107,
+        0.113,
+        0.106
+      ],
+      "after": [
+        0.112,
+        0.108,
+        0.105
+      ]
+    },
+    "grain:60": {
+      "before": [
+        0.105,
+        0.107,
+        0.107
+      ],
+      "after": [
+        0.115,
+        0.109,
+        0.109
+      ]
+    },
+    "vignette:30": {
+      "before": [
+        0.094,
+        0.094,
+        0.093
+      ],
+      "after": [
+        0.096,
+        0.093,
+        0.095
+      ]
+    },
+    "vignette:60": {
+      "before": [
+        0.095,
+        0.094,
+        0.094
+      ],
+      "after": [
+        0.092,
+        0.096,
+        0.095
+      ]
+    },
+    "finish:30": {
+      "before": [
+        0.156,
+        0.15,
+        0.155
+      ],
+      "after": [
+        0.155,
+        0.153,
+        0.151
+      ]
+    },
+    "finish:60": {
+      "before": [
+        0.15,
+        0.146,
+        0.148
+      ],
+      "after": [
+        0.149,
+        0.147,
+        0.149
+      ]
+    },
+    "layer-reuse:30": {
+      "before": [
+        1.232,
+        1.237,
+        1.241
+      ],
+      "after": [
+        1.239,
+        1.215,
+        1.246
+      ]
+    },
+    "layer-reuse:60": {
+      "before": [
+        1.238,
+        1.231,
+        1.223
+      ],
+      "after": [
+        1.223,
+        1.233,
+        1.224
+      ]
+    },
+    "translucent-image:30": {
+      "before": [
+        0.202,
+        0.201,
+        0.199
+      ],
+      "after": [
+        0.102,
+        0.1,
+        0.1
+      ]
+    },
+    "translucent-image:60": {
+      "before": [
+        0.2,
+        0.201,
+        0.199
+      ],
+      "after": [
+        0.097,
+        0.098,
+        0.096
+      ]
+    }
+  },
+  "final_drawing_seconds": {
+    "fractional-glows:30": {
+      "before": [
+        0.522,
+        0.508,
+        0.517
+      ],
+      "after": [
+        0.476,
+        0.459,
+        0.463
+      ]
+    },
+    "fractional-glows:60": {
+      "before": [
+        1.194,
+        1.189,
+        1.195
+      ],
+      "after": [
+        1.045,
+        1.047,
+        1.035
+      ]
+    },
+    "half-opacity-glows:30": {
+      "before": [
+        0.774,
+        0.765,
+        0.765
+      ],
+      "after": [
+        0.473,
+        0.47,
+        0.476
+      ]
+    },
+    "half-opacity-glows:60": {
+      "before": [
+        0.772,
+        0.772,
+        0.782
+      ],
+      "after": [
+        0.468,
+        0.47,
+        0.469
+      ]
+    },
+    "translucent-image:30": {
+      "before": [
+        0.2,
+        0.196,
+        0.197
+      ],
+      "after": [
+        0.101,
+        0.099,
+        0.097
+      ]
+    },
+    "translucent-image:60": {
+      "before": [
+        0.199,
+        0.197,
+        0.201
+      ],
+      "after": [
+        0.096,
+        0.098,
+        0.097
+      ]
+    }
+  },
+  "layer_pool_memory_experiment": {
+    "before": {
+      "internal_seconds": 1.238,
+      "wall_seconds": 1.29,
+      "user_cpu_seconds": 1.27,
+      "system_cpu_seconds": 0.01,
+      "maximum_rss_bytes": 33415168,
+      "peak_memory_footprint_bytes": 31768576
+    },
+    "after": {
+      "internal_seconds": 1.25,
+      "wall_seconds": 1.3,
+      "user_cpu_seconds": 1.27,
+      "system_cpu_seconds": 0.02,
+      "maximum_rss_bytes": 33505280,
+      "peak_memory_footprint_bytes": 31879168
+    }
+  },
+  "mp4_checks": {
+    "fractional-glows:30": {
+      "before": {
+        "seconds": 1.555,
+        "bytes": 25816,
+        "samples": 60,
+        "sha256": "1049103283a598eb322a1fdfe717dc9490d1e2725f557c9b70e0bb34d3c71fa7"
+      },
+      "after": {
+        "seconds": 1.482,
+        "bytes": 25816,
+        "samples": 60,
+        "sha256": "1049103283a598eb322a1fdfe717dc9490d1e2725f557c9b70e0bb34d3c71fa7"
+      }
+    },
+    "fractional-glows:60": {
+      "before": {
+        "seconds": 6.074,
+        "bytes": 28238,
+        "samples": 120,
+        "sha256": "ad4e3c5b5171b8427dc212d2d4e8147376a0082ef371808fb4d608962a8fa7c4"
+      },
+      "after": {
+        "seconds": 5.426,
+        "bytes": 28238,
+        "samples": 120,
+        "sha256": "ad4e3c5b5171b8427dc212d2d4e8147376a0082ef371808fb4d608962a8fa7c4"
+      }
+    },
+    "half-opacity-glows:30": {
+      "before": {
+        "seconds": 2.321,
+        "bytes": 23574,
+        "samples": 60,
+        "sha256": "0242e9ce08ea74e17620d08f49f3904b59b0435d292cfc57c010c33e775cd6c0"
+      },
+      "after": {
+        "seconds": 1.468,
+        "bytes": 23574,
+        "samples": 60,
+        "sha256": "0242e9ce08ea74e17620d08f49f3904b59b0435d292cfc57c010c33e775cd6c0"
+      }
+    },
+    "half-opacity-glows:60": {
+      "before": {
+        "seconds": 4.311,
+        "bytes": 26259,
+        "samples": 120,
+        "sha256": "9ab8cae8f549ceb6dc87cd457ad27019b6e63f16edaeb7c0e433343b42b588b6"
+      },
+      "after": {
+        "seconds": 2.602,
+        "bytes": 26259,
+        "samples": 120,
+        "sha256": "9ab8cae8f549ceb6dc87cd457ad27019b6e63f16edaeb7c0e433343b42b588b6"
+      }
+    },
+    "fading-glows:30": {
+      "before": {
+        "seconds": 2.587,
+        "bytes": 106310,
+        "samples": 60,
+        "sha256": "0f2505df241940aaf0db7855f7219af57a8db52c31ac0994115a9a8d86ed7fd3"
+      },
+      "after": {
+        "seconds": 2.5,
+        "bytes": 106310,
+        "samples": 60,
+        "sha256": "0f2505df241940aaf0db7855f7219af57a8db52c31ac0994115a9a8d86ed7fd3"
+      }
+    },
+    "fading-glows:60": {
+      "before": {
+        "seconds": 4.552,
+        "bytes": 123161,
+        "samples": 120,
+        "sha256": "af3b2981fb8153da92a0cc47db1db7cee302e58251397a559c22ae095590e9c2"
+      },
+      "after": {
+        "seconds": 4.508,
+        "bytes": 123161,
+        "samples": 120,
+        "sha256": "af3b2981fb8153da92a0cc47db1db7cee302e58251397a559c22ae095590e9c2"
+      }
+    },
+    "translucent-image:30": {
+      "before": {
+        "seconds": 1.099,
+        "bytes": 35659,
+        "samples": 60,
+        "sha256": "e36355dfb165a3d6c7f6072ae380be096c9e640c17c140a9885abb150f35157f"
+      },
+      "after": {
+        "seconds": 0.805,
+        "bytes": 35659,
+        "samples": 60,
+        "sha256": "e36355dfb165a3d6c7f6072ae380be096c9e640c17c140a9885abb150f35157f"
+      }
+    },
+    "translucent-image:60": {
+      "before": {
+        "seconds": 2.103,
+        "bytes": 56031,
+        "samples": 120,
+        "sha256": "f093e2219c4ea1674fe82a943d25251301ca69688f69836a8ecffc3987189745"
+      },
+      "after": {
+        "seconds": 1.504,
+        "bytes": 56031,
+        "samples": 120,
+        "sha256": "f093e2219c4ea1674fe82a943d25251301ca69688f69836a8ecffc3987189745"
+      }
+    },
+    "grain:30": {
+      "before": {
+        "seconds": 2.691,
+        "bytes": 3851766,
+        "samples": 60,
+        "sha256": "763af10f3905144c3b8ebdcefdcabe0365160832c056ed970dc8ede8605e7f46"
+      },
+      "after": {
+        "seconds": 2.654,
+        "bytes": 3851766,
+        "samples": 60,
+        "sha256": "763af10f3905144c3b8ebdcefdcabe0365160832c056ed970dc8ede8605e7f46"
+      }
+    },
+    "grain:60": {
+      "before": {
+        "seconds": 5.275,
+        "bytes": 7623368,
+        "samples": 120,
+        "sha256": "1721cc7d061abac1cb7719c4f00520d20c7de673af69491b75094cf0698e3dd6"
+      },
+      "after": {
+        "seconds": 5.262,
+        "bytes": 7623368,
+        "samples": 120,
+        "sha256": "1721cc7d061abac1cb7719c4f00520d20c7de673af69491b75094cf0698e3dd6"
+      }
+    },
+    "vignette:30": {
+      "before": {
+        "seconds": 0.72,
+        "bytes": 17176,
+        "samples": 60,
+        "sha256": "8b383132d87373b992892720dfe0579b9e9bdd5b786712e6ab03e348873f0adf"
+      },
+      "after": {
+        "seconds": 0.725,
+        "bytes": 17176,
+        "samples": 60,
+        "sha256": "8b383132d87373b992892720dfe0579b9e9bdd5b786712e6ab03e348873f0adf"
+      }
+    },
+    "vignette:60": {
+      "before": {
+        "seconds": 1.398,
+        "bytes": 20537,
+        "samples": 120,
+        "sha256": "93ba255b867adee0a5148ad255c089704ce53af86279d29750e1efc162dab59f"
+      },
+      "after": {
+        "seconds": 1.379,
+        "bytes": 20537,
+        "samples": 120,
+        "sha256": "93ba255b867adee0a5148ad255c089704ce53af86279d29750e1efc162dab59f"
+      }
+    },
+    "finish:30": {
+      "before": {
+        "seconds": 2.747,
+        "bytes": 3820004,
+        "samples": 60,
+        "sha256": "530b2b9a567d6816915c287724f21c28d57b96ecc4a17c9214a2aaa109e7ca8e"
+      },
+      "after": {
+        "seconds": 2.738,
+        "bytes": 3820004,
+        "samples": 60,
+        "sha256": "530b2b9a567d6816915c287724f21c28d57b96ecc4a17c9214a2aaa109e7ca8e"
+      }
+    },
+    "finish:60": {
+      "before": {
+        "seconds": 5.42,
+        "bytes": 7558895,
+        "samples": 120,
+        "sha256": "68ff0d95d4bdd91aba491d616da408d667c900bdc8304347fa61b2b075afc5ad"
+      },
+      "after": {
+        "seconds": 5.428,
+        "bytes": 7558895,
+        "samples": 120,
+        "sha256": "68ff0d95d4bdd91aba491d616da408d667c900bdc8304347fa61b2b075afc5ad"
+      }
+    },
+    "layer-reuse:30": {
+      "before": {
+        "seconds": 4.273,
+        "bytes": 56756,
+        "samples": 60,
+        "sha256": "1ffb673414a4d3e0f8413e4dca5d91963648d7724f2cce03c08fa1cc2879fe37"
+      },
+      "after": {
+        "seconds": 4.412,
+        "bytes": 56756,
+        "samples": 60,
+        "sha256": "1ffb673414a4d3e0f8413e4dca5d91963648d7724f2cce03c08fa1cc2879fe37"
+      }
+    },
+    "layer-reuse:60": {
+      "before": {
+        "seconds": 8.696,
+        "bytes": 91640,
+        "samples": 120,
+        "sha256": "11b7c1f34571e481c247e95bc711e770d43ea065cd94f4029d1dddf3e6ec6b93"
+      },
+      "after": {
+        "seconds": 8.579,
+        "bytes": 91640,
+        "samples": 120,
+        "sha256": "11b7c1f34571e481c247e95bc711e770d43ea065cd94f4029d1dddf3e6ec6b93"
+      }
+    }
+  }
+}

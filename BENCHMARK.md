@@ -364,3 +364,97 @@ Single export timings: 30 fps baseline 2.412 s, updated 1.575 s; 60 fps baseline
 4.357 s, updated 2.688 s. These single export pairs do not establish repeatable
 end-to-end speedups. Drawing results are scoped to the measured intervals;
 older PCs and sustained realtime performance were not measured.
+
+## Five-area exact-output optimization audit (30 and 60 fps)
+
+All candidate changes were measured at 1080p, one thread, low priority, 20
+frames starting at one second (frame 30 at 30 fps; frame 60 at 60 fps).
+Three alternating baseline/updated drawing pairs were run for every row.
+The intervals start together but cover different durations at the two rates.
+[Raw measurements](benchmarks/element-optimization-results.json) preserve the
+initial experiments, final confirmation runs, memory pair, and MP4 checks.
+
+Retained changes:
+
+- Gradient stop colors are premultiplied once per draw rather than per pixel.
+  This reduces work when fractional motion changes tile sizes and the existing
+  cache falls back to direct painting. Cache keys, admission, and budget remain
+  unchanged: admitting formerly uncached tiles could change pixels because the
+  historical cached and direct paths are not generally byte-identical. This
+  optimization does not remove the underlying cache-budget limitation.
+- Cached glows at element opacity 0.25, 0.5, and 0.75 use exact integer blending.
+  Every intermediate of the corresponding float formula is representable
+  exactly, including dither and rounding. Arbitrary-opacity fades retain their
+  original float path; no general fade speedup is claimed.
+- Fitted images cache the nontransparent span and opaque status of each row.
+  Fully transparent margins are skipped; opaque spans at opacity one use a
+  direct copy; partial alpha keeps its original blend. Metadata counts toward
+  the existing 64 MiB image-cache budget and is optional, preserving the
+  maximum previously legal fitted-image size.
+
+Final confirmation after removing rejected experiments:
+
+| Scene | FPS | Baseline runs (s) | Updated runs (s) | Median reduction |
+| --- | ---: | --- | --- | ---: |
+| [fractional-glows.html](benchmarks/fractional-glows.html) | 30 | 0.522 / 0.508 / 0.517 | 0.476 / 0.459 / 0.463 | 10.4% |
+| [fractional-glows.html](benchmarks/fractional-glows.html) | 60 | 1.194 / 1.189 / 1.195 | 1.045 / 1.047 / 1.035 | 12.5% |
+| [half-opacity-glows.html](benchmarks/half-opacity-glows.html) | 30 | 0.774 / 0.765 / 0.765 | 0.473 / 0.470 / 0.476 | 38.2% |
+| [half-opacity-glows.html](benchmarks/half-opacity-glows.html) | 60 | 0.772 / 0.772 / 0.782 | 0.468 / 0.470 / 0.469 | 39.2% |
+| [translucent-image.html](benchmarks/translucent-image.html) | 30 | 0.200 / 0.196 / 0.197 | 0.101 / 0.099 / 0.097 | 49.7% |
+| [translucent-image.html](benchmarks/translucent-image.html) | 60 | 0.199 / 0.197 / 0.201 | 0.096 / 0.098 / 0.097 | 51.3% |
+
+An initial fractional-glow batch showed a smaller 6.2% difference at 30 fps
+(0.513 vs 0.481 s medians); the final batch showed 10.4%. Treat that particular
+30 fps improvement as modest and sensitive to measurement variation.
+
+Rejected and reverted:
+
+- Separate compile-time loops for grain, vignette, and their combination: all
+  six scene/rate pairs moved by less than about 5%, within measurement noise.
+  The fixed-point reference comparison passed before this experiment was reverted.
+- A 32 MiB offscreen-pixel pool for blur, rotation, and clipping: both nested-
+  layer scene/rate pairs moved by less than 1%. A separate 60 fps memory pair
+  measured baseline RSS 33,415,168 bytes and experiment RSS 33,505,280 bytes;
+  there was no demonstrated CPU or memory benefit. Pool reset and capacity
+  tests passed, but the pool and its integration were removed.
+
+Validation:
+
+- The experimental painting-domain run passed 40 tests, including the rejected
+  finish/pool tests. The filter-blur, mixed-alpha image, native rendering, and
+  overflow integration suites passed 34 tests. Native tests include exact
+  30/60 fps cadence at 1080p and 4K, frame ordering, rotation, and parallel
+  segment determinism. This does not benchmark 4K performance.
+- After reverting rejected code, all three gradient tests and the mixed-alpha
+  image regression test passed again. The stop test compares float bit patterns;
+  the quarter-opacity test compares the original float blend with the integer
+  blend across all Bayer phases and representative source/destination values.
+  The image test includes transparent rows, opaque rows, partial alpha, opacity
+  changes, and offscreen clipping.
+- All eight benchmark compositions passed structure checking. Complete two-
+  second native MP4s for fractional glows, half-opacity glows, continuous fading
+  glows, mixed-alpha images, grain, vignette, combined finishing, and nested
+  layers were byte-identical to baseline at both 30 and 60 fps (16 comparison
+  pairs). Direct container inspection verified 60 or 120 samples, a one-tick
+  duration per sample, timescale matching fps, and two-second track duration.
+- The half-opacity glow and mixed-alpha image midpoints were visually inspected
+  at 1080p/60 fps. Final compilation and whitespace checks passed.
+
+Single final MP4 export pairs (1080p, one thread); these are correctness exports,
+not repeated end-to-end performance estimates:
+
+| Scene | FPS | Baseline (s) | Updated (s) | Bytes (identical) |
+| --- | ---: | ---: | ---: | ---: |
+| fractional-glows | 30 | 1.555 | 1.482 | 25816 |
+| fractional-glows | 60 | 6.074 | 5.426 | 28238 |
+| half-opacity-glows | 30 | 2.321 | 1.468 | 23574 |
+| half-opacity-glows | 60 | 4.311 | 2.602 | 26259 |
+| fading-glows | 30 | 2.587 | 2.500 | 106310 |
+| fading-glows | 60 | 4.552 | 4.508 | 123161 |
+| translucent-image | 30 | 1.099 | 0.805 | 35659 |
+| translucent-image | 60 | 2.103 | 1.504 | 56031 |
+
+These figures apply to synthetic workloads, not all compositions. No resolution,
+quality, noise, blur, dithering, or encoder setting was reduced. Rendering speed
+is separate from the exported video's frame rate; sustained realtime rendering
+and performance on older PCs were not established.

@@ -1,4 +1,4 @@
-//! Decoded image cache and `object-fit` painting for `<img>` content.
+//! Decoded and fitted image cache, with exact transparent-row skipping and opaque-span copies.
 
 use crate::model::Color;
 use crate::render::check_image;
@@ -12,6 +12,7 @@ use std::path::Path;
 pub(in crate::render) struct CachedImage {
     pixels: RgbaImage,
     opaque: bool,
+    rows: Vec<(u32, u32, bool)>,
 }
 
 pub(in crate::render) type ImageKey<'a> = (&'a Path, u32, u32, &'a str);
@@ -20,14 +21,19 @@ impl<'a> Renderer<'a> {
     pub(in crate::render) fn cache_image(&mut self, key: &ImageKey<'a>) -> Result<()> {
         let (path, w, h, fit) = *key;
         if !self.images.contains_key(key) {
-            let bytes = (w as usize)
+            let pixel_bytes = (w as usize)
                 .checked_mul(h as usize)
                 .and_then(|n| n.checked_mul(4))
                 .ok_or_else(|| anyhow!("rasterized image is too large"))?;
             const CACHE_LIMIT: usize = 64 * 1024 * 1024;
-            if bytes > CACHE_LIMIT {
+            if pixel_bytes > CACHE_LIMIT {
                 return Err(anyhow!("rasterized image exceeds 64 MiB; use --scale"));
             }
+            // Metadata is optional: a legal image must not become too large merely
+            // because row acceleration was added.
+            let row_bytes = h as usize * std::mem::size_of::<(u32, u32, bool)>();
+            let cache_rows = row_bytes <= CACHE_LIMIT - pixel_bytes;
+            let bytes = pixel_bytes + if cache_rows { row_bytes } else { 0 };
             check_image(path)?;
             let image = image::open(path)
                 .with_context(|| format!("could not open image {}", path.display()))?
@@ -64,20 +70,40 @@ impl<'a> Renderer<'a> {
             while self.image_cache_bytes + bytes > CACHE_LIMIT {
                 if let Some(oldest) = self.image_order.pop_front() {
                     if let Some(old) = self.images.remove(&oldest) {
-                        self.image_cache_bytes -= old.pixels.as_raw().len();
+                        self.image_cache_bytes -= old.pixels.as_raw().len()
+                            + old.rows.len() * std::mem::size_of::<(u32, u32, bool)>();
                     }
                 } else {
                     break;
                 }
             }
-            self.image_cache_bytes += fitted.as_raw().len();
+            self.image_cache_bytes += bytes;
             self.image_order.push_back(*key);
             let opaque = fitted.pixels().all(|pixel| pixel[3] == 255);
+            let rows = if cache_rows {
+                fitted
+                    .as_raw()
+                    .chunks_exact(w as usize * 4)
+                    .map(|row| {
+                        let row = row.as_chunks::<4>().0;
+                        let first = row.iter().position(|p| p[3] != 0).unwrap_or(0);
+                        let last = row.iter().rposition(|p| p[3] != 0).map_or(0, |i| i + 1);
+                        (
+                            first as u32,
+                            last as u32,
+                            row[first..last].iter().all(|p| p[3] == 255),
+                        )
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
             self.images.insert(
                 *key,
                 CachedImage {
                     pixels: fitted,
                     opaque,
+                    rows,
                 },
             );
         }
@@ -120,7 +146,20 @@ impl<'a> Renderer<'a> {
             let source_offset = (source_y + i) * source_stride + source_x;
             let source = &image.pixels.as_raw()[source_offset..source_offset + row_len];
             let dest = &mut row[bounds.x0 * 4..bounds.x1 * 4];
-            if image.opaque && alpha >= 1.0 {
+            let (first, last, row_opaque) =
+                image
+                    .rows
+                    .get(source_y + i)
+                    .copied()
+                    .unwrap_or((0, w, image.opaque));
+            let start = (first as usize * 4).saturating_sub(source_x).min(row_len);
+            let end = (last as usize * 4).saturating_sub(source_x).min(row_len);
+            if start >= end {
+                continue;
+            }
+            let source = &source[start..end];
+            let dest = &mut dest[start..end];
+            if (image.opaque && alpha >= 1.0) || (row_opaque && alpha == 1.0) {
                 dest.copy_from_slice(source);
             } else {
                 for (dest, &[r, g, b, a]) in dest

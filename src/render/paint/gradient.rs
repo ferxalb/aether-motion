@@ -4,9 +4,12 @@
 //!
 //! A square gradient that is drawn again with the same size (a drifting glow, for example) is
 //! rasterized once into a fixed-point tile; later frames only blend that tile at the new offset.
-//! Full element opacity uses exact integer blending of that tile, preserving ordered dithering.
+//! Full and quarter element opacities use exact integer tile blending, preserving ordered dithering.
+//! Stop colors are premultiplied once per draw, including uncached fractional-motion draws.
 
-use crate::model::{Color, Gradient, GradientKind, LinearDirection, Stop};
+#[cfg(test)]
+use crate::model::Color;
+use crate::model::{Gradient, GradientKind, LinearDirection, Stop};
 use crate::render::geometry::{clip_pixels, Rect};
 use crate::render::paint::surface::Surface;
 use crate::render::paint::tile_cache::TileCache;
@@ -40,30 +43,67 @@ fn blend_full_opacity(dest: &mut [[u8; 4]], source: &[[u16; 4]], first: usize, y
     }
 }
 
-/// Premultiplied RGBA (0..=255 scale) at `t`, clamped to the first and last stop.
-fn sample(stops: &[Stop], t: f32) -> [f32; 4] {
-    let premultiplied = |c: Color| {
-        let a = f32::from(c.a) / 255.0;
-        [
-            f32::from(c.r) * a,
-            f32::from(c.g) * a,
-            f32::from(c.b) * a,
-            a,
-        ]
-    };
-    let (first, last) = (stops[0], stops[stops.len() - 1]);
-    if t <= first.pos {
-        return premultiplied(first.color);
+/// Quarter opacities keep every intermediate float result exactly representable in 24 bits.
+fn blend_quarter_opacity(
+    dest: &mut [[u8; 4]],
+    source: &[[u16; 4]],
+    first: usize,
+    y: usize,
+    quarter: i32,
+) {
+    let bias = BAYER[y & 3].map(|b| (b as i32 * 2 - 15) * 512 + 8192);
+    for (i, (pixel, texel)) in dest.iter_mut().zip(source).enumerate() {
+        let keep = 16384 - i32::from(texel[3]) * quarter;
+        let d = bias[(first + i) & 3];
+        for c in 0..3 {
+            let numerator = i32::from(texel[c]) * (quarter * 16) + i32::from(pixel[c]) * keep + d;
+            pixel[c] = (numerator >> 14).clamp(0, 255) as u8;
+        }
+        if texel[3] > 0 {
+            pixel[3] = 255;
+        }
     }
-    if t >= last.pos {
-        return premultiplied(last.color);
+}
+
+/// Stop colors premultiplied once per draw, preserving the sampler's operation order.
+struct Sampler<'a> {
+    stops: &'a [Stop],
+    colors: Vec<[f32; 4]>,
+}
+
+impl<'a> Sampler<'a> {
+    fn new(stops: &'a [Stop]) -> Self {
+        let colors = stops
+            .iter()
+            .map(|stop| {
+                let c = stop.color;
+                let a = f32::from(c.a) / 255.0;
+                [
+                    f32::from(c.r) * a,
+                    f32::from(c.g) * a,
+                    f32::from(c.b) * a,
+                    a,
+                ]
+            })
+            .collect();
+        Self { stops, colors }
     }
-    let next = stops.partition_point(|stop| stop.pos <= t);
-    let (a, b) = (stops[next - 1], stops[next]);
-    let span = b.pos - a.pos;
-    let f = if span <= 0.0 { 1.0 } else { (t - a.pos) / span };
-    let (pa, pb) = (premultiplied(a.color), premultiplied(b.color));
-    std::array::from_fn(|i| pa[i] + (pb[i] - pa[i]) * f)
+
+    fn sample(&self, t: f32) -> [f32; 4] {
+        let last = self.stops.len() - 1;
+        if t <= self.stops[0].pos {
+            return self.colors[0];
+        }
+        if t >= self.stops[last].pos {
+            return self.colors[last];
+        }
+        let next = self.stops.partition_point(|stop| stop.pos <= t);
+        let (a, b) = (self.stops[next - 1], self.stops[next]);
+        let span = b.pos - a.pos;
+        let f = if span <= 0.0 { 1.0 } else { (t - a.pos) / span };
+        let (pa, pb) = (self.colors[next - 1], self.colors[next]);
+        std::array::from_fn(|i| pa[i] + (pb[i] - pa[i]) * f)
+    }
 }
 
 /// Maps a pixel center to the gradient parameter `t` for one box.
@@ -147,13 +187,13 @@ pub(in crate::render) struct Tile {
 impl Tile {
     fn build(gradient: &Gradient, width: usize, height: usize) -> Self {
         let mapper = Mapper::new(&gradient.kind, [0.0, 0.0, width as f32, height as f32]);
+        let sampler = Sampler::new(&gradient.stops);
         let mut texels = Vec::with_capacity(width * height);
         let mut spans = Vec::with_capacity(height);
         for y in 0..height {
             let start = texels.len();
             for x in 0..width {
-                let [r, g, b, a] =
-                    sample(&gradient.stops, mapper.t(x as f32 + 0.5, y as f32 + 0.5));
+                let [r, g, b, a] = sampler.sample(mapper.t(x as f32 + 0.5, y as f32 + 0.5));
                 texels.push([
                     (r * 256.0).round() as u16,
                     (g * 256.0).round() as u16,
@@ -222,6 +262,16 @@ impl Surface {
                         blend_full_opacity(dest.as_chunks_mut::<4>().0, source, first, y);
                         continue;
                     }
+                    if alpha == 0.25 || alpha == 0.5 || alpha == 0.75 {
+                        blend_quarter_opacity(
+                            dest.as_chunks_mut::<4>().0,
+                            source,
+                            first,
+                            y,
+                            (alpha * 4.0) as i32,
+                        );
+                        continue;
+                    }
                     for (i, (pixel, texel)) in dest
                         .as_chunks_mut::<4>()
                         .0
@@ -247,14 +297,14 @@ impl Surface {
         }
         let float_edges = edges.map(|edge| edge as f32);
         let mapper = Mapper::new(&gradient.kind, float_edges);
+        let sampler = Sampler::new(&gradient.stops);
         for y in bounds.y0..bounds.y1 {
             let (left, right) = Self::rounded_span(float_edges, radius, y);
             let first = (left.floor().max(bounds.x0 as f32)) as usize;
             let last = (right.ceil().min(bounds.x1 as f32)) as usize;
             for x in first..last {
                 let coverage = (right.min(x as f32 + 1.0) - left.max(x as f32)).clamp(0.0, 1.0);
-                let [pr, pg, pb, pa] =
-                    sample(&gradient.stops, mapper.t(x as f32 + 0.5, y as f32 + 0.5));
+                let [pr, pg, pb, pa] = sampler.sample(mapper.t(x as f32 + 0.5, y as f32 + 0.5));
                 // `pa` carries the stop alpha; the premultiplied colors already include it.
                 let a = (alpha * coverage).clamp(0.0, 1.0);
                 if a <= 0.0 || pa <= 0.0 {
@@ -295,6 +345,85 @@ mod tests {
                     color: color(111, 141, 255, 0),
                 },
             ],
+        }
+    }
+
+    fn reference_sample(stops: &[Stop], t: f32) -> [f32; 4] {
+        let premultiplied = |c: Color| {
+            let a = f32::from(c.a) / 255.0;
+            [
+                f32::from(c.r) * a,
+                f32::from(c.g) * a,
+                f32::from(c.b) * a,
+                a,
+            ]
+        };
+        let (first, last) = (stops[0], stops[stops.len() - 1]);
+        if t <= first.pos {
+            return premultiplied(first.color);
+        }
+        if t >= last.pos {
+            return premultiplied(last.color);
+        }
+        let next = stops.partition_point(|stop| stop.pos <= t);
+        let (a, b) = (stops[next - 1], stops[next]);
+        let span = b.pos - a.pos;
+        let f = if span <= 0.0 { 1.0 } else { (t - a.pos) / span };
+        let (pa, pb) = (premultiplied(a.color), premultiplied(b.color));
+        std::array::from_fn(|i| pa[i] + (pb[i] - pa[i]) * f)
+    }
+
+    #[test]
+    fn prepared_stops_and_quarter_blends_preserve_original_values() {
+        let mut gradient = glow();
+        gradient.stops.insert(
+            1,
+            Stop {
+                pos: 0.37,
+                color: Color {
+                    r: 231,
+                    g: 0,
+                    b: 73,
+                    a: 201,
+                },
+            },
+        );
+        let sampler = Sampler::new(&gradient.stops);
+        for i in -100..1100 {
+            let t = i as f32 / 1000.0;
+            assert_eq!(
+                sampler.sample(t).map(f32::to_bits),
+                reference_sample(&gradient.stops, t).map(f32::to_bits)
+            );
+        }
+        for q in 1..4 {
+            let alpha = q as f32 / 4.0;
+            for y in 0..4 {
+                for first in 0..4 {
+                    for a in [0, 1, 13, 1024, 2048, 4095, 4096] {
+                        let source: Vec<[u16; 4]> = (0..=255u16)
+                            .map(|v| [v * 256, (255 - v) * 256, v * 123, a])
+                            .collect();
+                        let mut actual: Vec<[u8; 4]> =
+                            (0..=255).map(|v| [v, 255 - v, v / 2, 37]).collect();
+                        let mut expected = actual.clone();
+                        for (i, (pixel, texel)) in expected.iter_mut().zip(&source).enumerate() {
+                            let keep = 1.0 - f32::from(texel[3]) * (alpha / 4096.0);
+                            for c in 0..3 {
+                                let blended = f32::from(texel[c]) * (alpha / 256.0)
+                                    + f32::from(pixel[c]) * keep
+                                    + dither(first + i, y);
+                                pixel[c] = (blended + 0.5).clamp(0.0, 255.0) as u8;
+                            }
+                            if texel[3] > 0 {
+                                pixel[3] = 255;
+                            }
+                        }
+                        blend_quarter_opacity(&mut actual, &source, first, y, q);
+                        assert_eq!(actual, expected);
+                    }
+                }
+            }
         }
     }
 

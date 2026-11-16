@@ -4,3 +4,6 @@
 *.png
 !examples/*.png
 target
+
+# Synthetic mixed-alpha image used by the rendering benchmark.
+!benchmarks/mixed-alpha.png
