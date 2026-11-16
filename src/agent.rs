@@ -61,13 +61,14 @@ fn fix_hint(message: &str) -> &'static str {
     } else if message.contains("could not read image") || message.contains("local images") {
         "make sure the PNG, JPEG, or WebP file exists and that src is relative to the HTML file"
     } else if message.contains("<video>") {
-        "use <video src=\"clip.mp4\" muted data-start=\"0\" data-duration=\"4\" style=\"width:..px;height:..px\"> with a local H.264 MP4 (closed GOPs, not fragmented, not mirrored), optional data-media-start, muted, data-volume, and loop (needs data-duration); its AAC track plays unless muted; re-encode with `ffmpeg -i in -c:v libx264 -x264-params open-gop=0 -an out.mp4` if needed"
+        "use <video src=\"clip.mp4\" muted data-start=\"0\" data-duration=\"4\" style=\"width:..px;height:..px\"> with a local H.264 MP4 (closed GOPs, not fragmented, not mirrored), optional data-media-start, muted, data-volume, loop (needs data-duration), and data-hf-speed=\"0.5\" (0.05 to 16) or data-hf-speed-ramp='[{\"at\":0,\"speed\":1},{\"at\":1,\"speed\":0.25,\"easing\":\"ease-in-out\"}]' (speed 0 to 16, at strictly increasing); its AAC track plays unless muted; re-encode with `ffmpeg -i in -c:v libx264 -x264-params open-gop=0 -an out.mp4` if needed"
     } else if message.contains("audio")
         || message.contains("data-volume")
         || message.contains("data-hf-trim-start")
         || message.contains("data-hf-loop")
+        || message.contains("data-hf-speed")
     {
-        "use <audio src=\"file.wav\"> with a local WAV, FLAC, Ogg Vorbis, MP3, or AAC (MP4/M4A) file (mono or stereo), optional data-start, data-duration, data-volume (0 to 8), data-hf-fade-in, data-hf-fade-out, data-hf-trim-start, and data-hf-loop (needs data-duration); keep the clip inside the composition"
+        "use <audio src=\"file.wav\"> with a local WAV, FLAC, Ogg Vorbis, MP3, or AAC (MP4/M4A) file (mono or stereo), optional data-start, data-duration, data-volume (0 to 8), data-hf-fade-in, data-hf-fade-out, data-hf-trim-start, data-hf-loop (needs data-duration), and data-hf-speed (0.05 to 16) or data-hf-speed-ramp (JSON keyframes with at, speed 0 to 16, easing; a ramp ending at 0 needs data-duration); keep the clip inside the composition"
     } else if message.contains("<script>") {
         "remove the <script> (GSAP, Date.now, and randomness are not executed so output stays deterministic) and use data-hf-keyframes, data-hf-camera, data-hf-split, data-hf-counter, data-hf-transition, or CSS @keyframes"
     } else if message.contains("invalid SVG")
@@ -101,13 +102,14 @@ fn check_videos(c: &Composition) -> Result<Vec<Value>> {
         let Content::Video(video) = &element.content else {
             continue;
         };
-        if !seen.insert(&video.path) {
-            continue;
-        }
         let index = &video.index;
-        let mut player = crate::video::VideoPlayer::open(&video.path, index.clone())?;
-        player.frame(0)?;
-        player.frame(index.frame_count() - 1)?;
+        // Each source is decoded once; every clip that plays it is reported (speeds may differ).
+        if seen.insert(&video.path) {
+            let mut player = crate::video::VideoPlayer::open(&video.path, index.clone())?;
+            player.frame(0)?;
+            player.frame(index.frame_count() - 1)?;
+        }
+        let clip_length = element.end - element.start;
         videos.push(json!({
             "id": element.id,
             "src": video.path.display().to_string(),
@@ -118,6 +120,8 @@ fn check_videos(c: &Composition) -> Result<Vec<Value>> {
             "fps": (index.fps() * 1000.0).round() / 1000.0,
             "duration": index.duration,
             "mediaStart": video.media_start,
+            "mediaEnd": video.media_time(clip_length),
+            "speed": video.speed.as_ref().map(|curve| curve.to_json()),
             "loop": video.looped,
             "rotation": index.rotation,
             "colour": {
@@ -153,6 +157,8 @@ fn check_audio(c: &Composition) -> Result<Value> {
                 "sourceSeconds": clip.source_seconds,
                 "start": clip.start_frame as f64 / rate,
                 "end": (clip.start_frame + clip.frames) as f64 / rate,
+                "mediaSeconds": clip.media_seconds,
+                "speed": clip.speed,
             })
         })
         .collect();

@@ -1,7 +1,9 @@
 //! `<audio>` parsing: turns an element into a pending `AudioClip`. Audio is not part of the
 //! element tree (no layout, no painting); its start is resolved with the other clips' timeline.
+//! `data-hf-speed` and `data-hf-speed-ramp` are read by `parse/speed.rs`.
 use crate::model::AudioClip;
 use crate::parse::html::{attr, number};
+use crate::parse::speed::parse_speed;
 use anyhow::{anyhow, bail, Context, Result};
 use kuchiki::NodeRef;
 use std::path::Path;
@@ -64,6 +66,7 @@ pub(in crate::parse) fn parse_audio(
                 fade_in,
                 fade_out,
                 looped,
+                speed: parse_speed(node)?,
             },
             start_expr: attr(node, "data-start"),
             parent,

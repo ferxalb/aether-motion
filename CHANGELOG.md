@@ -9,6 +9,11 @@ CLI/MCP output may still change between minor releases.
 
 ### Added
 
+- Variable speed on `<video>` and `<audio>`: `data-hf-speed` (constant rate, 0.05 to 16) and
+  `data-hf-speed-ramp` (JSON keyframes with `at`, `speed` 0 to 16, and `easing`) for slow motion, fast
+  forward, freezes, and speed ramps. Source time is the integral of the rate; a video's sound follows its
+  picture. Audio is varispeed through an antialiased windowed-sinc reader. `check` reports `speed`,
+  `mediaEnd` (videos), and `mediaSeconds` (audio clips). See `examples/speed.html`.
 - `--quality draft|standard|high|max` (CLI), `"quality"` in `aether.json`, and `quality` in `aether_render`:
   H.264 quality presets with fixed quantizers 30, 26, 22, and 18 (CRF 28, 25, 21, and 18 with
   `--encoder ffmpeg`). `standard` is the default and byte-identical to earlier exports.

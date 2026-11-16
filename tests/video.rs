@@ -304,3 +304,120 @@ fn source_children_and_poster_are_accepted() {
     let mut renderer = Renderer::new(&composition, 1.0).unwrap();
     assert!(near(center(&mut renderer, 0.6), COLORS[1].1));
 }
+
+#[test]
+fn constant_speed_slows_the_picture_and_stretches_the_default_length() {
+    let dir = source();
+    let composition = parse_file(&page(&dir, r#"data-hf-speed="0.5""#, 4.0)).unwrap();
+    let video = &composition.elements[1];
+    assert!(
+        (video.end - video.start - 4.0).abs() < 1e-9,
+        "{}",
+        video.end
+    );
+    let mut renderer = Renderer::new(&composition, 1.0).unwrap();
+    // Media time is half the clip time: each color lasts 1 s instead of 0.5 s.
+    for (time, wanted) in [(0.1, 0), (0.9, 0), (1.1, 1), (2.1, 2), (3.9, 3)] {
+        let actual = center(&mut renderer, time);
+        assert!(near(actual, COLORS[wanted].1), "t={time}: {actual:?}");
+    }
+}
+
+#[test]
+fn a_speed_ramp_integrates_the_rate_into_source_time() {
+    let dir = source();
+    // 2x for 0.5 s (media 1.0), linear 2x -> 0.5x until 1 s (media 1.625), then 0.5x.
+    let ramp =
+        r#"data-hf-speed-ramp='[{"at":0,"speed":2},{"at":0.5,"speed":2},{"at":1,"speed":0.5}]'"#;
+    let html = page(&dir, ramp, 1.75);
+    let composition = parse_file(&html).unwrap();
+    let video = &composition.elements[1];
+    assert!(
+        (video.end - 1.75).abs() < 1e-6,
+        "default length {}",
+        video.end
+    );
+    let mut renderer = Renderer::new(&composition, 1.0).unwrap();
+    for (time, wanted) in [(0.2, 0), (0.4, 1), (0.9, 3), (1.6, 3)] {
+        let actual = center(&mut renderer, time);
+        assert!(near(actual, COLORS[wanted].1), "t={time}: {actual:?}");
+    }
+    let report = agent::check(&html);
+    assert_eq!(report["ok"], true, "{report}");
+    let reported = &report["videos"][0];
+    assert_eq!(reported["speed"]["ramp"][2]["speed"], 0.5, "{report}");
+    assert!(
+        (reported["mediaEnd"].as_f64().unwrap() - 2.0).abs() < 1e-6,
+        "{report}"
+    );
+}
+
+#[test]
+fn rejects_invalid_speed_settings() {
+    let dir = source();
+    for (attributes, needle) in [
+        (r#"data-hf-speed="0""#, "data-hf-speed must be between"),
+        (r#"data-hf-speed="20""#, "data-hf-speed must be between"),
+        (
+            r#"data-hf-speed="2" data-hf-speed-ramp='[{"at":0,"speed":1}]'"#,
+            "not both",
+        ),
+        (
+            r#"data-hf-speed-ramp='[{"at":1,"speed":1},{"at":0.5,"speed":2}]'"#,
+            "strictly increasing",
+        ),
+        (
+            r#"data-hf-speed-ramp='[{"at":0,"rate":1}]'"#,
+            "unknown field",
+        ),
+        (
+            r#"data-hf-speed-ramp='[{"at":0,"speed":1},{"at":0.5,"speed":0}]'"#,
+            "set data-duration",
+        ),
+    ] {
+        let report = agent::check(&page(&dir, attributes, 2.0));
+        assert_eq!(report["ok"], false, "{attributes}");
+        let error = report["error"].as_str().unwrap();
+        assert!(error.contains(needle), "{attributes}: {error}");
+    }
+    // With a duration, a ramp to 0 freezes on the last frame reached.
+    let frozen =
+        r#"data-duration="2" data-hf-speed-ramp='[{"at":0,"speed":1},{"at":0.5,"speed":0}]'"#;
+    let report = agent::check(&page(&dir, frozen, 2.0));
+    assert_eq!(report["ok"], true, "{report}");
+    assert!((report["videos"][0]["mediaEnd"].as_f64().unwrap() - 0.25).abs() < 1e-9);
+}
+
+#[test]
+fn the_video_sound_follows_the_picture_speed() {
+    let dir = scratch("video-audio-speed");
+    tone(&dir.join("tone.wav"), 2.0);
+    let html = dir.join("source.html");
+    std::fs::write(
+        &html,
+        r#"<div data-composition-id="s" data-width="32" data-height="32" data-duration="2" style="background:#204060">
+<audio src="tone.wav" data-start="0"></audio></div>"#,
+    )
+    .unwrap();
+    let composition = parse_file(&html).unwrap();
+    let mut renderer = Renderer::new(&composition, 1.0).unwrap();
+    encode_native(&mut renderer, &dir.join("src.mp4"), 10, 1).unwrap();
+
+    let report = agent::check(&page_without_muted(&dir, r#"data-hf-speed="0.5""#));
+    assert_eq!(report["ok"], true, "{report}");
+    let clip = &report["audio"]["clips"][0];
+    assert_eq!(clip["speed"]["speed"], 0.5, "{report}");
+    // The 2 s clip plays 1 s of the source's sound, like its picture.
+    assert!(
+        (clip["end"].as_f64().unwrap() - 2.0).abs() < 0.05,
+        "{report}"
+    );
+    assert!(
+        (clip["mediaSeconds"].as_f64().unwrap() - 1.0).abs() < 1e-6,
+        "{report}"
+    );
+    assert!(
+        (report["videos"][0]["mediaEnd"].as_f64().unwrap() - 1.0).abs() < 1e-6,
+        "{report}"
+    );
+}
