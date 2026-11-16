@@ -1,4 +1,4 @@
-//! Human-facing subcommands: `init`, `preview`, `render`, `check`, `add`, `agent`, and `doctor`.
+//! Human-facing subcommands: `init`, `preview`, `render`, `check`, `add`, `captions`, `agent`, and `doctor`.
 //!
 //! `run` is the single entry point used by `main`; it returns `None` for commands it does not own
 //! (the legacy flag-based forms stay in `main.rs`). Shared pieces: `args` (parsing) and `project`
@@ -7,6 +7,7 @@
 mod add;
 mod agent_cmd;
 mod args;
+mod captions_cmd;
 mod check_cmd;
 mod doctor;
 mod init;
@@ -24,6 +25,7 @@ pub fn run(raw: &[String]) -> Option<Result<i32>> {
         "init" => done(init::run(rest)),
         "preview" => done(preview::run(rest)),
         "add" => done(add::run(rest)),
+        "captions" => done(captions_cmd::run(rest)),
         "agent" => done(agent_cmd::run(rest)),
         "doctor" => done(doctor::run()),
         // `check` prints JSON when piped, so scripts and agents keep the legacy output.

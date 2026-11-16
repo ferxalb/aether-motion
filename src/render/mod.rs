@@ -10,6 +10,7 @@ mod frame_state;
 mod geometry;
 mod layout;
 mod paint;
+pub mod probe;
 mod text;
 
 use crate::model::{Composition, Content, Element};
@@ -87,6 +88,10 @@ pub struct Renderer<'a> {
     image_cache_bytes: usize,
     fonts: FontStore,
     stats: RenderStats,
+    /// Text boxes recorded while drawing, when a layout probe is running (see `probe.rs`).
+    probe: Option<Vec<probe::TextBox>>,
+    /// Number of offscreen layers currently being drawn into; their coordinates are layer-local.
+    layer_depth: u32,
 }
 
 pub(crate) fn check_image(path: &Path) -> Result<()> {
@@ -185,6 +190,8 @@ impl<'a> Renderer<'a> {
             image_cache_bytes: 0,
             fonts,
             stats: RenderStats::default(),
+            probe: None,
+            layer_depth: 0,
         })
     }
 

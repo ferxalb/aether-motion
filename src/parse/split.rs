@@ -10,7 +10,7 @@
 //!
 //! `mask` slides pieces up without fading; pair it with `overflow: hidden` on the element for a line
 //! reveal. Letters are placed without kerning, and spacing between words uses the gap above.
-use crate::model::{Content, Easing, Element, Motion, Style, Track, TrackPoint};
+use crate::model::{Content, Easing, Element, LayoutHints, Motion, Style, Track, TrackPoint};
 use crate::parse::animation::timing::parse_keyframe_easing;
 use crate::parse::html::{attr, number};
 use crate::parse::tree::Pending;
@@ -262,6 +262,7 @@ pub(in crate::parse) fn push_piece(
             fade_out: 0.0,
             track: 0,
             motion,
+            layout: LayoutHints::default(),
         },
         start_expr: None,
         duration: None,

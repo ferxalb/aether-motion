@@ -13,11 +13,11 @@ Call `aether_guide` to retrieve the active contract. Use `aether_check` to valid
 
 ## Project commands
 
-Inside a project created by `aether-motion init`, `aether.json` supplies the entry file, fps, size, and output folder. `aether-motion check` (JSON when piped), `aether-motion preview --at 2.5` (writes `.aether/preview.png`), and `aether-motion render` (writes `out/<name>.mp4`) need no arguments. `aether-motion add <block> --set key=value` appends a block, and `aether-motion doctor` diagnoses skills, MCP config, and the composition.
+Inside a project created by `aether-motion init`, `aether.json` supplies the entry file, fps, size, and output folder. `aether-motion check` (JSON when piped), `aether-motion preview --at 2.5` (writes `.aether/preview.png`), and `aether-motion render` (writes `out/<name>.mp4`) need no arguments. `aether-motion add <block> --set key=value` appends a block, `aether-motion captions <transcript> --to json|srt|vtt` converts and regroups an existing transcript (it does not transcribe audio), and `aether-motion doctor` diagnoses skills, MCP config, and the composition.
 
 ## CLI workflow
 
-1. Validate with `aether-motion check <composition.html>`. Read the JSON result, fix each reported issue, and rerun until `ok` is true.
+1. Validate with `aether-motion check <composition.html>`. Read the JSON result, fix each reported issue, and rerun until `ok` is true. For 9:16 output, read `layout.findings` too: `outside_safe_zone` means text leaves the TikTok, Reels, or Shorts safe areas (10% margins on other frames); move it, or add `data-layout-allow-safe-zone` if intentional. `--caption-zone "x0=0;y0=0.7;x1=1;y1=1"` flags other text in the caption band (`caption_zone_collision`). Safe-zone findings are warnings and never fail the exit code.
 2. Inspect a still with `aether-motion render <composition.html> --output frame.png --frame N`. Choose frame `N` from the target time and output FPS. For time-based snapshots or multiple moments, use MCP when available.
 3. Export video with `aether-motion render <composition.html> --output video.mp4 --fps 30`. Set `--size 1080p` or `--size 4k` for 16:9 or 9:16 outputs; these map to the matching landscape or portrait dimensions. `--size` and `--scale` are alternatives. The native encoder is the default.
 4. Check that the output exists and is non-empty, then inspect the result before reporting completion.

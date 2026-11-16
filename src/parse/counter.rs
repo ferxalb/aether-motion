@@ -228,7 +228,7 @@ impl CounterSpec {
 }
 
 /// Opacity 1 on `[start, end)` and 0 elsewhere; a missing `end` keeps the piece visible for good.
-fn visibility(start: f64, end: Option<f64>) -> Track {
+pub(in crate::parse) fn visibility(start: f64, end: Option<f64>) -> Track {
     let point = |at: f64, value: f32| TrackPoint {
         at,
         value,

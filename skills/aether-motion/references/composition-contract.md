@@ -22,7 +22,7 @@ Use supported elements (`div`, text, local PNG, JPEG, WebP, or SVG images, and i
 
 ## Deterministic motion
 
-Use the native motion attributes for keyframes, camera moves, split text, reveals, counters, and scene transitions. Keyframe times are seconds relative to the element's resolved start and must increase strictly within the clip duration. Keep all animation seekable from time alone: no `<script>`, timers, network, `Date.now()`, or unseeded randomness.
+Use the native motion attributes for keyframes, camera moves, split text, reveals, counters, captions (`data-hf-captions` with a local `.json`, `.srt`, or `.vtt` transcript; times are seconds from the clip start; see AGENTS.md for options), and scene transitions. Keyframe times are seconds relative to the element's resolved start and must increase strictly within the clip duration. Keep all animation seekable from time alone: no `<script>`, timers, network, `Date.now()`, or unseeded randomness.
 
 CSS animation is limited to the documented transform, opacity, and timing-function subset. Static transforms support translation, uniform scale, and rotation. Unsupported CSS and HTML return explicit errors; do not replace unsupported behavior with a browser-only implementation and claim the native renderer supports it.
 
@@ -32,4 +32,4 @@ Use relative paths to local PNG, JPEG, WebP, or SVG images. SVG (file or inline 
 
 ## Source of truth
 
-For the exact supported gradients, shadows, text layout, clipping, CSS properties, motion options, and errors, consult the repository's `AGENTS.md` and `limits.md`. The format originates from [HyperFrames](https://github.com/heygen-com/hyperframes), but AETHER Motion supports only its own documented subset.
+For the exact supported gradients, shadows, text layout, clipping, CSS properties, motion options, and errors, consult the repository's `AGENTS.md` and `limits.md`.

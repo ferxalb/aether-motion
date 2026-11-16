@@ -1,4 +1,4 @@
-//! Agent mode: composition checks and the MCP server facade.
+//! Agent mode: composition checks and the MCP server facade. `zones` holds the safe-zone and caption-zone text checks.
 use crate::model::{Composition, Content};
 use crate::parse::parse_file;
 use crate::render::{check_image, svg, Renderer};
@@ -8,6 +8,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 pub mod mcp;
+pub mod zones;
 pub use mcp::serve;
 
 fn fix_hint(message: &str) -> &'static str {

@@ -275,6 +275,13 @@ pub struct Keyframe {
     pub easing: Easing,
 }
 
+/// Layout-check opt-outs from `data-layout-allow-*` attributes; descendants inherit them when checked.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct LayoutHints {
+    pub allow_safe_zone: bool,
+    pub allow_caption_zone: bool,
+}
+
 #[derive(Clone, Debug)]
 pub struct Element {
     pub tag: String,
@@ -289,6 +296,7 @@ pub struct Element {
     pub fade_out: f64,
     pub track: i32,
     pub motion: Motion,
+    pub layout: LayoutHints,
 }
 
 #[derive(Debug)]

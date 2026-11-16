@@ -177,6 +177,21 @@ impl<'a> Renderer<'a> {
             } else {
                 0.0
             };
+        if self.probe.is_some() && self.layer_depth == 0 {
+            let (mut x0, mut x1) = (f32::INFINITY, f32::NEG_INFINITY);
+            for line in &run.lines {
+                let pen = rect.x * scale
+                    + pen_offset(run.center_x, run.right, rect.w * scale, line.advance * zoom);
+                x0 = x0.min(pen);
+                x1 = x1.max(pen + line.advance * zoom);
+            }
+            if let (true, Some(boxes)) = (x0 < x1, self.probe.as_mut()) {
+                boxes.push(crate::render::probe::TextBox {
+                    element: idx,
+                    rect: [x0 / scale, top / scale, x1 / scale, (top + total) / scale],
+                });
+            }
+        }
         let mut painted = self.surface.painted;
         if let Some(shadow) = &run.shadow {
             let origin = (rect.x * scale, top);

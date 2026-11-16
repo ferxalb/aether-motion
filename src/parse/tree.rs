@@ -1,10 +1,11 @@
 //! DOM walk: validates elements, resolves styles, and collects clips in document order.
-use crate::model::{Content, Element, Keyframe, Motion, Pose};
+use crate::model::{Content, Element, Keyframe, LayoutHints, Motion, Pose};
 use crate::parse::animation::camera::{parse_camera, CameraFrame};
 use crate::parse::animation::keyframes::parse_keyframes;
 use crate::parse::animation::reveal::{parse_reveal, RevealSpec};
 use crate::parse::animation::AnimationSpec;
 use crate::parse::audio::{parse_audio, PendingAudio};
+use crate::parse::captions::parse_captions;
 use crate::parse::counter::parse_counter;
 use crate::parse::css::{Stylesheet, Vars};
 use crate::parse::html::{attr, direct_text, number};
@@ -202,6 +203,23 @@ pub(in crate::parse) fn walk(
         }
         spec.apply_container_style(&mut style);
     }
+    let captions = parse_captions(node, &tag, &style, base).with_context(|| {
+        format!(
+            "data-hf-captions on <{tag}> ({})",
+            attr(node, "id").as_deref().unwrap_or("no id")
+        )
+    })?;
+    if captions.is_some() {
+        if split.is_some() || counter.is_some() {
+            bail!("data-hf-captions cannot be combined with data-hf-split or data-hf-counter");
+        }
+        if !matches!(content, Content::Container)
+            || node.children().any(|c| c.as_element().is_some())
+        {
+            bail!("data-hf-captions requires an empty element (no text or child elements)");
+        }
+    }
+    let host_style = captions.as_ref().map(|_| style.clone());
     let idx = out.len();
     let rest = Pose {
         x: style.translate.0,
@@ -228,6 +246,10 @@ pub(in crate::parse) fn walk(
                 base: rest,
                 ..Motion::default()
             },
+            layout: LayoutHints {
+                allow_safe_zone: flag(node, "data-layout-allow-safe-zone")?,
+                allow_caption_zone: flag(node, "data-layout-allow-caption-zone")?,
+            },
         },
         start_expr,
         duration,
@@ -243,6 +265,9 @@ pub(in crate::parse) fn walk(
     if let Some(spec) = &counter {
         return spec.expand(idx, out);
     }
+    if let (Some(spec), Some(host)) = (&captions, &host_style) {
+        return spec.expand(idx, host, out);
+    }
     if let (Some(spec), Some(text)) = (&split, &split_text) {
         return spec.expand(text, idx, out);
     }
@@ -254,6 +279,15 @@ pub(in crate::parse) fn walk(
         walk(&child, Some(idx), base, sheet, &vars, out, audio)?;
     }
     Ok(())
+}
+
+/// Boolean marker attribute: present or `true` is on, `false` is off.
+fn flag(node: &NodeRef, name: &str) -> Result<bool> {
+    match attr(node, name).as_deref() {
+        None | Some("false") => Ok(false),
+        Some("" | "true") => Ok(true),
+        Some(other) => bail!("{name} must be true or false: {other}"),
+    }
 }
 
 /// Serializes an inline `<svg>` to standalone XML that the SVG rasterizer accepts. Scripts,

@@ -152,6 +152,7 @@ aether-motion block theme-midnight
 - **Deterministic:** same input, same frames, same output. Generic fonts use an embedded Roboto, so text matches across machines.
 - **Honest errors:** unsupported HTML or CSS returns the exact problem and a suggested fix, never a silently wrong video.
 - **Native motion:** keyframes with expo, back, and `cubic-bezier` easing, CSS `@keyframes`, camera zoom and pan, kinetic text, reveals, counters, and crossfade, push, cover, wipe, and zoom transitions.
+- **Captions:** `data-hf-captions` turns a transcript (`transcript.json`, OpenAI Whisper or whisper.cpp JSON, SRT, VTT) into word-highlighted captions; `aether-motion captions` converts transcripts to SRT or VTT. See `examples/captions.html`.
 - **Sample-accurate audio:** `<audio>` clips (WAV, FLAC, Ogg Vorbis, MP3) with volume, fades, trim, and loop are mixed and encoded to AAC with no FFmpeg; see `examples/audio.html`.
 - **Polished look:** flexbox, text wrapping, gradients, layered and inset shadows, blur, frosted glass, rotation, vignette, and film grain.
 - **Easy on your machine:** renders at low priority on a quarter of your cores by default. `--threads N` goes faster; `--scale 0.5` gives quick drafts.

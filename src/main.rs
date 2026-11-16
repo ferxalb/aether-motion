@@ -19,6 +19,7 @@ Quick start:\n\
   aether-motion render [file] [-o out.mp4] [--size 1080p|4k] [--fps 30]   (defaults from aether.json; writes out/<name>.mp4)\n\
   aether-motion check [file]               validate (summary on a terminal, JSON when piped or with --json)\n\
   aether-motion add [block] [--set k=v]    list blocks, or append one to the composition\n\
+  aether-motion captions <file> [--to srt]  convert a transcript (JSON, SRT, VTT) to JSON, SRT, or VTT\n\
   aether-motion agent setup|status         install skills and MCP config for coding agents\n\
   aether-motion doctor                     diagnose the installation and project\n\
   aether-motion --version                  print the installed version\n\

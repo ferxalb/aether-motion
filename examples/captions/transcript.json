@@ -1,0 +1,13 @@
+[
+  {"text": "Captions", "start": 0.3, "end": 0.8},
+  {"text": "are", "start": 0.8, "end": 0.95},
+  {"text": "just", "start": 0.95, "end": 1.2},
+  {"text": "data.", "start": 1.2, "end": 1.8},
+  {"text": "Every", "start": 2.2, "end": 2.5},
+  {"text": "frame", "start": 2.5, "end": 2.9},
+  {"text": "is", "start": 2.9, "end": 3.05},
+  {"text": "a", "start": 3.05, "end": 3.15},
+  {"text": "function", "start": 3.15, "end": 3.6},
+  {"text": "of", "start": 3.6, "end": 3.7},
+  {"text": "time.", "start": 3.7, "end": 4.3}
+]

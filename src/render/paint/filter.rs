@@ -76,7 +76,9 @@ impl<'a> Renderer<'a> {
         for backdrop in [Color::BLACK, Color::WHITE] {
             let layer = Surface::filled(lw as u32, lh as u32, k, backdrop);
             let outer = std::mem::replace(&mut self.surface, layer);
+            self.layer_depth += 1;
             outcome = outcome.and_then(|()| self.draw_posed(idx, shifted, cumulative));
+            self.layer_depth -= 1;
             layers.push(std::mem::replace(&mut self.surface, outer).pixels);
         }
         outcome?;
