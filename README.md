@@ -90,10 +90,21 @@ cargo run --release -- bench examples/title-card.html --fps 24 --scale 0.5
 
 The code uses portable Rust APIs, and the repository includes a CI matrix for Linux, macOS, and Windows.
 
-## Next steps
+## Stability
+
+Aether follows [Semantic Versioning](https://semver.org/); see [CHANGELOG.md](CHANGELOG.md). The public surface is:
+
+- the supported HTML/CSS profile and the `data-hf-*` attributes described above (unsupported input keeps returning explicit errors rather than silently rendering wrong);
+- the CLI commands and flags (`check`, `inspect`, `render`, `bench`, `block`, `mcp`) and the JSON returned by `check`;
+- the MCP tools `aether_guide`, `aether_write`, `aether_block`, `aether_check`, `aether_snapshot`, and `aether_render`;
+- deterministic output: the same composition, options, and installed fonts give the same frames.
+
+While the version is `0.x`, a minor release may change any of these; breaking changes are listed in the changelog. From `1.0.0`, breaking changes require a major release. Features beyond the profile (see [limits.md](limits.md)) are rejected with an error, and adding support for them is not a breaking change. Text that uses generic families or an uninstalled font renders with the embedded Roboto; named fonts depend on what is installed.
+
+## Roadmap
 
 1. Add more CSS properties and layout cases from real compositions, with visual fixtures.
-2. Measure the full MP4 pipeline on Windows and Linux as well as macOS, and profile CPU and memory by stage.
+2. Measure the full MP4 pipeline on Windows and Linux (CI builds and tests there, but timings in `BENCHMARK.md` come from macOS only), and profile CPU and memory by stage.
 3. Evaluate OpenH264 quality and output size against FFmpeg on real scenes.
 
 ## Source layout
