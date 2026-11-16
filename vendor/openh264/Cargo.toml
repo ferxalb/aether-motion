@@ -11,7 +11,8 @@
 
 [package]
 edition = "2024"
-rust-version = "1.85"
+# AETHER Motion: upstream declares 1.85, but the locked `wide` 1.7.1 needs 1.89.
+rust-version = "1.89"
 name = "openh264"
 version = "0.9.10"
 authors = ["Ralf Biedert <rb@xr.io>"]

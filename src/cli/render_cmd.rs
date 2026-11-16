@@ -61,6 +61,11 @@ pub fn run(raw: &[String]) -> Result<()> {
         _ => Renderer::new(&composition, 1.0)?,
     };
     lower_priority();
+    // Validate the preset before an existing output is removed below.
+    let quality = match args.value("--quality") {
+        Some(q) => q.parse()?,
+        None => project.quality,
+    };
     let explicit = args.value("--output");
     let stem = project
         .entry
@@ -101,10 +106,6 @@ pub fn run(raw: &[String]) -> Result<()> {
             let kbps: u32 = args
                 .number("--audio-bitrate")?
                 .unwrap_or(crate::audio::DEFAULT_BITRATE / 1000);
-            let quality = match args.value("--quality") {
-                Some(q) => q.parse()?,
-                None => project.quality,
-            };
             println!(
                 "Rendering {} -> {} ({w}x{h}, {frames} frames @ {fps} fps, quality {quality:?})",
                 project.entry.display(),
