@@ -170,20 +170,31 @@ impl Envelope {
 /// Clip indices in mixing order: every trigger before the clips it ducks, otherwise document
 /// order. `ducks[i]` lists the triggers of clip `i`. Fails on a ducking cycle.
 pub fn processing_order(ducks: &[&[usize]]) -> Result<Vec<usize>, usize> {
+    use std::cmp::Reverse;
+    use std::collections::BinaryHeap;
     let n = ducks.len();
-    let mut waiting: Vec<usize> = ducks.iter().map(|d| d.len()).collect();
-    let mut order = Vec::with_capacity(n);
-    let mut done = vec![false; n];
-    while order.len() < n {
-        let ready = (0..n).find(|&i| !done[i] && waiting[i] == 0);
-        let Some(i) = ready else {
-            return Err((0..n).find(|&i| !done[i]).unwrap_or(0));
-        };
-        done[i] = true;
-        order.push(i);
-        for (j, triggers) in ducks.iter().enumerate() {
-            waiting[j] -= triggers.iter().filter(|&&t| t == i).count();
+    let mut indegree: Vec<usize> = ducks.iter().map(|d| d.len()).collect();
+    let mut dependents: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for (clip, triggers) in ducks.iter().enumerate() {
+        for &trigger in *triggers {
+            dependents[trigger].push(clip);
         }
+    }
+    // The lowest ready index goes first, so clips without ducking keep document order.
+    let mut ready: BinaryHeap<Reverse<usize>> =
+        (0..n).filter(|&i| indegree[i] == 0).map(Reverse).collect();
+    let mut order = Vec::with_capacity(n);
+    while let Some(Reverse(i)) = ready.pop() {
+        order.push(i);
+        for &clip in &dependents[i] {
+            indegree[clip] -= 1;
+            if indegree[clip] == 0 {
+                ready.push(Reverse(clip));
+            }
+        }
+    }
+    if order.len() < n {
+        return Err((0..n).find(|&i| indegree[i] > 0).unwrap_or(0));
     }
     Ok(order)
 }
@@ -232,6 +243,8 @@ mod tests {
     fn orders_triggers_first_and_rejects_cycles() {
         assert_eq!(processing_order(&[&[1], &[], &[]]), Ok(vec![1, 0, 2]));
         assert_eq!(processing_order(&[&[1], &[0]]), Err(0));
+        assert_eq!(processing_order(&[&[], &[2, 2], &[]]), Ok(vec![0, 2, 1]));
+        assert_eq!(processing_order(&[&[], &[], &[]]), Ok(vec![0, 1, 2]));
     }
 
     #[test]

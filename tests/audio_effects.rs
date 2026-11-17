@@ -229,6 +229,10 @@ fn rejects_invalid_effects_with_explicit_errors() {
         ("<audio src='a.wav' data-hf-volume-ramp='[{\"at\":1},{\"at\":0.5}]'></audio>", "strictly increasing"),
         ("<audio src='a.wav' data-hf-volume-ramp='[{\"at\":0,\"db\":24}]'></audio>", "+18"),
         ("<audio src='a.wav' data-hf-volume-ramp='[{\"at\":0,\"gain\":1}]'></audio>", "unknown field"),
+        (
+            "<audio id='v' src='a.wav'></audio><audio id='v' src='a.wav'></audio>",
+            "duplicate id: v",
+        ),
     ];
     for (body, expected) in cases {
         let html = composition(&dir, body, 1);

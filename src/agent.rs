@@ -60,6 +60,8 @@ fn fix_hint(message: &str) -> &'static str {
         "use a supported CSS value; see the contract in AGENTS.md"
     } else if message.contains("could not read image") || message.contains("local images") {
         "make sure the PNG, JPEG, or WebP file exists and that src is relative to the HTML file"
+    } else if message.contains("need sound") {
+        "audio effects need sound: remove muted from the <video>, use a source with an AAC audio track, or remove data-hf-volume-ramp, data-hf-eq, and data-hf-duck from it"
     } else if message.contains("data-hf-duck") {
         "on the music clip set data-hf-duck=\"<voice id>[,<id>]\" naming <audio> or unmuted <video> clips with ids; optional data-hf-duck-amount (dB, 0 to 60, default 12), -threshold (dBFS, -90 to 0, default -40), -attack (look-ahead seconds, default 0.15), -hold (default 0.15), and -release (default 0.5), times 0 to 5; no self references or cycles"
     } else if message.contains("data-hf-eq") {
@@ -282,5 +284,17 @@ pub fn check_with(path: &Path, values: &VariableValues) -> Value {
             let m = format!("{e:#}");
             json!({"ok": false, "error": m, "fix": fix_hint(&m)})
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fix_hint;
+
+    #[test]
+    fn audio_effect_errors_get_their_own_hints() {
+        let silent = "data-hf-volume-ramp, data-hf-eq, and data-hf-duck need sound: this <video> is muted or has no AAC audio track";
+        assert!(fix_hint(silent).starts_with("audio effects need sound"));
+        assert!(fix_hint("data-hf-duck references x").contains("data-hf-duck-amount"));
     }
 }

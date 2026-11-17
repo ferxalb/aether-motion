@@ -161,7 +161,8 @@ impl Band {
 pub struct Equalizer {
     /// Preset name when the bands come from one.
     pub preset: Option<&'static str>,
-    pub bands: Vec<Band>,
+    /// Private so the bands can never drift from `coefficients`; build a new `Equalizer` to change them.
+    bands: Vec<Band>,
     coefficients: Vec<[f64; 5]>,
 }
 
@@ -176,6 +177,11 @@ impl Equalizer {
             bands,
             coefficients,
         })
+    }
+
+    /// The bands, as authored or expanded from the preset.
+    pub fn bands(&self) -> &[Band] {
+        &self.bands
     }
 
     /// The bands of a named preset, or `None` for an unknown name.

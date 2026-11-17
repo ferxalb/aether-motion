@@ -120,14 +120,17 @@ fn parse_duck(node: &NodeRef) -> Result<Option<Duck>> {
     }))
 }
 
-/// Resolves every `data-hf-duck` id to the index of a clip with sound, and rejects self-ducking
-/// and cycles.
+/// Resolves every `data-hf-duck` id to the index of a clip with sound, and rejects duplicate clip
+/// ids, self-ducking, and cycles.
 pub(in crate::parse) fn resolve_ducking(audio: &mut [AudioClip]) -> Result<()> {
-    let ids: HashMap<String, usize> = audio
-        .iter()
-        .enumerate()
-        .filter_map(|(i, c)| c.id.clone().map(|id| (id, i)))
-        .collect();
+    let mut ids: HashMap<String, usize> = HashMap::new();
+    for (index, clip) in audio.iter().enumerate() {
+        if let Some(id) = &clip.id {
+            if ids.insert(id.clone(), index).is_some() {
+                bail!("duplicate id: {id}");
+            }
+        }
+    }
     for (index, clip) in audio.iter_mut().enumerate() {
         let label = clip.id.as_deref().unwrap_or("no id").to_string();
         let Some(duck) = &mut clip.effects.duck else {
