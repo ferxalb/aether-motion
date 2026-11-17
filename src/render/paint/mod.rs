@@ -3,6 +3,7 @@
 mod backdrop;
 mod border;
 mod clip;
+mod coverage;
 mod effects;
 mod fill;
 mod finish;
@@ -10,6 +11,7 @@ mod float_ops;
 mod gradient;
 mod images;
 mod inset;
+mod masked;
 mod resample;
 mod reveal;
 mod rotate;

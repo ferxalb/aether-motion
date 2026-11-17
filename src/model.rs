@@ -26,7 +26,7 @@ impl Color {
     };
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Length {
     Px(f32),
     Percent(f32),
@@ -248,6 +248,57 @@ pub enum BlendMode {
     PlusLighter,
 }
 
+/// Shape function of a `clip-path`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClipKind {
+    /// `inset(top right bottom left round radius)`: params `[top, right, bottom, left, radius]`.
+    Inset,
+    /// `circle(r at x y)`: params `[r, x, y]`; a % radius is relative to
+    /// `sqrt(width² + height²) / sqrt(2)`.
+    Circle,
+    /// `ellipse(rx ry at x y)`: params `[rx, ry, x, y]`.
+    Ellipse,
+    /// `polygon(x y, ...)`: params `[x0, y0, x1, y1, ...]`.
+    Polygon,
+}
+
+/// A `clip-path` basic shape in the element's border box. Each parameter keeps the unit it was
+/// written in (`px` or `%`); horizontal % values are relative to the width and vertical ones to the
+/// height. Px values follow the element's scale.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClipPath {
+    pub kind: ClipKind,
+    pub params: Vec<Length>,
+}
+
+impl ClipPath {
+    /// The parameters with `values` in place of their numbers (same units), as animated.
+    pub fn with_values(&self, values: &[f32]) -> Self {
+        Self {
+            kind: self.kind,
+            params: self
+                .params
+                .iter()
+                .zip(values)
+                .map(|(param, &value)| match param {
+                    Length::Px(_) => Length::Px(value),
+                    Length::Percent(_) => Length::Percent(value),
+                })
+                .collect(),
+        }
+    }
+
+    /// The numbers of the parameters, in order.
+    pub fn values(&self) -> Vec<f32> {
+        self.params
+            .iter()
+            .map(|param| match *param {
+                Length::Px(n) | Length::Percent(n) => n,
+            })
+            .collect()
+    }
+}
+
 /// `line-height`: a multiple of the font size (unitless) or an absolute size in px.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum LineHeight {
@@ -310,6 +361,10 @@ pub struct Style {
     pub drop_shadow: Option<Shadow>,
     /// `mix-blend-mode`: how the element (with its subtree) combines with what is behind it.
     pub blend: BlendMode,
+    /// `clip-path`: only the part of the element inside this shape is drawn.
+    pub clip_path: Option<ClipPath>,
+    /// `mask-image`: a gradient over the border box whose alpha scales the element's.
+    pub mask: Option<Gradient>,
     /// Solid border drawn inside the box (border-box sizing); `None` color means white.
     pub border_width: f32,
     pub border_color: Option<Color>,
@@ -453,7 +508,7 @@ fn cubic_bezier(x1: f64, y1: f64, x2: f64, y2: f64, t: f64) -> f64 {
     sample(cy, (lo + hi) / 2.0)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Keyframe {
     pub at: f64,
     pub x: f32,
@@ -464,6 +519,8 @@ pub struct Keyframe {
     pub filters: [Option<f32>; 8],
     /// `glitch` and `rgbSplit` given explicitly at this keyframe.
     pub effects: [Option<f32>; 2],
+    /// `clipPath` given explicitly at this keyframe.
+    pub clip: Option<ClipPath>,
 }
 
 /// Layout-check opt-outs from `data-layout-allow-*` attributes; descendants inherit them when checked.
@@ -719,6 +776,9 @@ pub struct Motion {
     pub filter: FilterMotion,
     /// Animated tint, glitch, and channel split.
     pub fx: FxMotion,
+    /// Animated `clip-path` parameters (one track per [`ClipPath::params`] entry, in its unit);
+    /// empty when the clip path is static. Always holds its first and last values.
+    pub clip: Vec<Track>,
     /// Hold the first value before the first point (`animation-fill-mode: backwards`).
     pub hold_before: bool,
     /// Hold the last value after the last point (`animation-fill-mode: forwards`).
@@ -791,6 +851,22 @@ impl FxMotion {
 }
 
 impl Motion {
+    /// The element's `clip-path` `elapsed` seconds after the clip start: `base` (the static
+    /// `clip-path`, or the shape of the first animated one) with its animated values, if any.
+    pub fn clip_at(&self, base: Option<&ClipPath>, elapsed: f64) -> Option<ClipPath> {
+        let base = base?;
+        if self.clip.is_empty() {
+            return Some(base.clone());
+        }
+        let values: Vec<f32> = self
+            .clip
+            .iter()
+            .zip(base.values())
+            .map(|(track, rest)| track.eval(elapsed, rest, true, true))
+            .collect();
+        Some(base.with_values(&values))
+    }
+
     pub fn pose(&self, elapsed: f64) -> Pose {
         let (b, hb, ha) = (self.base, self.hold_before, self.hold_after);
         Pose {
@@ -816,6 +892,7 @@ impl Motion {
         .all(|track| track.0.is_empty())
             && self.filter.is_static()
             && self.fx.is_static()
+            && self.clip.is_empty()
     }
 
     /// Sorted, distinct point times across all channels.
@@ -831,6 +908,7 @@ impl Motion {
         .into_iter()
         .chain(&self.filter.tracks)
         .chain(self.fx.tracks())
+        .chain(&self.clip)
         .flat_map(|track| track.0.iter().map(|point| point.at))
         .collect();
         times.sort_by(f64::total_cmp);

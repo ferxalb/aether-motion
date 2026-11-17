@@ -25,6 +25,12 @@ fn fix_hint(message: &str) -> &'static str {
         "use data-hf-reveal=from-left|from-right|from-top|from-bottom on a non-root element, with optional data-hf-reveal-at, -duration, and -easing; not with rotate"
     } else if message.contains("data-hf-counter") {
         "use data-hf-counter=<end value> on an empty element, with optional data-hf-counter-from, -duration (0.05 to 10), -delay, -decimals (0 to 6), -prefix, -suffix, -separator, and -easing"
+    } else if message.contains("clip-path")
+        || message.contains("clipPath")
+        || message.contains("mask-image")
+        || message.contains("mask shorthand")
+    {
+        "use clip-path: inset(t r b l [round Npx]) | circle(r [at x y]) | ellipse(rx ry [at x y]) | polygon(x y, ...) with px or %, animate it with clipPath in data-hf-keyframes using the same function, point count, and units, and use mask-image with one linear-gradient() or radial-gradient(); not on the root and not with rotate or mix-blend-mode on the same element"
     } else if message.contains("backdrop-filter") {
         "use backdrop-filter: blur(<px>) or none (at most 200px); no other filter functions are supported"
     } else if message.contains("animated filter") || message.contains("not animatable") {

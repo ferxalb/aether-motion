@@ -245,6 +245,8 @@ pub fn parse_file_with(path: &Path, values: &VariableValues) -> Result<Compositi
                 bail!("data-hf-keyframes exceeds the duration of {label}");
             }
             p.element.motion = motion_from_keyframes(rest, filter_rest, &p.keyframes);
+            clip_from_keyframes(&mut p.element, &p.keyframes)
+                .with_context(|| format!("data-hf-keyframes clipPath on {label}"))?;
         } else if !p.camera.is_empty() {
             if idx == 0 {
                 bail!("data-hf-camera cannot be on the root; add a container inside it");
@@ -280,6 +282,8 @@ pub fn parse_file_with(path: &Path, values: &VariableValues) -> Result<Compositi
             // Color functions on the root grade every finished frame instead of a layer.
             grade = std::mem::take(&mut style.filter_colors);
         }
+        check_clip_and_mask(&p.element, idx == 0)
+            .with_context(|| format!("clip-path or mask-image on {label}"))?;
         if let Some(spec) = p.reveal.take() {
             if idx == 0 {
                 bail!("data-hf-reveal cannot be on the root; add a container inside it");
@@ -360,6 +364,64 @@ fn parse_motion_blur(node: &kuchiki::NodeRef) -> Result<Option<MotionBlur>> {
     }))
 }
 
+/// `data-hf-keyframes` `clipPath`: one track per shape value. The static `clip-path` (or the first
+/// keyframe's shape when there is none) fixes the function, point count, and units; keyframes
+/// without `clipPath` inherit the previous values.
+fn clip_from_keyframes(
+    element: &mut crate::model::Element,
+    frames: &[crate::model::Keyframe],
+) -> Result<()> {
+    use crate::model::{Track, TrackPoint};
+    let Some(first) = frames.iter().find_map(|k| k.clip.as_ref()) else {
+        return Ok(());
+    };
+    let base = element
+        .style
+        .clip_path
+        .get_or_insert_with(|| first.clone())
+        .clone();
+    for shape in frames.iter().filter_map(|k| k.clip.as_ref()) {
+        crate::parse::values::clip::check_compatible(&base, shape)?;
+    }
+    let mut values = base.values();
+    let mut tracks = vec![Track::default(); values.len()];
+    for frame in frames {
+        if let Some(shape) = &frame.clip {
+            values = shape.values();
+        }
+        for (track, &value) in tracks.iter_mut().zip(&values) {
+            track.0.push(TrackPoint {
+                at: frame.at,
+                value,
+                easing: frame.easing,
+            });
+        }
+    }
+    element.motion.clip = tracks;
+    Ok(())
+}
+
+/// `clip-path` and `mask-image` draw through an offscreen layer that does not rotate.
+fn check_clip_and_mask(element: &crate::model::Element, root: bool) -> Result<()> {
+    let style = &element.style;
+    if style.clip_path.is_none() && style.mask.is_none() {
+        return Ok(());
+    }
+    if root {
+        bail!("not supported on the root; add a full-size container inside it");
+    }
+    if style.rotate != 0.0
+        || element.motion.base.rotate != 0.0
+        || !element.motion.rotate.0.is_empty()
+    {
+        bail!("cannot be combined with rotate on the same element; wrap the rotated element in a container");
+    }
+    if style.blend != BlendMode::Normal {
+        bail!("cannot be combined with mix-blend-mode on the same element; wrap it in a container");
+    }
+    Ok(())
+}
+
 /// Blend modes need the real backdrop, which an ancestor drawn through an offscreen layer hides.
 fn check_blend_isolation(elements: &[crate::model::Element]) -> Result<()> {
     for element in elements
@@ -382,6 +444,9 @@ fn check_blend_isolation(elements: &[crate::model::Element]) -> Result<()> {
                         || style.filter_blur > 0.0
                         || !style.filter_colors.is_empty()
                         || style.drop_shadow.is_some()
+                        || style.clip_path.is_some()
+                        || style.mask.is_some()
+                        || !ancestor.motion.fx.is_static()
                         || style.blend != BlendMode::Normal));
             if layered {
                 let name = |e: &crate::model::Element| {
@@ -389,7 +454,7 @@ fn check_blend_isolation(elements: &[crate::model::Element]) -> Result<()> {
                         .map_or_else(|| format!("<{}>", e.tag), |id| format!("#{id}"))
                 };
                 bail!(
-                    "mix-blend-mode on {} cannot be inside {} (overflow: hidden, rotation, a reveal, a wipe, a filter, or a blend mode); move it out of that element",
+                    "mix-blend-mode on {} cannot be inside {} (overflow: hidden, rotation, a reveal, a wipe, a filter, a clip-path or mask, or a blend mode); move it out of that element",
                     name(element),
                     name(ancestor)
                 );

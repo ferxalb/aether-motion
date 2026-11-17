@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Clip paths and masks</title>
+<style>
+  #root { background: #0b0d14; }
+  .clip { position: absolute; }
+  .panel { top: 140px; width: 520px; height: 520px; border-radius: 28px; }
+  #iris { left: 100px; background: linear-gradient(135deg, #ff6b3d, #ffb547); }
+  #diamond { left: 700px; background: linear-gradient(135deg, #3d7bff, #7a3dff); }
+  #card { left: 1300px; background: linear-gradient(135deg, #1fbf8f, #1f7abf); }
+  .label { position: absolute; left: 0; top: 220px; width: 520px; color: #ffffff; font-size: 64px; font-weight: 800; text-align: center; }
+  #fade { left: 160px; top: 760px; width: 1600px; height: 150px; color: #e8ecff; font-size: 120px; font-weight: 800; text-align: center;
+          mask-image: linear-gradient(to bottom, #000000 30%, transparent 100%); }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="clip-mask" data-width="1920" data-height="1080" data-duration="4">
+  <!-- An iris opens from the center. -->
+  <div id="iris" class="clip panel" data-start="0" data-duration="4" data-track-index="0"
+       data-hf-keyframes='[{"at":0,"clipPath":"circle(0% at 50% 50%)"},{"at":1.2,"clipPath":"circle(75% at 50% 50%)","easing":"ease-out-expo"}]'>
+    <div class="label">Iris</div>
+  </div>
+  <!-- A diamond grows into the full square. -->
+  <div id="diamond" class="clip panel" data-start="0.3" data-duration="3.7" data-track-index="0"
+       data-hf-keyframes='[{"at":0,"clipPath":"polygon(50% 50%, 50% 50%, 50% 50%, 50% 50%)"},{"at":0.7,"clipPath":"polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)","easing":"ease-out-cubic"},{"at":1.4,"clipPath":"polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%)","easing":"ease-in-out-cubic"}]'>
+    <div class="label">Polygon</div>
+  </div>
+  <!-- A card unfolds from a thin bar with rounded corners. -->
+  <div id="card" class="clip panel" data-start="0.6" data-duration="3.4" data-track-index="0"
+       data-hf-keyframes='[{"at":0,"clipPath":"inset(48% 0% 48% 0% round 28px)"},{"at":1,"clipPath":"inset(0% 0% 0% 0% round 28px)","easing":"ease-out-expo"}]'>
+    <div class="label">Inset</div>
+  </div>
+  <!-- A static mask fades the bottom of a headline. -->
+  <div id="fade" class="clip" data-start="0" data-duration="4" data-track-index="1">Masked headline</div>
+</div>
+</body>
+</html>

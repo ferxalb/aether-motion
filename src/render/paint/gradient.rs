@@ -181,6 +181,26 @@ impl Mapper {
     }
 }
 
+/// Alpha (0..=1) of `gradient` laid over the box with pixel edges `[x0, y0, x1, y1]`, sampled at the
+/// center of every pixel of `rows` x `columns` (absolute pixel ranges), row by row. Used by
+/// `mask-image`.
+pub(in crate::render) fn alpha_plane(
+    gradient: &Gradient,
+    edges: [f32; 4],
+    columns: std::ops::Range<usize>,
+    rows: std::ops::Range<usize>,
+) -> Vec<f32> {
+    let mapper = Mapper::new(&gradient.kind, edges);
+    let sampler = Sampler::new(&gradient.stops);
+    let mut out = Vec::with_capacity(columns.len() * rows.len());
+    for y in rows {
+        for x in columns.clone() {
+            out.push(sampler.sample(mapper.t(x as f32 + 0.5, y as f32 + 0.5))[3]);
+        }
+    }
+    out
+}
+
 /// One rasterized gradient: premultiplied color (x256) and alpha (x4096) per texel, plus the
 /// painted column range of each row so fully transparent margins cost nothing.
 pub(in crate::render) struct Tile {

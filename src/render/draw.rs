@@ -69,6 +69,9 @@ impl<'a> Renderer<'a> {
             cumulative *= state.scale;
         }
         let sigma = self.filter_blur(idx) * cumulative * self.scale;
+        if self.needs_mask(idx) {
+            return self.draw_masked(idx, rect, cumulative, sigma);
+        }
         if self.has_effects(idx, sigma) {
             return self.draw_with_effects(idx, rect, cumulative, sigma);
         }

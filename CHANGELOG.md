@@ -9,6 +9,9 @@ CLI/MCP output may still change between minor releases.
 
 ### Added
 
+- `clip-path` with `inset()`, `circle()`, `ellipse()`, and `polygon()` (px or %), drawn with exact
+  antialiased coverage and animated through `clipPath` in `data-hf-keyframes`; `mask-image` with a linear
+  or radial gradient. Both apply after the element's `filter`. See `examples/clip-mask.html`.
 - Scene transitions `dip-to-black`, `dip-to-white`, `flash`, `blur`, `whip-left|right|up|down`, `glitch`,
   and `rgb-split`, compiled to filter tracks and new pixel-effect tracks drawn through the effect layer.
   `data-hf-keyframes` accepts `glitch` (0 to 1, a deterministic slice displacement that changes 24 times a

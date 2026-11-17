@@ -1,8 +1,9 @@
 //! `data-hf-keyframes` JSON attribute parsing: offsets, opacity, easing, and filter amounts
 //! (`blur`, `brightness`, `contrast`, `saturate`, `grayscale`, `sepia`, `hueRotate`, `invert`), and
-//! the `glitch` (0 to 1) and `rgbSplit` (px) pixel effects.
+//! the `glitch` (0 to 1) and `rgbSplit` (px) pixel effects, and `clipPath` shapes.
 use crate::model::{Easing, FilterChannel, Keyframe};
 use crate::parse::animation::timing::parse_keyframe_easing;
+use crate::parse::values::clip::parse_clip_path;
 use anyhow::{anyhow, bail, Context, Result};
 use std::collections::BTreeMap;
 
@@ -20,6 +21,7 @@ pub(in crate::parse) fn parse_keyframes(raw: &str) -> Result<Vec<Keyframe>> {
         easing: Easing::Linear,
         filters: [None; 8],
         effects: [None; 2],
+        clip: None,
     };
     let mut keyframes = Vec::with_capacity(frames.len());
     for (index, frame) in frames.into_iter().enumerate() {
@@ -28,7 +30,7 @@ pub(in crate::parse) fn parse_keyframes(raw: &str) -> Result<Vec<Keyframe>> {
                 let filter = FilterChannel::ALL.iter().any(|c| c.key() == key);
                 if !filter && !matches!(
                         key.as_str(),
-                        "at" | "x" | "y" | "opacity" | "easing" | "glitch" | "rgbSplit"
+                        "at" | "x" | "y" | "opacity" | "easing" | "glitch" | "rgbSplit" | "clipPath"
                     ) {
                     bail!("unknown field: {key}");
                 }
@@ -101,6 +103,18 @@ pub(in crate::parse) fn parse_keyframes(raw: &str) -> Result<Vec<Keyframe>> {
                     *slot = Some(n as f32);
                 }
             }
+            let clip = match frame.get("clipPath") {
+                None => None,
+                Some(value) => {
+                    let raw = value
+                        .as_str()
+                        .ok_or_else(|| anyhow!("clipPath must be a string such as \"circle(40% at 50% 50%)\""))?;
+                    Some(
+                        parse_clip_path(raw)?
+                            .ok_or_else(|| anyhow!("clipPath cannot be none in a keyframe"))?,
+                    )
+                }
+            };
             Ok(Keyframe {
                 at,
                 x,
@@ -109,11 +123,12 @@ pub(in crate::parse) fn parse_keyframes(raw: &str) -> Result<Vec<Keyframe>> {
                 easing,
                 filters,
                 effects,
+                clip,
             })
         })()
         .with_context(|| format!("keyframe {}", index + 1))?;
+        previous = keyframe.clone();
         keyframes.push(keyframe);
-        previous = keyframe;
     }
     Ok(keyframes)
 }

@@ -1,4 +1,4 @@
-//! Per-element visual state (alpha, pose, video frame, animated filter and pixel-effect amounts) sampled at one
+//! Per-element visual state (alpha, pose, video frame, animated filter, pixel-effect, and clip-path values) sampled at one
 //! instant; compared across frames to reuse pixels.
 
 use crate::model::{Content, Element};
@@ -19,6 +19,8 @@ pub(in crate::render) struct FrameState {
     pub(in crate::render) fx: [f32; 3],
     /// Glitch pattern index (`GLITCH_RATE` steps since the clip start); 0 without a glitch.
     pub(in crate::render) fx_seed: u32,
+    /// Bits of the animated `clip-path` values, so a moving clip is never mistaken for a still one.
+    pub(in crate::render) clip_key: u64,
 }
 
 impl FrameState {
@@ -49,6 +51,10 @@ impl FrameState {
         } else {
             0
         };
+        let clip_key = motion.clip.iter().fold(0_u64, |key, track| {
+            let value = track.eval(elapsed, 0.0, true, true);
+            (key.rotate_left(17) ^ u64::from(value.to_bits())).wrapping_mul(0x9e37_79b9_7f4a_7c15)
+        });
         Self {
             alpha: alpha * pose.opacity,
             x: pose.x,
@@ -63,6 +69,7 @@ impl FrameState {
             filters,
             fx,
             fx_seed,
+            clip_key,
         }
     }
 }

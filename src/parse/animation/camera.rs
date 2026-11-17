@@ -114,6 +114,7 @@ pub(in crate::parse) fn motion_from_camera(base: Pose, frames: &[CameraFrame]) -
         wipe: None,
         filter: Default::default(),
         fx: Default::default(),
+        clip: Vec::new(),
         hold_before: true,
         hold_after: true,
     }
