@@ -113,6 +113,7 @@ pub(in crate::parse) fn motion_from_camera(base: Pose, frames: &[CameraFrame]) -
         reveal: Track::default(),
         wipe: None,
         filter: Default::default(),
+        fx: Default::default(),
         hold_before: true,
         hold_after: true,
     }

@@ -298,6 +298,15 @@ pub fn parse_file_with(path: &Path, values: &VariableValues) -> Result<Compositi
         elements.push(p.element);
     }
     apply_transitions(&mut elements, &transitions, &ids, (width, height))?;
+    // Light and focus transitions add filter tracks to scenes that had none.
+    for element in elements.iter_mut().skip(1) {
+        let label = element
+            .id
+            .clone()
+            .unwrap_or_else(|| "element with no id".into());
+        order_animated_filters(element, false)
+            .with_context(|| format!("animated filter on {label}"))?;
+    }
     check_blend_isolation(&elements)?;
     let background = match elements[0].style.background {
         Some(Background::Solid(color)) => color,
@@ -392,7 +401,7 @@ fn check_blend_isolation(elements: &[crate::model::Element]) -> Result<()> {
 }
 
 /// Resting amount of each animatable filter channel: the static `filter` value, else neutral.
-fn filter_base(style: &crate::model::Style) -> [f32; 8] {
+pub(in crate::parse) fn filter_base(style: &crate::model::Style) -> [f32; 8] {
     use crate::model::FilterChannel;
     let mut base = FilterChannel::ALL.map(FilterChannel::neutral);
     base[FilterChannel::Blur.index()] = style.filter_blur;
@@ -409,6 +418,7 @@ fn filter_base(style: &crate::model::Style) -> [f32; 8] {
 fn order_animated_filters(element: &mut crate::model::Element, root: bool) -> Result<()> {
     use crate::model::FilterChannel;
     let filter = &mut element.motion.filter;
+    filter.appended.clear();
     if filter.is_static() {
         return Ok(());
     }

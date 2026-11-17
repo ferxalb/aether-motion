@@ -38,13 +38,13 @@ fn fix_hint(message: &str) -> &'static str {
     } else if message.contains("data-hf-vignette") || message.contains("data-hf-grain") {
         "set data-hf-vignette and data-hf-grain on the composition root to a number between 0 and 1"
     } else if message.contains("data-hf-transition") || message.contains("transition ") {
-        "on the incoming clip use data-hf-transition=crossfade|push-left|cover-left|wipe-left|zoom-in|zoom-out and data-hf-transition-from=<outgoing id>; start it inside the outgoing clip (data-start=\"a-0.6\"), give the outgoing clip a data-duration, and draw it above on a higher data-track-index"
+        "on the incoming clip use data-hf-transition=crossfade|push-<dir>|cover-<dir>|wipe-<dir>|whip-<dir>|zoom-in|zoom-out|dip-to-black|dip-to-white|flash|blur|glitch|rgb-split (dir: left, right, up, down) and data-hf-transition-from=<outgoing id>; start it inside the outgoing clip (data-start=\"a-0.6\"), give the outgoing clip a data-duration, and draw it above on a higher data-track-index"
     } else if message.contains("data-hf-split") || message.contains("data-hf-stagger") {
         "use data-hf-split=words|chars on an element with one line of plain text (no <br> or child elements); see AGENTS.md for data-hf-stagger, data-hf-split-from, and the other options"
     } else if message.contains("data-hf-camera") || message.contains("camera keyframe") {
         "use a JSON array of {at, zoom, x, y, easing} on a non-root container; at in local seconds, strictly increasing; zoom between 0.05 and 50"
     } else if message.contains("data-hf-keyframes") {
-        "use a JSON array of {at, x, y, opacity, easing} plus optional filter amounts blur (0 to 200 px), brightness, contrast, saturate (0 to 100), grayscale, sepia, invert (0 to 1), and hueRotate (degrees); at in local seconds, strictly increasing and within the clip; check the indicated field"
+        "use a JSON array of {at, x, y, opacity, easing} plus optional filter amounts blur (0 to 200 px), brightness, contrast, saturate (0 to 100), grayscale, sepia, invert (0 to 1), and hueRotate (degrees), and the effects glitch (0 to 1) and rgbSplit (-500 to 500 px); at in local seconds, strictly increasing and within the clip; check the indicated field"
     } else if message.contains("CSS variable") || message.contains("var()") {
         "define --name on :root or an ancestor, or add a fallback: var(--name, value)"
     } else if message.contains("animation") || message.contains("@keyframes") {

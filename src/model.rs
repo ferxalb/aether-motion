@@ -462,6 +462,8 @@ pub struct Keyframe {
     pub easing: Easing,
     /// Filter amounts given explicitly at this keyframe, indexed by [`FilterChannel::index`].
     pub filters: [Option<f32>; 8],
+    /// `glitch` and `rgbSplit` given explicitly at this keyframe.
+    pub effects: [Option<f32>; 2],
 }
 
 /// Layout-check opt-outs from `data-layout-allow-*` attributes; descendants inherit them when checked.
@@ -715,6 +717,8 @@ pub struct Motion {
     pub wipe: Option<RevealFrom>,
     /// Animated `filter` amounts.
     pub filter: FilterMotion,
+    /// Animated tint, glitch, and channel split.
+    pub fx: FxMotion,
     /// Hold the first value before the first point (`animation-fill-mode: backwards`).
     pub hold_before: bool,
     /// Hold the last value after the last point (`animation-fill-mode: forwards`).
@@ -750,6 +754,42 @@ impl FilterMotion {
     }
 }
 
+/// Pixel effects outside CSS `filter`, applied in the effect layer after the color functions and
+/// before `drop-shadow`, in this order: tint, channel split, glitch. All are neutral at 0.
+#[derive(Clone, Debug, Default)]
+pub struct FxMotion {
+    /// Share (0..=1) of the color replaced by `tint_color`, keeping the element's alpha.
+    pub tint: Track,
+    pub tint_color: Option<Color>,
+    /// Glitch strength (0..=1): horizontal slices displaced by a pattern that changes 24 times a second.
+    pub glitch: Track,
+    /// Red and blue channel offset in composition px (red moves left, blue right).
+    pub rgb_split: Track,
+}
+
+/// Rate at which the glitch pattern changes, independent of the output frame rate.
+pub const GLITCH_RATE: f64 = 24.0;
+
+impl FxMotion {
+    pub fn is_static(&self) -> bool {
+        self.tint.0.is_empty() && self.glitch.0.is_empty() && self.rgb_split.0.is_empty()
+    }
+
+    /// `[tint, glitch, rgb_split]` amounts `elapsed` seconds after the clip start.
+    pub fn eval(&self, elapsed: f64, hold_before: bool, hold_after: bool) -> [f32; 3] {
+        let value = |track: &Track| track.eval(elapsed, 0.0, hold_before, hold_after);
+        [
+            value(&self.tint).clamp(0.0, 1.0),
+            value(&self.glitch).clamp(0.0, 1.0),
+            value(&self.rgb_split).clamp(-500.0, 500.0),
+        ]
+    }
+
+    fn tracks(&self) -> [&Track; 3] {
+        [&self.tint, &self.glitch, &self.rgb_split]
+    }
+}
+
 impl Motion {
     pub fn pose(&self, elapsed: f64) -> Pose {
         let (b, hb, ha) = (self.base, self.hold_before, self.hold_after);
@@ -775,6 +815,7 @@ impl Motion {
         .iter()
         .all(|track| track.0.is_empty())
             && self.filter.is_static()
+            && self.fx.is_static()
     }
 
     /// Sorted, distinct point times across all channels.
@@ -789,6 +830,7 @@ impl Motion {
         ]
         .into_iter()
         .chain(&self.filter.tracks)
+        .chain(self.fx.tracks())
         .flat_map(|track| track.0.iter().map(|point| point.at))
         .collect();
         times.sort_by(f64::total_cmp);

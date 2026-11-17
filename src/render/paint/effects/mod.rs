@@ -1,11 +1,12 @@
 //! Element effects drawn through an offscreen layer: `filter` (blur, color functions,
-//! `drop-shadow`) and `mix-blend-mode`.
+//! `drop-shadow`), the tint, channel split, and glitch of `model::FxMotion` (`fx.rs`), and
+//! `mix-blend-mode`.
 //!
 //! The element (box, shadows, content, and children) is drawn twice, on black and on white, to
 //! recover premultiplied RGBA. The layer is padded by the reach of the blur and the drop shadow.
 //! The stages then run in a fixed order, matching the order `filter` accepts: gaussian blur
 //! (premultiplied, the backdrop blur's three-pass box approximation), color functions
-//! (`color.rs`, on unpremultiplied values), drop shadow (the blurred, offset alpha under the
+//! (`color.rs`, on unpremultiplied values), tint, channel split, glitch, drop shadow (the blurred, offset alpha under the
 //! layer), and finally compositing with the blend function (`blend.rs`) over the frame.
 //!
 //! Animated filters read their amounts from the element's `FrameState`. An animated blur uses the
@@ -20,6 +21,7 @@
 pub(in crate::render) mod blend;
 pub(in crate::render) mod color;
 pub(in crate::render) mod exact_blur;
+mod fx;
 
 use crate::model::{BlendMode, Color, ColorFilter, Content, FilterChannel, Shadow};
 use crate::render::geometry::{clip_pixels, Rect};
@@ -110,7 +112,8 @@ impl<'a> Renderer<'a> {
                 || !style.filter_colors.is_empty()
                 || style.drop_shadow.is_some()
                 || style.blend != BlendMode::Normal
-                || !element.motion.filter.is_static())
+                || !element.motion.filter.is_static()
+                || !element.motion.fx.is_static())
     }
 
     /// The element's `filter: blur()` radius (composition px) at the current instant.
@@ -174,10 +177,17 @@ impl<'a> Renderer<'a> {
         } else {
             Kernel::Boxes(box_radius(sigma))
         };
+        let fx = self.current[idx].fx;
+        let fx_seed = self.current[idx].fx_seed;
+        let tint_color = self.composition.elements[idx].motion.fx.tint_color;
+        let tint = tint_color.filter(|_| fx[0] > 0.0).map(|c| (c, fx[0]));
+        let split = (fx[2] * cumulative * k).round();
+        let has_fx = tint.is_some() || fx[1] > 0.0 || split != 0.0;
         if kernel.is_none()
             && colors.is_identity()
             && style.drop_shadow.is_none()
             && blend == BlendMode::Normal
+            && !has_fx
         {
             return self.draw_posed(idx, rect, cumulative);
         }
@@ -190,6 +200,7 @@ impl<'a> Renderer<'a> {
             .reach()?
             .max(1)
             .checked_add(shadow_pad)
+            .and_then(|n| n.checked_add(split.abs() as i32))
             .ok_or_else(|| anyhow::anyhow!("filter: reach is too large; use --scale"))?;
         // Shadows can extend past the box, so pad generously; stay near the frame to bound memory.
         let own = self.shadow_reach(idx, cumulative)?;
@@ -232,6 +243,7 @@ impl<'a> Renderer<'a> {
         // Layers of the static blur alone keep their own empty caches, so their output stays as it
         // was; the other effects share the frame's caches, frozen so both passes agree.
         let share = !(colors.is_identity()
+            && !has_fx
             && shadow.is_none()
             && blend == BlendMode::Normal
             && matches!(kernel, Kernel::Boxes(_)));
@@ -266,7 +278,7 @@ impl<'a> Renderer<'a> {
             return Ok(());
         };
         let stride = self.surface.width as usize;
-        if kernel.is_none() && shadow.is_none() {
+        if kernel.is_none() && shadow.is_none() && !has_fx {
             // Color functions and blending only: recover, recolor, and composite in one pass.
             self.surface.mark_painted(bounds);
             let layer = blend::Layer {
@@ -307,6 +319,23 @@ impl<'a> Renderer<'a> {
         }
         if !colors.is_identity() {
             apply_colors(&mut planes, &colors);
+        }
+        if let Some((color, amount)) = tint {
+            fx::apply_tint(&mut planes, color, amount);
+        }
+        if split != 0.0 {
+            fx::apply_rgb_split(&mut planes, lw, split);
+        }
+        if fx[1] > 0.0 {
+            // The element's box in layer pixels, so slices read from inside it only.
+            let edge = |v: f32, hi: usize| ((v * k).round().max(0.0) as usize).min(hi);
+            let span = fx::Span {
+                x0: edge(shifted.x, lw),
+                y0: edge(shifted.y, lh),
+                x1: edge(shifted.x + shifted.w, lw),
+                y1: edge(shifted.y + shifted.h, lh),
+            };
+            fx::apply_glitch(&mut planes, lw, span, fx[1], fx_seed);
         }
         if let Some(shadow) = &shadow {
             apply_drop_shadow(&mut planes, lw, lh, shadow);
