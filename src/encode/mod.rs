@@ -1,6 +1,16 @@
-//! Native H.264/MP4 encoding of rendered frames, including segmented parallel encoding, the
-//! [`Quality`] presets (fixed quantizers), and the optional AAC audio track mixed from the
-//! composition's `<audio>` clips (see `crate::audio`). [`EncodeOptions`] collects the settings.
+//! Native H.264/MP4 encoding of rendered frames: the [`Quality`] presets (fixed quantizers), the
+//! MP4 `Muxer` with the optional AAC track mixed from the composition's `<audio>` clips (see
+//! `crate::audio`), and the export entry points. [`EncodeOptions`] collects the settings.
+//!
+//! Submodules: `segments` (the parallel pipeline of fixed one-second segments used by every render
+//! longer than a segment) and `parts` (distributed rendering: segment ranges written to part files
+//! by separate processes, then assembled into the MP4 a single-process render writes).
+
+mod parts;
+mod segments;
+
+pub use parts::{assemble_parts, render_part, PART_EXTENSION};
+pub use segments::{segment_count, segment_frames};
 
 use crate::audio::aac::AacStream;
 use crate::audio::{self, mux as audio_mux};
@@ -12,10 +22,8 @@ use openh264::encoder::{
 };
 use openh264::formats::{RgbaSliceU8, YUVBuffer};
 use openh264::{OpenH264API, Timestamp};
-use std::collections::BTreeMap;
 use std::fs::{self, File};
-use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc};
 
 #[derive(Default)]
@@ -160,38 +168,15 @@ pub fn encode_native_with_options(
         audio_bitrate,
         quality,
     } = *options;
-    if !(64_000..=320_000).contains(&audio_bitrate) {
-        bail!("audio bitrate must be between 64 and 320 kbit/s");
-    }
-    if !(1..=60).contains(&fps) {
-        bail!("OpenH264 supports 1 to 60 fps");
-    }
-    if !(1..=64).contains(&threads) {
-        bail!("threads must be between 1 and 64");
-    }
+    check_audio_bitrate(audio_bitrate)?;
+    check_video(renderer, fps, threads)?;
     let (width, height) = renderer.dimensions();
-    if width.max(height) > 3840 || width.min(height) > 2160 {
-        bail!("OpenH264 supports up to 3840×2160 or 2160×3840; use --size 4k or --scale");
-    }
-    if width % 2 != 0 || height % 2 != 0 {
-        bail!("MP4 yuv420p requires even dimensions; change --scale");
-    }
-    if output.exists() {
-        bail!("output already exists: {}", output.display());
-    }
-    let parent = output
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
-    if !parent.exists() {
-        bail!("output directory does not exist: {}", parent.display());
-    }
-    let partial = output.with_extension(format!("aether-{}.partial.mp4", std::process::id()));
+    let partial = partial_path(output)?;
     let frame_count = renderer.frame_count(fps);
     let audio = audio::build_track(renderer.composition(), frame_count, fps, audio_bitrate)?;
     let audio = audio.as_ref();
     let result = (|| -> Result<()> {
-        if frame_count > fps as usize * SEGMENT_SECONDS {
+        if segment_count(frame_count, fps).is_some() {
             // Long enough for several independent GOPs: encode them in parallel.
             let (rasterized, reused) = write_segmented(
                 renderer,
@@ -251,6 +236,48 @@ pub fn encode_native_with_options(
     result
 }
 
+fn check_audio_bitrate(audio_bitrate: u32) -> Result<()> {
+    if !(64_000..=320_000).contains(&audio_bitrate) {
+        bail!("audio bitrate must be between 64 and 320 kbit/s");
+    }
+    Ok(())
+}
+
+/// Validates the encoder settings and the renderer's output size for OpenH264 and yuv420p.
+fn check_video(renderer: &Renderer<'_>, fps: u32, threads: u32) -> Result<()> {
+    if !(1..=60).contains(&fps) {
+        bail!("OpenH264 supports 1 to 60 fps");
+    }
+    if !(1..=64).contains(&threads) {
+        bail!("threads must be between 1 and 64");
+    }
+    let (width, height) = renderer.dimensions();
+    if width.max(height) > 3840 || width.min(height) > 2160 {
+        bail!("OpenH264 supports up to 3840×2160 or 2160×3840; use --size 4k or --scale");
+    }
+    if width % 2 != 0 || height % 2 != 0 {
+        bail!("MP4 yuv420p requires even dimensions; change --scale");
+    }
+    Ok(())
+}
+
+/// Checks that `output` does not exist and its directory does, and returns the temporary path the
+/// file is written to before it is renamed into place.
+fn partial_path(output: &Path) -> Result<PathBuf> {
+    if output.exists() {
+        bail!("output already exists: {}", output.display());
+    }
+    let parent = output
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    if !parent.exists() {
+        bail!("output directory does not exist: {}", parent.display());
+    }
+    let ext = output.extension().and_then(|x| x.to_str()).unwrap_or("mp4");
+    Ok(output.with_extension(format!("aether-{}.partial.{ext}", std::process::id())))
+}
+
 // Keep a small pool because the encoder can still be reading a previous buffer.
 fn video_frames<'a, 'composition>(
     renderer: &'a mut Renderer<'composition>,
@@ -285,15 +312,6 @@ fn video_frames<'a, 'composition>(
 }
 
 type Sample = (Vec<u8>, bool);
-
-struct EncodedSegment {
-    index: usize,
-    rasterized: usize,
-    reused: usize,
-    samples: Vec<Sample>,
-    sps: Vec<u8>,
-    pps: Vec<u8>,
-}
 
 fn make_encoder(fps: u32, threads: u32, quality: Quality) -> Result<Encoder> {
     let config = EncoderConfig::new()
@@ -474,10 +492,6 @@ fn write_video(
     writer.finish(partial, frame_count)
 }
 
-/// Seconds of video per independently encoded segment (each starts with an IDR frame).
-/// Fixed, so the MP4 is byte-identical for any worker count.
-const SEGMENT_SECONDS: usize = 1;
-
 /// Default worker count: a quarter of the cores, between 1 and 4. The total CPU work of a render
 /// is fixed, so fewer workers trade a little wall time for a machine that stays responsive
 /// (each 4K worker also holds roughly 140 MB). Pass `--threads` to use more.
@@ -496,47 +510,7 @@ pub fn lower_priority() {
     }
 }
 
-fn encode_segment(
-    renderer: &mut Renderer<'_>,
-    index: usize,
-    range: std::ops::Range<usize>,
-    (fps, quality): (u32, Quality),
-) -> Result<EncodedSegment> {
-    let (width, height) = renderer.dimensions();
-    let dims = (width as usize, height as usize);
-    let mut encoder = make_encoder(fps, 1, quality)?;
-    let mut yuv = YUVBuffer::new(dims.0, dims.1);
-    let mut last_revision = None;
-    let before = (renderer.stats().rasterized, renderer.stats().reused);
-    let mut samples = Vec::with_capacity(range.len());
-    let (mut sps, mut pps) = (None, None);
-    for frame in range {
-        let (rgba, revision) = renderer.render_frame_with_revision(frame, fps)?;
-        if last_revision != Some(revision) {
-            yuv.read_rgba8(RgbaSliceU8::new(rgba, dims));
-            last_revision = Some(revision);
-        }
-        let (nal, frame_type) = encode_one(&mut encoder, &yuv, frame, fps)?;
-        if samples.is_empty() {
-            if frame_type != FrameType::IDR {
-                bail!("the first frame of segment {index} is not IDR");
-            }
-            sps = nal.sps;
-            pps = nal.pps;
-        }
-        samples.push((nal.sample, frame_type == FrameType::IDR));
-    }
-    Ok(EncodedSegment {
-        index,
-        rasterized: renderer.stats().rasterized - before.0,
-        reused: renderer.stats().reused - before.1,
-        samples,
-        sps: sps.ok_or_else(|| anyhow!("missing H.264 SPS in segment {index}"))?,
-        pps: pps.ok_or_else(|| anyhow!("missing H.264 PPS in segment {index}"))?,
-    })
-}
-
-/// Renders and encodes independent segments on `workers` threads, then muxes them in order.
+/// Renders and encodes every segment on `workers` threads, then muxes them in order.
 fn write_segmented(
     renderer: &Renderer<'_>,
     partial: &Path,
@@ -545,82 +519,42 @@ fn write_segmented(
     frame_count: usize,
     audio: Option<&AacStream>,
 ) -> Result<(usize, usize)> {
-    let segment_len = fps as usize * SEGMENT_SECONDS;
-    let segments = frame_count.div_ceil(segment_len);
-    let workers = workers.min(segments);
-    let forks = (0..workers)
-        .map(|_| renderer.fork())
-        .collect::<Result<Vec<_>>>()?;
-    let next = AtomicUsize::new(0);
-    let failed = AtomicBool::new(false);
+    let segments = segment_count(frame_count, fps).unwrap_or(1);
     let dimensions = renderer.dimensions();
-    let (sender, receiver) = mpsc::channel::<Result<EncodedSegment>>();
-    std::thread::scope(|scope| -> Result<(usize, usize)> {
-        for mut fork in forks {
-            let (sender, next, failed) = (sender.clone(), &next, &failed);
-            std::thread::Builder::new()
-                .name("aether-segment".into())
-                .spawn_scoped(scope, move || loop {
-                    let index = next.fetch_add(1, Ordering::Relaxed);
-                    if index >= segments || failed.load(Ordering::Relaxed) {
-                        break;
-                    }
-                    let start = index * segment_len;
-                    let end = (start + segment_len).min(frame_count);
-                    let result = encode_segment(&mut fork, index, start..end, (fps, quality));
-                    if result.is_err() {
-                        failed.store(true, Ordering::Relaxed);
-                    }
-                    if sender.send(result).is_err() {
-                        break;
-                    }
-                })
-                .context("could not start an encoding thread")?;
-        }
-        drop(sender);
-        let mut pending: BTreeMap<usize, EncodedSegment> = BTreeMap::new();
-        let mut writer: Option<Muxer<'_>> = None;
-        let mut parameter_sets: Option<(Vec<u8>, Vec<u8>)> = None;
-        let (mut want, mut frame) = (0, 0);
-        let mut totals = (0, 0);
-        for message in receiver {
-            let segment = message?;
-            pending.insert(segment.index, segment);
-            while let Some(segment) = pending.remove(&want) {
-                match &parameter_sets {
-                    None => {
-                        writer = Some(start_mp4(
-                            partial,
-                            dimensions,
-                            fps,
-                            segment.sps.clone(),
-                            segment.pps.clone(),
-                            audio,
-                        )?);
-                        parameter_sets = Some((segment.sps, segment.pps));
-                    }
-                    Some((sps, pps)) if *sps != segment.sps || *pps != segment.pps => {
-                        bail!("H.264 segments do not share SPS/PPS")
-                    }
-                    Some(_) => {}
-                }
-                totals.0 += segment.rasterized;
-                totals.1 += segment.reused;
-                for sample in segment.samples {
-                    writer.as_mut().unwrap().video(frame, sample)?;
-                    frame += 1;
-                }
-                want += 1;
+    let mut writer: Option<Muxer<'_>> = None;
+    let mut frame = 0;
+    let totals = segments::encode_segments(
+        renderer,
+        0..segments,
+        (fps, quality),
+        workers,
+        frame_count,
+        |segment| {
+            let muxer = match &mut writer {
+                Some(muxer) => muxer,
+                None => writer.insert(start_mp4(
+                    partial,
+                    dimensions,
+                    fps,
+                    segment.sps.clone(),
+                    segment.pps.clone(),
+                    audio,
+                )?),
+            };
+            for sample in segment.samples {
+                muxer.video(frame, sample)?;
+                frame += 1;
             }
-        }
-        if frame != frame_count {
-            bail!("produced {frame} of {frame_count} frames");
-        }
-        writer
-            .ok_or_else(|| anyhow!("composition has no frames"))?
-            .finish(partial, frame_count)?;
-        Ok(totals)
-    })
+            Ok(())
+        },
+    )?;
+    if frame != frame_count {
+        bail!("produced {frame} of {frame_count} frames");
+    }
+    writer
+        .ok_or_else(|| anyhow!("composition has no frames"))?
+        .finish(partial, frame_count)?;
+    Ok(totals)
 }
 
 #[cfg(test)]

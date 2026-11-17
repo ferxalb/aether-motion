@@ -9,6 +9,13 @@ CLI/MCP output may still change between minor releases.
 
 ### Added
 
+- Distributed rendering: `render --output part.aseg --segments A..B` encodes a range of one-second
+  segments into a part file, and `render --output video.mp4 --parts a.aseg,...` assembles parts (any
+  order, checked for full coverage and matching settings) with the composition's audio, producing the MP4
+  a single render writes. `inspect --fps N` prints the segment count. The library exposes `render_part`,
+  `assemble_parts`, and `segment_count`. `render --frames 0,45,90` with `{frame}` in the PNG name writes
+  several stills from one process. `encode.rs` is now `encode/` (`segments.rs`, `parts.rs`).
+
 - Inline rich text: `<span>`, `<strong>`, `<b>`, and `<code>` inside an element with its own text become
   styled runs (color, family, weight, letter spacing, fill, stroke, gradient) that wrap and align together.
   `-webkit-text-stroke` (stroked from the font outlines), `-webkit-text-fill-color`, and

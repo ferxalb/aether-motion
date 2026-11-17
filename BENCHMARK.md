@@ -44,7 +44,7 @@ A 12 s composition with fades (`examples/title-card.html` with `data-duration="1
 
 About a 2.7× improvement at both sizes. The tradeoff is memory: each thread holds its own frame and encoder. On machines with little RAM, use `--threads 1` or `2`.
 
-- Segments are fixed at 1 s, so the MP4 is **byte-for-byte identical with any thread count** (verified with SHA-256 using 1, 2, 4, 8, and 12 threads, and by a test).
+- Segments are fixed at 1 s, so the MP4 is **byte-for-byte identical with any thread count** (verified with SHA-256 using 1, 2, 4, 8, and 12 threads, and by a test). Correction: this holds for compositions without cached gradient tiles. `examples/premium-promo.html` gives different hashes for `--threads 1` and `--threads 4` (also before the distributed-rendering change), with differences of one level per channel; see "Encoding" in `docs/architecture.md`.
 - Each segment starts with an IDR frame. The file is about 5% larger (843 KB vs. 800 KB at 1080p), and `--threads 1` takes about 10% longer than before.
 - Compositions of 1 s or less are not segmented and keep the previous pipeline.
 - By default, `--threads` uses the available cores, up to a maximum of 4.
@@ -767,3 +767,15 @@ linear interpolation inside the block, which is exact on held and linear segment
 gains are equal skips the easing. Ducking gains use one `exp` per ramp sample instead of `powf`, and the
 equalizer flushes tiny filter states once per block instead of branching per sample. With every effect
 on, the mix costs about 0.4% of real time on one core.
+
+## Distributed rendering (part files)
+
+[`premium-promo.html`](examples/premium-promo.html) (15 s, every frame changes), 960×540 (`--scale 0.5`), 30 fps, 450 frames, `--threads 4`, release build, one 4-core container, wall time of single runs. The four ranges were rendered one after another to time each as if it ran on its own 4-core worker.
+
+| Run | Wall time |
+| --- | ---: |
+| Single render, `--threads 4` (two runs) | 3.46 s, 3.43 s |
+| Part `0..4` / `4..8` / `8..12` / `12..15` | 0.75 s / 1.47 s / 1.30 s / 0.89 s |
+| Assembly of the four parts (`--parts`) | 0.007 s |
+
+With four workers the export finishes when the slowest part does: about 1.48 s instead of 3.45 s (2.3×). The ranges are equal in seconds, not in work, so the busiest scenes bound the gain. This excludes worker start-up and file transfer, which the API amortizes by sharding only long renders. The assembled file differed from the single render by 12 bytes (gradient tiles, see the correction above); `examples/title-card.html` stretched to 9 s assembled byte-identically.

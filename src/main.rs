@@ -1,12 +1,16 @@
 //! Command-line entry point: short project commands live in `cli`; this file keeps the legacy flag-based `inspect`, `render --output`, `bench`, `block`, and `mcp`.
 
-use aether_motion::encode::{encode_native_with_options, EncodeOptions, Quality};
+use aether_motion::encode::{
+    assemble_parts, encode_native_with_options, render_part, segment_count, EncodeOptions, Quality,
+    PART_EXTENSION,
+};
 use aether_motion::parse::parse_file_with;
 use aether_motion::render::{OutputSize, Renderer};
 use anyhow::{anyhow, bail, Context, Result};
 use std::env;
 use std::fs;
 use std::io::Write;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Instant;
@@ -27,7 +31,9 @@ Quick start:\n\
 `file` defaults to aether.json \"entry\", then index.html.\n\
 Advanced:\n\
   aether-motion inspect <composition.html>\n\
-  aether-motion render <composition.html> --output <video.mp4|frame.png> [--fps 30] [--scale 1 | --size 1080p|4k] [--threads N (default: cores/4, 1 to 4)] [--priority low|normal (default: low)] [--encoder native|ffmpeg] [--quality draft|standard|high|max (default: standard)] [--audio-bitrate 192] [--frame N]\n\
+  aether-motion render <composition.html> --output <video.mp4|frame.png> [--fps 30] [--scale 1 | --size 1080p|4k] [--threads N (default: cores/4, 1 to 4)] [--priority low|normal (default: low)] [--encoder native|ffmpeg] [--quality draft|standard|high|max (default: standard)] [--audio-bitrate 192] [--frame N | --frames N,N,... with {frame} in the PNG name]\n\
+  aether-motion render <composition.html> --output <part.aseg> --segments A..B [render options]   (distributed render: encode one-second segments A..B; `inspect --fps N` prints the segment count)\n\
+  aether-motion render <composition.html> --output <video.mp4> --parts a.aseg,b.aseg,... [--variables ...] [--audio-bitrate 192]   (assemble parts into the MP4 a single render would write)\n\
   aether-motion bench <composition.html> [--fps 30] [--scale 1 | --size 1080p|4k] [--frame START --count N]\n\
   aether-motion check <composition.html>   (JSON; exits with 1 on failure)\n\
   aether-motion block [list | <name> [--set key=value]...]   (print a ready-made block or theme as HTML)\n\
@@ -58,6 +64,43 @@ struct Options {
     variables: Option<String>,
     /// `--variables-file`: a JSON file holding that object.
     variables_file: Option<String>,
+    /// `--frames`: several PNG frames from one process (the output names `{frame}`).
+    frames: Option<Vec<usize>>,
+    /// `--segments A..B`: the segment range of a part file (`.aseg` output).
+    segments: Option<Range<usize>>,
+    /// `--parts`: part files to assemble into the MP4 output.
+    parts: Option<Vec<PathBuf>>,
+    /// Whether `--fps` was given (`inspect` prints the segment plan only then).
+    fps_given: bool,
+}
+
+/// Parses `A..B` (segment indexes, end exclusive).
+fn parse_range(value: &str) -> Result<Range<usize>> {
+    let (a, b) = value
+        .split_once("..")
+        .ok_or_else(|| anyhow!("--segments must look like A..B"))?;
+    let range = a.parse().context("invalid --segments start")?
+        ..b.parse().context("invalid --segments end")?;
+    if range.is_empty() {
+        bail!("--segments must not be empty");
+    }
+    Ok(range)
+}
+
+/// Parses a comma-separated list, naming `flag` in errors.
+fn parse_list<T: std::str::FromStr>(value: &str, flag: &str) -> Result<Vec<T>> {
+    let items = value
+        .split(',')
+        .map(|item| {
+            item.trim()
+                .parse()
+                .map_err(|_| anyhow!("invalid {flag} item: {item}"))
+        })
+        .collect::<Result<Vec<T>>>()?;
+    if items.is_empty() || items.len() > 1000 {
+        bail!("{flag} takes 1 to 1000 items");
+    }
+    Ok(items)
 }
 
 fn options() -> Result<Option<Options>> {
@@ -97,6 +140,10 @@ fn options() -> Result<Option<Options>> {
         count: None,
         variables: None,
         variables_file: None,
+        frames: None,
+        segments: None,
+        parts: None,
+        fps_given: false,
     };
     while let Some(arg) = args.next() {
         let value = args
@@ -104,7 +151,10 @@ fn options() -> Result<Option<Options>> {
             .ok_or_else(|| anyhow!("missing value for {arg}"))?;
         match arg.as_str() {
             "--output" => opts.output = Some(value.into()),
-            "--fps" => opts.fps = value.parse().context("invalid --fps")?,
+            "--fps" => {
+                opts.fps = value.parse().context("invalid --fps")?;
+                opts.fps_given = true;
+            }
             "--scale" => opts.scale = Some(value.parse().context("invalid --scale")?),
             "--size" => opts.size = Some(value.parse()?),
             "--threads" => opts.threads = value.parse().context("invalid --threads")?,
@@ -124,6 +174,9 @@ fn options() -> Result<Option<Options>> {
             "--count" => opts.count = Some(value.parse().context("invalid --count")?),
             "--variables" => opts.variables = Some(value),
             "--variables-file" => opts.variables_file = Some(value),
+            "--frames" => opts.frames = Some(parse_list(&value, "--frames")?),
+            "--segments" => opts.segments = Some(parse_range(&value)?),
+            "--parts" => opts.parts = Some(parse_list(&value, "--parts")?),
             _ => bail!("unknown option: {arg}"),
         }
     }
@@ -240,6 +293,33 @@ fn mp4_ffmpeg(
     result
 }
 
+/// Writes several frames as PNG from one renderer; `{frame}` in `output` becomes the frame number.
+/// Frames are drawn in ascending order (video sources decode forward) and written as named.
+fn write_pngs(
+    renderer: &mut Renderer<'_>,
+    output: &Path,
+    frames: &[usize],
+    single: Option<usize>,
+    fps: u32,
+) -> Result<()> {
+    let pattern = output.to_string_lossy();
+    if single.is_some() || !pattern.contains("{frame}") {
+        bail!("--frames needs {{frame}} in the PNG --output name and no --frame");
+    }
+    let total = renderer.frame_count(fps);
+    let mut sorted = frames.to_vec();
+    sorted.sort_unstable();
+    sorted.dedup();
+    if let Some(&last) = sorted.last().filter(|&&f| f >= total) {
+        bail!("--frames {last} is outside the composition ({total} frames)");
+    }
+    for frame in sorted {
+        let path = PathBuf::from(pattern.replace("{frame}", &frame.to_string()));
+        aether_motion::cli::render_cmd::write_png(renderer, &path, frame, fps)?;
+    }
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let all: Vec<String> = env::args().skip(1).collect();
     if let Some(result) = aether_motion::cli::run(&all) {
@@ -284,6 +364,15 @@ fn main() -> Result<()> {
             composition.duration,
             composition.elements.len()
         );
+        if opts.fps_given {
+            let frames = (composition.duration * opts.fps as f64).ceil() as usize;
+            println!(
+                "  {frames} frames @ {} fps | segments {}",
+                opts.fps,
+                segment_count(frames, opts.fps)
+                    .map_or_else(|| "none (one piece)".to_string(), |n| n.to_string())
+            );
+        }
         for clip in &composition.audio {
             let range = match clip.duration {
                 Some(duration) => format!("{:.3}..{:.3} s", clip.start, clip.start + duration),
@@ -312,6 +401,21 @@ fn main() -> Result<()> {
         }
         return Ok(());
     }
+    if let Some(parts) = &opts.parts {
+        let output = opts
+            .output
+            .as_deref()
+            .filter(|o| o.extension().is_some_and(|x| x == "mp4"))
+            .ok_or_else(|| anyhow!("--parts requires an .mp4 --output"))?;
+        let start = Instant::now();
+        assemble_parts(&composition, parts, output, opts.audio_bitrate * 1000)?;
+        println!(
+            "assembled {} parts | {:.3} s",
+            parts.len(),
+            start.elapsed().as_secs_f64()
+        );
+        return Ok(());
+    }
     let mut renderer = match opts.size {
         Some(size) => Renderer::with_output_size(&composition, size)?,
         None => Renderer::new(&composition, opts.scale.unwrap_or(1.0))?,
@@ -336,13 +440,34 @@ fn main() -> Result<()> {
             .output
             .as_deref()
             .ok_or_else(|| anyhow!("render requires --output"))?;
-        match output.extension().and_then(|x| x.to_str()) {
-            Some("png") => aether_motion::cli::render_cmd::write_png(
-                &mut renderer,
-                output,
-                opts.frame.unwrap_or(0),
-                opts.fps,
-            )?,
+        let extension = output.extension().and_then(|x| x.to_str());
+        if opts.segments.is_some() != (extension == Some(PART_EXTENSION)) {
+            bail!("--segments and an .{PART_EXTENSION} --output go together");
+        }
+        if opts.frames.is_some() && extension != Some("png") {
+            bail!("--frames only applies to PNG");
+        }
+        match extension {
+            Some("png") => match &opts.frames {
+                Some(list) => write_pngs(&mut renderer, output, list, opts.frame, opts.fps)?,
+                None => aether_motion::cli::render_cmd::write_png(
+                    &mut renderer,
+                    output,
+                    opts.frame.unwrap_or(0),
+                    opts.fps,
+                )?,
+            },
+            Some(PART_EXTENSION) => {
+                if opts.frame.is_some() || opts.encoder != "native" {
+                    bail!("part files use the native encoder and take no --frame");
+                }
+                let options = EncodeOptions {
+                    quality: opts.quality,
+                    ..EncodeOptions::new(opts.fps, opts.threads)
+                };
+                let segments = opts.segments.clone().unwrap_or_default();
+                render_part(&mut renderer, output, &options, segments)?;
+            }
             Some("mp4") => {
                 if opts.frame.is_some() {
                     bail!("--frame only applies to PNG");
@@ -361,7 +486,7 @@ fn main() -> Result<()> {
                     mp4_ffmpeg(&mut renderer, output, opts.fps, opts.threads, opts.quality)?;
                 }
             }
-            _ => bail!("output must end in .png or .mp4"),
+            _ => bail!("output must end in .png, .mp4, or .{PART_EXTENSION}"),
         }
     }
     let elapsed = start.elapsed().as_secs_f64();
