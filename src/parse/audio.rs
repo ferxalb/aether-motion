@@ -1,7 +1,9 @@
 //! `<audio>` parsing: turns an element into a pending `AudioClip`. Audio is not part of the
 //! element tree (no layout, no painting); its start is resolved with the other clips' timeline.
-//! `data-hf-speed` and `data-hf-speed-ramp` are read by `parse/speed.rs`.
+//! `data-hf-speed` and `data-hf-speed-ramp` are read by `parse/speed.rs`, and the effect
+//! attributes (`data-hf-volume-ramp`, `data-hf-eq`, `data-hf-duck`) by `parse/audio_effects.rs`.
 use crate::model::AudioClip;
+use crate::parse::audio_effects::parse_audio_effects;
 use crate::parse::html::{attr, number};
 use crate::parse::speed::parse_speed;
 use anyhow::{anyhow, bail, Context, Result};
@@ -68,6 +70,7 @@ pub(in crate::parse) fn parse_audio(
                 looped,
                 loop_from: seconds("data-hf-trim-start")?.unwrap_or(0.0),
                 speed: parse_speed(node)?,
+                effects: parse_audio_effects(node)?,
             },
             start_expr: attr(node, "data-start"),
             parent,

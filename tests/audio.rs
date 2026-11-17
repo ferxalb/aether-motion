@@ -6,33 +6,11 @@ use aether_motion::audio::{aac::PRIMING, mix::frames_for};
 use aether_motion::encode::{encode_native, encode_native_with_audio};
 use aether_motion::parse::parse_file;
 use aether_motion::render::Renderer;
-use common::scratch;
+use common::{scratch, write_wav};
 use oxideav_aac::decode::StreamDecoder;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
-
-/// 16-bit PCM WAV, interleaved samples.
-fn write_wav(path: &Path, rate: u32, channels: u16, samples: &[i16]) {
-    let data_len = (samples.len() * 2) as u32;
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(b"RIFF");
-    bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
-    bytes.extend_from_slice(b"WAVEfmt ");
-    bytes.extend_from_slice(&16_u32.to_le_bytes());
-    bytes.extend_from_slice(&1_u16.to_le_bytes());
-    bytes.extend_from_slice(&channels.to_le_bytes());
-    bytes.extend_from_slice(&rate.to_le_bytes());
-    bytes.extend_from_slice(&(rate * u32::from(channels) * 2).to_le_bytes());
-    bytes.extend_from_slice(&(channels * 2).to_le_bytes());
-    bytes.extend_from_slice(&16_u16.to_le_bytes());
-    bytes.extend_from_slice(b"data");
-    bytes.extend_from_slice(&data_len.to_le_bytes());
-    for sample in samples {
-        bytes.extend_from_slice(&sample.to_le_bytes());
-    }
-    std::fs::write(path, bytes).unwrap();
-}
 
 /// Mono 2 kHz burst under a Hann window, `length` samples, centered at source index `center`.
 fn burst(rate: u32, seconds: f64, center: usize, length: usize) -> Vec<i16> {

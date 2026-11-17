@@ -7,8 +7,10 @@
 //! (0 to 8), `data-hf-fade-in`/`data-hf-fade-out`, and `data-hf-speed` or `data-hf-speed-ramp`
 //! (see `parse/speed.rs`). Unless `muted`, the source's audio track becomes an `AudioClip` that
 //! plays with the clip, trimmed by `data-media-start`, at the same speed as the picture, and loops
-//! over the whole source like the picture.
+//! over the whole source like the picture. Its sound takes the audio effect attributes
+//! (`data-hf-volume-ramp`, `data-hf-eq`, `data-hf-duck`; see `parse/audio_effects.rs`).
 use crate::model::{AudioClip, VideoSource};
+use crate::parse::audio_effects::parse_audio_effects;
 use crate::parse::html::{attr, number};
 use crate::parse::speed::parse_speed;
 use crate::video::VideoIndex;
@@ -97,6 +99,7 @@ pub(in crate::parse) fn parse_video(
             }
         },
     };
+    let effects = parse_audio_effects(node)?;
     let audio = if index.has_audio && !flag(node, "muted")? {
         let seconds = |name: &str| -> Result<f64> {
             Ok(attr(node, name)
@@ -123,7 +126,10 @@ pub(in crate::parse) fn parse_video(
             looped,
             loop_from: 0.0,
             speed: speed.clone(),
+            effects,
         })
+    } else if !effects.is_empty() {
+        bail!("data-hf-volume-ramp, data-hf-eq, and data-hf-duck need sound: this <video> is muted or has no AAC audio track");
     } else {
         None
     };

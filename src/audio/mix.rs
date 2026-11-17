@@ -5,13 +5,16 @@
 //! Fades are linear in amplitude and evaluated per sample. Mono sources play on both channels at
 //! unity gain. Mixing is plain summation in `f32` in document order, so output is deterministic.
 //! Clips with `data-hf-speed` or `data-hf-speed-ramp` read the source through `varispeed`; clips at
-//! 1x keep the direct sample copy.
+//! 1x keep the direct sample copy. Clips with effects (`data-hf-volume-ramp`, `data-hf-eq`,
+//! `data-hf-duck`) run through `effects::Chain`; ducked clips are mixed after their triggers.
 use super::decode::{decode_file, Pcm};
+use super::effects::duck::{self, Key};
+use super::effects::Chain;
 use super::resample::resample;
 use super::varispeed::{Edge, Varispeed, SILENT_BELOW};
 use super::SAMPLE_RATE;
 use crate::model::{AudioClip, Composition};
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -49,6 +52,8 @@ pub struct ClipReport {
     pub media_seconds: f64,
     /// The clip's speed curve as `check` reports it; `None` at 1x.
     pub speed: Option<serde_json::Value>,
+    /// Volume automation, equalizer, and ducking as `check` reports them; `None` without effects.
+    pub effects: Option<serde_json::Value>,
 }
 
 /// The mixed timeline: left and right planes of the same length.
@@ -92,6 +97,9 @@ fn load(path: &PathBuf, cache: &mut HashMap<PathBuf, Source>) -> Result<()> {
 }
 
 /// Mixes the composition's clips into exactly `total_frames` samples per channel.
+///
+/// Clips are mixed in document order, except that every clip another clip ducks under
+/// (`data-hf-duck`) is mixed first, so its post-effects level can key the ducking.
 pub fn mix(composition: &Composition, total_frames: usize) -> Result<Mix> {
     if total_frames == 0 || total_frames > MAX_FRAMES {
         bail!(
@@ -101,18 +109,55 @@ pub fn mix(composition: &Composition, total_frames: usize) -> Result<Mix> {
     let mut left = vec![0.0_f32; total_frames];
     let mut right = vec![0.0_f32; total_frames];
     let mut cache = HashMap::new();
-    let varispeed = composition
-        .audio
+    let audio = &composition.audio;
+    let varispeed = audio.iter().any(|c| c.speed.is_some()).then(Varispeed::new);
+    let triggers: Vec<&[usize]> = audio
         .iter()
-        .any(|c| c.speed.is_some())
-        .then(Varispeed::new);
-    let mut clips = Vec::with_capacity(composition.audio.len());
-    for clip in &composition.audio {
+        .map(|c| c.effects.duck.as_ref().map_or(&[][..], |d| &d.sources[..]))
+        .collect();
+    let order = duck::processing_order(&triggers).map_err(|i| {
+        anyhow!(
+            "audio clip {}: data-hf-duck forms a cycle",
+            label(&audio[i])
+        )
+    })?;
+    let keyed: Vec<bool> = (0..audio.len())
+        .map(|i| triggers.iter().any(|t| t.contains(&i)))
+        .collect();
+    let mut keys: HashMap<usize, Key> = HashMap::new();
+    let mut reports: Vec<Option<ClipReport>> = vec![None; audio.len()];
+    for index in order {
+        let clip = &audio[index];
         load(&clip.src, &mut cache)?;
         let source = &cache[&clip.src];
-        let report = add_clip(clip, source, varispeed.as_ref(), &mut left, &mut right)
-            .with_context(|| format!("audio clip {}", clip.id.as_deref().unwrap_or("no id")))?;
-        clips.push(report);
+        let mut key = keyed[index].then(Vec::new);
+        let report = (|| -> Result<ClipReport> {
+            let placement = place(clip, source, total_frames)?;
+            let envelope = clip.effects.duck.as_ref().map(|d| {
+                let sources: Vec<&Key> = d.sources.iter().map(|s| &keys[s]).collect();
+                d.envelope(&sources, placement.start, placement.length, total_frames)
+            });
+            if let Some(key) = &mut key {
+                key.resize(placement.length, 0.0);
+            }
+            let start = placement.start;
+            let report = render(
+                clip,
+                source,
+                &placement,
+                varispeed.as_ref(),
+                envelope,
+                key.as_deref_mut(),
+                &mut left,
+                &mut right,
+            )?;
+            if let Some(level) = key.take() {
+                keys.insert(index, Key { start, level });
+            }
+            Ok(report)
+        })()
+        .with_context(|| format!("audio clip {}", label(clip)))?;
+        reports[index] = Some(report);
     }
     let (mut peak, mut clipped) = (0.0_f32, 0);
     for (l, r) in left.iter().zip(&right) {
@@ -125,18 +170,30 @@ pub fn mix(composition: &Composition, total_frames: usize) -> Result<Mix> {
         right,
         peak,
         clipped,
-        clips,
+        clips: reports
+            .into_iter()
+            .map(|r| r.expect("every clip is mixed"))
+            .collect(),
     })
 }
 
-fn add_clip(
-    clip: &AudioClip,
-    source: &Source,
-    varispeed: Option<&Varispeed>,
-    left: &mut [f32],
-    right: &mut [f32],
-) -> Result<ClipReport> {
-    let total = left.len();
+fn label(clip: &AudioClip) -> &str {
+    clip.id.as_deref().unwrap_or("no id")
+}
+
+/// Where one clip plays on the timeline and which source samples it reads, in mix samples.
+struct Placement {
+    start: usize,
+    trim: usize,
+    length: usize,
+    /// Source samples after the trim.
+    available: usize,
+    /// Loop passes restart at `loop_start` (never after the trim) and run to the source end.
+    loop_start: usize,
+    loop_span: usize,
+}
+
+fn place(clip: &AudioClip, source: &Source, total: usize) -> Result<Placement> {
     let start = frames_for(clip.start);
     let trim = frames_for(clip.trim);
     if start >= total {
@@ -150,16 +207,7 @@ fn add_clip(
         );
     }
     let available = source.frames() - trim;
-    // Loop passes restart at `loop_from` (never after the trim) and run to the source end.
     let loop_start = frames_for(clip.loop_from).min(trim);
-    let loop_span = source.frames() - loop_start;
-    let wrap = |position: f64| {
-        if clip.looped && position >= source.frames() as f64 {
-            loop_start as f64 + (position - loop_start as f64) % loop_span as f64
-        } else {
-            position
-        }
-    };
     let rate = f64::from(SAMPLE_RATE);
     let length = match (clip.duration, &clip.speed) {
         (Some(duration), _) => frames_for(clip.start + duration).saturating_sub(start),
@@ -172,6 +220,58 @@ fn add_clip(
         },
     }
     .min(total - start);
+    Ok(Placement {
+        start,
+        trim,
+        length,
+        available,
+        loop_start,
+        loop_span: source.frames() - loop_start,
+    })
+}
+
+/// Mixes one clip without ducking (used by the unit tests).
+#[cfg(test)]
+fn add_clip(
+    clip: &AudioClip,
+    source: &Source,
+    varispeed: Option<&Varispeed>,
+    left: &mut [f32],
+    right: &mut [f32],
+) -> Result<ClipReport> {
+    let placement = place(clip, source, left.len())?;
+    render(clip, source, &placement, varispeed, None, None, left, right)
+}
+
+/// Adds one placed clip to the mix through its effect chain; when `key` is given, also records the
+/// clip's post-effects level (louder channel) for the clips it ducks.
+#[allow(clippy::too_many_arguments)]
+fn render(
+    clip: &AudioClip,
+    source: &Source,
+    placement: &Placement,
+    varispeed: Option<&Varispeed>,
+    envelope: Option<duck::Envelope>,
+    mut key: Option<&mut [f32]>,
+    left: &mut [f32],
+    right: &mut [f32],
+) -> Result<ClipReport> {
+    let &Placement {
+        start,
+        trim,
+        length,
+        available,
+        loop_start,
+        loop_span,
+    } = placement;
+    let wrap = |position: f64| {
+        if clip.looped && position >= source.frames() as f64 {
+            loop_start as f64 + (position - loop_start as f64) % loop_span as f64
+        } else {
+            position
+        }
+    };
+    let rate = f64::from(SAMPLE_RATE);
     let (fade_in, fade_out) = (frames_for(clip.fade_in), frames_for(clip.fade_out));
     let volume = f64::from(clip.volume);
     let right_plane = source.channels.get(1).unwrap_or(&source.channels[0]);
@@ -185,6 +285,36 @@ fn add_clip(
         }
         gain
     };
+    let mut effects_report = serde_json::Map::new();
+    if let Some(curve) = &clip.effects.volume {
+        effects_report.insert("volumeRamp".into(), curve.to_json());
+    }
+    if let Some(eq) = &clip.effects.eq {
+        effects_report.insert("eq".into(), eq.to_json());
+    }
+    if let (Some(duck), Some(envelope)) = (&clip.effects.duck, &envelope) {
+        effects_report.insert("duck".into(), envelope.to_json(duck));
+    }
+    let mut chain = (!clip.effects.is_empty()).then(|| {
+        Chain::new(
+            &clip.effects,
+            source.channels.len() == 1,
+            envelope.map(|e| e.gains),
+        )
+    });
+    // The one place a clip sample reaches the mix: through the chain when the clip has effects,
+    // otherwise exactly the plain gain product.
+    let mut emit = |k: usize, l: f32, r: f32, gain: f64| {
+        let (l, r) = match &mut chain {
+            Some(chain) => chain.apply(k, l, r, gain),
+            None => ((f64::from(l) * gain) as f32, (f64::from(r) * gain) as f32),
+        };
+        left[start + k] += l;
+        right[start + k] += r;
+        if let Some(key) = key.as_deref_mut() {
+            key[k] = l.abs().max(r.abs());
+        }
+    };
     let report = |media_seconds: f64| ClipReport {
         id: clip.id.clone(),
         src: clip.src.clone(),
@@ -195,6 +325,7 @@ fn add_clip(
         frames: length,
         media_seconds,
         speed: clip.speed.as_ref().map(|curve| curve.to_json()),
+        effects: (!effects_report.is_empty()).then(|| effects_report.clone().into()),
     };
     if let Some(curve) = &clip.speed {
         let varispeed = varispeed.expect("the mixer builds a varispeed reader for speed clips");
@@ -225,8 +356,7 @@ fn add_clip(
                 speed,
                 edge,
             );
-            left[start + k] += (f64::from(l) * gain) as f32;
-            right[start + k] += (f64::from(r) * gain) as f32;
+            emit(k, l, r, gain);
         }
         let end = if length == 0 {
             0.0
@@ -247,9 +377,7 @@ fn add_clip(
         } else {
             break;
         };
-        let gain = fade(k);
-        left[start + k] += (f64::from(source.channels[0][index]) * gain) as f32;
-        right[start + k] += (f64::from(right_plane[index]) * gain) as f32;
+        emit(k, source.channels[0][index], right_plane[index], fade(k));
     }
     let played = if clip.looped {
         length
@@ -283,6 +411,7 @@ mod tests {
             looped: false,
             loop_from: 0.0,
             speed: None,
+            effects: Default::default(),
         }
     }
 

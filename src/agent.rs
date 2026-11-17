@@ -60,6 +60,12 @@ fn fix_hint(message: &str) -> &'static str {
         "use a supported CSS value; see the contract in AGENTS.md"
     } else if message.contains("could not read image") || message.contains("local images") {
         "make sure the PNG, JPEG, or WebP file exists and that src is relative to the HTML file"
+    } else if message.contains("data-hf-duck") {
+        "on the music clip set data-hf-duck=\"<voice id>[,<id>]\" naming <audio> or unmuted <video> clips with ids; optional data-hf-duck-amount (dB, 0 to 60, default 12), -threshold (dBFS, -90 to 0, default -40), -attack (look-ahead seconds, default 0.15), -hold (default 0.15), and -release (default 0.5), times 0 to 5; no self references or cycles"
+    } else if message.contains("data-hf-eq") {
+        "use data-hf-eq=voice|music-bed|telephone|warm|bright or a JSON band list such as '[{\"type\":\"highpass\",\"freq\":80},{\"type\":\"peak\",\"freq\":3000,\"gain\":3,\"q\":1}]' (types highpass, lowpass, bandpass, notch, peak, lowshelf, highshelf; freq 10 to 20000 Hz; gain -24 to 24 dB for peak and shelves only; q 0.1 to 30; at most 16 bands)"
+    } else if message.contains("data-hf-volume-ramp") {
+        "use data-hf-volume-ramp='[{\"at\":0,\"volume\":1},{\"at\":2,\"db\":-12,\"easing\":\"ease-in-out\"}]': at in clip seconds, strictly increasing (0 to 3600); volume 0 to 8 or db up to +18 (not both); omitted values inherit; it multiplies data-volume and the fades"
     } else if message.contains("<video>") {
         "use <video src=\"clip.mp4\" muted data-start=\"0\" data-duration=\"4\" style=\"width:..px;height:..px\"> with a local H.264 MP4 (closed GOPs, not fragmented, not mirrored), optional data-media-start, muted, data-volume, loop (needs data-duration), and data-hf-speed=\"0.5\" (0.05 to 16) or data-hf-speed-ramp='[{\"at\":0,\"speed\":1},{\"at\":1,\"speed\":0.25,\"easing\":\"ease-in-out\"}]' (speed 0 to 16, at strictly increasing); its AAC track plays unless muted; re-encode with `ffmpeg -i in -c:v libx264 -x264-params open-gop=0 -an out.mp4` if needed"
     } else if message.contains("audio")
@@ -159,6 +165,7 @@ fn check_audio(c: &Composition) -> Result<Value> {
                 "end": (clip.start_frame + clip.frames) as f64 / rate,
                 "mediaSeconds": clip.media_seconds,
                 "speed": clip.speed,
+                "effects": clip.effects,
             })
         })
         .collect();

@@ -6,6 +6,7 @@
 
 mod animation;
 mod audio;
+mod audio_effects;
 mod captions;
 mod counter;
 mod css;
@@ -146,6 +147,7 @@ pub fn parse_file_with(path: &Path, values: &VariableValues) -> Result<Compositi
         )?;
         audio.push(clip);
     }
+    audio_effects::resolve_ducking(&mut audio)?;
     let explicit_duration = attr(metadata.as_node(), "data-duration")
         .map(|s| number(&s, "data-duration"))
         .transpose()?;

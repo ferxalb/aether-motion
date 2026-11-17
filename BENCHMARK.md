@@ -742,3 +742,28 @@ before the effects work. Parse cost: `inspect examples/premium-promo.html`, mean
 the reference build and 4 ms with this one (process start included; the difference is noise).
 `examples/variables.html` renders one 960x540 frame in 0.05 to 0.07 s with its defaults, with
 `examples/variables.json`, and with an inline `--variables` object.
+
+## Audio effects (2026-11-17)
+
+Volume automation, equalizer, and ducking run on the calling thread during the mix, before encoding;
+nothing in the per-frame path changed, and clips without effects take the unchanged sample copy (a test
+checks that a neutral `data-hf-volume-ramp` gives a byte-identical mix).
+
+Method: `check --safe-zone off` (decode, resample, mix, no encoding) of a 600 s composition with the
+`examples/audio` voice (16 kHz mono) and music (22.05 kHz stereo) looped over the whole timeline, so each
+effect processes 28.8 million samples per channel. Three runs each, one thread, release build:
+
+| Variant | Before optimization | After |
+| --- | --- | --- |
+| No effects | 1.12–1.18 s | 1.15–1.25 s |
+| `data-hf-eq` on both clips (4 + 3 bands) | 2.17 s | 1.67–1.82 s |
+| `data-hf-duck` on the music | 1.99 s | 1.80–1.88 s |
+| `data-hf-volume-ramp`, one `ease-out-cubic` segment over 600 s | 14.07 s | 1.98–2.00 s |
+| All three (the `examples/audio-effects.html` setup) | 3.09–3.36 s | 2.57–2.71 s |
+
+The first version evaluated the automation curve per sample, and a `cubic-bezier` easing costs a numeric
+solve per call (about 450 ns). The curve is now read at control rate: every 32 samples (1.5 kHz) with
+linear interpolation inside the block, which is exact on held and linear segments; a segment whose two
+gains are equal skips the easing. Ducking gains use one `exp` per ramp sample instead of `powf`, and the
+equalizer flushes tiny filter states once per block instead of branching per sample. With every effect
+on, the mix costs about 0.4% of real time on one core.
