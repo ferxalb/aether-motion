@@ -196,6 +196,13 @@ impl<'a> Renderer<'a> {
                 element.style.object_fit.as_deref().unwrap_or("fill"),
                 alpha,
             )?,
+            Content::DrawnSvg(drawing) => self.draw_drawn_svg(
+                idx,
+                drawing,
+                rect,
+                element.style.object_fit.as_deref().unwrap_or("fill"),
+                alpha,
+            )?,
             Content::Video(source) => self.draw_video(
                 idx,
                 source,

@@ -391,6 +391,8 @@ pub enum Content {
     InlineSvg(std::sync::Arc<str>),
     /// A local H.264 video drawn one source frame per output frame.
     Video(VideoSource),
+    /// Inline `<svg>` with `data-hf-draw`: strokes reveal themselves over time.
+    DrawnSvg(std::sync::Arc<crate::vector::DrawOnSvg>),
 }
 
 /// A `<video>` clip: which file, where in it playback starts, and its frame table.
@@ -776,6 +778,8 @@ pub struct Motion {
     pub filter: FilterMotion,
     /// Animated tint, glitch, and channel split.
     pub fx: FxMotion,
+    /// `data-hf-motion-path`: an offset (and optional turn) along a vector path.
+    pub path: Option<std::sync::Arc<MotionPath>>,
     /// Animated `clip-path` parameters (one track per [`ClipPath::params`] entry, in its unit);
     /// empty when the clip path is static. Always holds its first and last values.
     pub clip: Vec<Track>,
@@ -827,6 +831,42 @@ pub struct FxMotion {
     pub rgb_split: Track,
 }
 
+/// `data-hf-motion-path`: the element travels along a path, offset by the path's displacement from
+/// its first point, so it starts where it rests.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MotionPath {
+    pub measure: crate::vector::PathMeasure,
+    /// Seconds from the clip start at which the travel starts.
+    pub at: f64,
+    /// Seconds the travel takes.
+    pub duration: f64,
+    pub easing: Easing,
+    /// `Some(offset)`: the element turns with the path's direction plus `offset` degrees.
+    pub rotate: Option<f32>,
+}
+
+impl MotionPath {
+    /// `(dx, dy, turn)` `elapsed` seconds after the clip start; the ends hold outside the travel.
+    pub fn offset(&self, elapsed: f64) -> (f32, f32, f32) {
+        let linear = if self.duration <= 0.0 {
+            if elapsed >= self.at {
+                1.0
+            } else {
+                0.0
+            }
+        } else {
+            ((elapsed - self.at) / self.duration).clamp(0.0, 1.0) as f32
+        };
+        // Overshooting easings may run past the ends; the path clamps there.
+        let (x, y, angle) = self
+            .measure
+            .sample(self.easing.apply(linear) * self.measure.length());
+        let (x0, y0) = self.measure.start();
+        let turn = self.rotate.map_or(0.0, |offset| angle + offset);
+        (x - x0, y - y0, turn)
+    }
+}
+
 /// Rate at which the glitch pattern changes, independent of the output frame rate.
 pub const GLITCH_RATE: f64 = 24.0;
 
@@ -867,8 +907,26 @@ impl Motion {
         Some(base.with_values(&values))
     }
 
+    /// Whether the element can be drawn rotated (static, animated, or turning along a path).
+    pub fn rotates(&self) -> bool {
+        self.base.rotate != 0.0
+            || !self.rotate.0.is_empty()
+            || self.path.as_ref().is_some_and(|path| path.rotate.is_some())
+    }
+
     pub fn pose(&self, elapsed: f64) -> Pose {
         let (b, hb, ha) = (self.base, self.hold_before, self.hold_after);
+        let mut pose = self.track_pose(elapsed, b, hb, ha);
+        if let Some(path) = &self.path {
+            let (dx, dy, turn) = path.offset(elapsed);
+            pose.x += dx;
+            pose.y += dy;
+            pose.rotate += turn;
+        }
+        pose
+    }
+
+    fn track_pose(&self, elapsed: f64, b: Pose, hb: bool, ha: bool) -> Pose {
         Pose {
             x: self.x.eval(elapsed, b.x, hb, ha),
             y: self.y.eval(elapsed, b.y, hb, ha),
@@ -893,6 +951,7 @@ impl Motion {
             && self.filter.is_static()
             && self.fx.is_static()
             && self.clip.is_empty()
+            && self.path.is_none()
     }
 
     /// Sorted, distinct point times across all channels.
@@ -910,6 +969,11 @@ impl Motion {
         .chain(self.fx.tracks())
         .chain(&self.clip)
         .flat_map(|track| track.0.iter().map(|point| point.at))
+        .chain(
+            self.path
+                .iter()
+                .flat_map(|path| [path.at, path.at + path.duration]),
+        )
         .collect();
         times.sort_by(f64::total_cmp);
         times.dedup();

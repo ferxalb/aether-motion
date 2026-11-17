@@ -19,6 +19,7 @@ mod transition;
 mod tree;
 mod values;
 mod variables;
+mod vector;
 mod video;
 
 pub use values::color::parse_color;
@@ -172,7 +173,10 @@ pub fn parse_file_with(path: &Path, values: &VariableValues) -> Result<Compositi
             p.duration
                 .or_else(|| {
                     if p.start_expr.is_some()
-                        && matches!(p.element.content, Content::Image(_) | Content::InlineSvg(_))
+                        && matches!(
+                            p.element.content,
+                            Content::Image(_) | Content::InlineSvg(_) | Content::DrawnSvg(_)
+                        )
                     {
                         Some(3.0)
                     } else {
@@ -210,7 +214,10 @@ pub fn parse_file_with(path: &Path, values: &VariableValues) -> Result<Compositi
         p.element.end = if let Some(d) = p.duration {
             p.element.start + d
         } else if p.start_expr.is_some()
-            && matches!(p.element.content, Content::Image(_) | Content::InlineSvg(_))
+            && matches!(
+                p.element.content,
+                Content::Image(_) | Content::InlineSvg(_) | Content::DrawnSvg(_)
+            )
         {
             p.element.start + 3.0
         } else {
@@ -259,6 +266,20 @@ pub fn parse_file_with(path: &Path, values: &VariableValues) -> Result<Compositi
             }
             p.element.motion = motion_from_camera(rest, &p.camera);
         }
+        if let Some(path) = p.motion_path.take() {
+            if idx == 0 {
+                bail!("data-hf-motion-path cannot be on the root; add a container inside it");
+            }
+            if path.at + path.duration > clip_len + 1e-9 {
+                bail!("data-hf-motion-path exceeds the duration of {label}");
+            }
+            p.element.motion.path = Some(std::sync::Arc::new(path));
+        }
+        if let Content::DrawnSvg(drawing) = &p.element.content {
+            if drawing.end() > clip_len + 1e-9 {
+                bail!("data-hf-draw on {label} ends at {:.2}s, after the clip ({clip_len:.2}s); shorten -duration or -stagger", drawing.end());
+            }
+        }
         order_animated_filters(&mut p.element, idx == 0)
             .with_context(|| format!("animated filter on {label}"))?;
         if idx == 0 {
@@ -291,7 +312,7 @@ pub fn parse_file_with(path: &Path, values: &VariableValues) -> Result<Compositi
             if spec.end() > clip_len + 1e-9 {
                 bail!("data-hf-reveal exceeds the duration of {label}");
             }
-            if p.element.style.rotate != 0.0 || !p.element.motion.rotate.0.is_empty() {
+            if p.element.style.rotate != 0.0 || p.element.motion.rotates() {
                 bail!("data-hf-reveal cannot be combined with rotate on {label}");
             }
             spec.apply(&mut p.element.motion);
@@ -410,10 +431,7 @@ fn check_clip_and_mask(element: &crate::model::Element, root: bool) -> Result<()
     if root {
         bail!("not supported on the root; add a full-size container inside it");
     }
-    if style.rotate != 0.0
-        || element.motion.base.rotate != 0.0
-        || !element.motion.rotate.0.is_empty()
-    {
+    if style.rotate != 0.0 || element.motion.rotates() {
         bail!("cannot be combined with rotate on the same element; wrap the rotated element in a container");
     }
     if style.blend != BlendMode::Normal {
@@ -438,8 +456,7 @@ fn check_blend_isolation(elements: &[crate::model::Element]) -> Result<()> {
                 || (idx != 0
                     && (!ancestor.motion.filter.is_static()
                         || style.rotate != 0.0
-                        || ancestor.motion.base.rotate != 0.0
-                        || !ancestor.motion.rotate.0.is_empty()
+                        || ancestor.motion.rotates()
                         || ancestor.motion.wipe.is_some()
                         || style.filter_blur > 0.0
                         || !style.filter_colors.is_empty()

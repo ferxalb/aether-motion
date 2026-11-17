@@ -115,6 +115,7 @@ pub(in crate::parse) fn build_motion(
         },
         fx: FxMotion::default(),
         clip: Vec::new(),
+        path: None,
         hold_before: decl.backwards,
         hold_after: decl.forwards,
     })
@@ -209,6 +210,7 @@ pub(in crate::parse) fn motion_from_keyframes(
         filter: filter_from_keyframes(filter_base, frames),
         fx: fx_from_keyframes(frames),
         clip: Vec::new(),
+        path: None,
         hold_before: true,
         hold_after: true,
     }

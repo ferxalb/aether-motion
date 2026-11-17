@@ -374,6 +374,7 @@ mod tests {
             transition: None,
             reveal: None,
             animation: None,
+            motion_path: None,
         };
         let mut out = vec![host];
         spec(mode).expand(0, &Style::default(), &mut out).unwrap();

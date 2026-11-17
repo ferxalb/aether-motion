@@ -343,7 +343,7 @@ pub(in crate::parse) fn apply_transitions(
             }
             Kind::Cover(dir) => enter(&mut inc, dir),
             Kind::Wipe(dir) => {
-                if elements[b].style.rotate != 0.0 {
+                if elements[b].style.rotate != 0.0 || elements[b].motion.rotates() {
                     bail!("transition {label_b}: a wipe cannot be combined with rotate");
                 }
                 // An edge travelling left uncovers the incoming scene from its right side.

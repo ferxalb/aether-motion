@@ -21,6 +21,10 @@ fn fix_hint(message: &str) -> &'static str {
         || message.contains(": variable ")
     {
         "declare data-composition-variables='[{\"id\":\"title\",\"type\":\"string\",\"label\":\"Title\",\"default\":\"Hello\"}]' on <html> or the composition root (types string, number, color, boolean, enum, image, font); bind with var(--id) in CSS, data-var-text, data-var-src (img, video, audio, source), or data-var-if (id, !id, id=value, id!=value); pass values as a JSON object of declared ids with matching types"
+    } else if message.contains("data-hf-draw") {
+        "put data-hf-draw on an inline <svg> with stroked shapes, with optional data-hf-draw-at, -duration (per shape), -stagger, and -easing; the drawing must end inside the clip"
+    } else if message.contains("data-hf-motion-path") {
+        "use data-hf-motion-path=\"M0 0 C ...\" (SVG path data in composition px; the element moves by the path's displacement from its first point) with optional -at, -duration, -easing, and -rotate=\"auto\"; it must end inside the clip, and -rotate cannot be combined with clip-path, mask-image, or data-hf-reveal"
     } else if message.contains("data-hf-reveal") {
         "use data-hf-reveal=from-left|from-right|from-top|from-bottom on a non-root element, with optional data-hf-reveal-at, -duration, and -easing; not with rotate"
     } else if message.contains("data-hf-counter") {

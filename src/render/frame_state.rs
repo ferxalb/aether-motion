@@ -64,6 +64,7 @@ impl FrameState {
             reveal: pose.reveal,
             media: match &element.content {
                 Content::Video(video) => video.frame_at(time - element.start) as u32,
+                Content::DrawnSvg(drawing) => drawing.key(time - element.start),
                 _ => 0,
             },
             filters,

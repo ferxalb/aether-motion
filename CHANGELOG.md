@@ -9,6 +9,9 @@ CLI/MCP output may still change between minor releases.
 
 ### Added
 
+- `data-hf-draw` on inline `<svg>`: strokes draw themselves along their measured length, staggered in
+  document order. `data-hf-motion-path`: any element travels along SVG path data (arcs included), with
+  optional `-rotate="auto"`. A new `vector` module measures paths. See `examples/vector-motion.html`.
 - `clip-path` with `inset()`, `circle()`, `ellipse()`, and `polygon()` (px or %), drawn with exact
   antialiased coverage and animated through `clipPath` in `data-hf-keyframes`; `mask-image` with a linear
   or radial gradient. Both apply after the element's `filter`. See `examples/clip-mask.html`.

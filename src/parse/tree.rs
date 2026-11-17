@@ -12,6 +12,7 @@ use crate::parse::html::{attr, direct_text, number};
 use crate::parse::split::parse_split;
 use crate::parse::style::{style_for, Resolved};
 use crate::parse::transition::{parse_transition, TransitionSpec};
+use crate::parse::vector::{parse_motion_path, prepare_draw};
 use crate::parse::video::parse_video;
 use anyhow::{anyhow, bail, Context, Result};
 use kuchiki::NodeRef;
@@ -27,6 +28,7 @@ pub(in crate::parse) struct Pending {
     pub(in crate::parse) transition: Option<TransitionSpec>,
     pub(in crate::parse) reveal: Option<RevealSpec>,
     pub(in crate::parse) animation: Option<AnimationSpec>,
+    pub(in crate::parse) motion_path: Option<crate::model::MotionPath>,
 }
 
 pub(in crate::parse) fn walk(
@@ -139,8 +141,21 @@ pub(in crate::parse) fn walk(
         .unwrap_or(0);
     let mut video_length = None;
     let mut video_audio = None;
+    let motion_path = parse_motion_path(node).with_context(|| {
+        format!(
+            "data-hf-motion-path on <{tag}> ({})",
+            attr(node, "id").as_deref().unwrap_or("no id")
+        )
+    })?;
+    let draw = prepare_draw(node, &tag)?;
     let content = if tag == "svg" {
-        Content::InlineSvg(inline_svg_markup(node)?.into())
+        let markup = inline_svg_markup(node)?;
+        match draw {
+            Some((ids, timing)) => Content::DrawnSvg(std::sync::Arc::new(
+                crate::vector::DrawOnSvg::new(&markup, &ids, timing)?,
+            )),
+            None => Content::InlineSvg(markup.into()),
+        }
     } else if tag == "img" {
         let src = attr(node, "src").ok_or_else(|| anyhow!("<img> requires src"))?;
         if src.starts_with("data:") || src.contains("://") {
@@ -274,6 +289,7 @@ pub(in crate::parse) fn walk(
         transition,
         reveal,
         animation,
+        motion_path,
     });
     if let Some(parent_idx) = parent {
         out[parent_idx].element.children.push(idx);
@@ -299,7 +315,7 @@ pub(in crate::parse) fn walk(
     // SVG children belong to the vector graphic, and `<source>` children to the video.
     if matches!(
         out[idx].element.content,
-        Content::InlineSvg(_) | Content::Video(_)
+        Content::InlineSvg(_) | Content::DrawnSvg(_) | Content::Video(_)
     ) {
         return Ok(());
     }
