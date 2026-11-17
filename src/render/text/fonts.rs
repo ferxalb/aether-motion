@@ -4,12 +4,27 @@
 //! generic families (`sans-serif`, `serif`, `monospace`) and the final fallback, so text that does
 //! not name an installed font renders identically on every machine. Named families still resolve
 //! against the system fonts.
+//!
+//! A request names a family list, a weight, and whether the text is italic. When no italic face of
+//! the family is installed (the embedded Roboto has none) the upright face is used and the request
+//! is marked for a synthetic oblique (see `oblique.rs`), as browsers do. Each loaded face also carries
+//! its pair [`Kerning`].
 
+use crate::render::text::kerning::Kerning;
 use anyhow::{anyhow, Result};
-use fontdb::{Database, Family, Query, Weight};
+use fontdb::{Database, Family, Query, Style, Weight};
 use fontdue::{Font, FontSettings};
 use std::collections::HashMap;
 use std::sync::Arc;
+
+/// The face a run of text asks for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(in crate::render) struct FontRequest<'a> {
+    /// A CSS family list.
+    pub(in crate::render) family: &'a str,
+    pub(in crate::render) weight: u16,
+    pub(in crate::render) italic: bool,
+}
 
 /// Family name of the embedded fonts, used for every generic family.
 const EMBEDDED_FAMILY: &str = "Roboto";
@@ -25,11 +40,15 @@ struct Loaded {
     font: Font,
     data: Arc<Vec<u8>>,
     index: u32,
+    /// Italic was requested but the face is upright: slant it synthetically.
+    synthetic_oblique: bool,
+    kerning: Kerning,
 }
 
-/// Font index plus the parsed fonts requested so far, keyed by the CSS family list and weight.
+/// Font index plus the parsed fonts requested so far, keyed by the CSS family list, weight, and
+/// italic flag.
 pub(in crate::render) struct FontStore {
-    fonts: HashMap<(String, u16), Loaded>,
+    fonts: HashMap<(String, u16, bool), Loaded>,
     db: Database,
 }
 
@@ -63,30 +82,58 @@ impl FontStore {
     }
 
     /// Resolves the first available family of a CSS list, falling back to `sans-serif`.
-    pub(in crate::render) fn get(&mut self, family: &str, weight: u16) -> Result<&Font> {
-        Ok(&self.load(family, weight)?.font)
+    pub(in crate::render) fn get(&mut self, request: FontRequest) -> Result<&Font> {
+        Ok(&self.load(request)?.font)
     }
 
     /// A font already resolved by [`Self::get`].
-    pub(in crate::render) fn loaded(&self, family: &str, weight: u16) -> Option<&Font> {
-        self.fonts
-            .get(&(family.to_string(), weight))
-            .map(|loaded| &loaded.font)
+    pub(in crate::render) fn loaded(&self, request: FontRequest) -> Option<&Font> {
+        self.fonts.get(&key(request)).map(|loaded| &loaded.font)
+    }
+
+    /// Whether a resolved request is drawn with a synthetic oblique (italic asked, upright face).
+    pub(in crate::render) fn synthetic_oblique(&mut self, request: FontRequest) -> Result<bool> {
+        Ok(self.load(request)?.synthetic_oblique)
     }
 
     /// Face bytes and collection index of a font, for outline access.
     pub(in crate::render) fn face_data(
         &mut self,
-        family: &str,
-        weight: u16,
+        request: FontRequest,
     ) -> Result<(Arc<Vec<u8>>, u32)> {
-        let loaded = self.load(family, weight)?;
+        let loaded = self.load(request)?;
         Ok((Arc::clone(&loaded.data), loaded.index))
     }
 
-    fn load(&mut self, family: &str, weight: u16) -> Result<&Loaded> {
-        let key = (family.to_string(), weight);
+    /// Pair kerning between `left` and `right` in em (see `kerning.rs`).
+    pub(in crate::render) fn kerning(
+        &mut self,
+        request: FontRequest,
+        left: char,
+        right: char,
+    ) -> Result<f32> {
+        let loaded = self.load_mut(request)?;
+        if loaded.kerning.is_empty() {
+            return Ok(0.0);
+        }
+        let face = ttf_parser::Face::parse(&loaded.data, loaded.index)
+            .map_err(|error| anyhow!("invalid font: {error}"))?;
+        Ok(loaded.kerning.pair(&face, left, right))
+    }
+
+    fn load(&mut self, request: FontRequest) -> Result<&Loaded> {
+        Ok(self.load_mut(request)?)
+    }
+
+    fn load_mut(&mut self, request: FontRequest) -> Result<&mut Loaded> {
+        let FontRequest {
+            family,
+            weight,
+            italic,
+        } = request;
+        let key = key(request);
         if !self.fonts.contains_key(&key) {
+            let style = if italic { Style::Italic } else { Style::Normal };
             let id = family.split(',').find_map(|item| {
                 let item = item.trim().trim_matches(['\'', '"']);
                 let requested = match item.to_ascii_lowercase().as_str() {
@@ -99,6 +146,7 @@ impl FontStore {
                 self.db.query(&Query {
                     families: &list,
                     weight: Weight(weight),
+                    style,
                     ..Default::default()
                 })
             });
@@ -108,10 +156,16 @@ impl FontStore {
                     self.db.query(&Query {
                         families: &fallback,
                         weight: Weight(weight),
+                        style,
                         ..Default::default()
                     })
                 })
                 .ok_or_else(|| anyhow!("no system font is available"))?;
+            // fontdb falls back to the nearest style; an upright face for italic text is slanted.
+            let upright = self
+                .db
+                .face(id)
+                .is_some_and(|face| face.style == Style::Normal);
             let (data, index) = self
                 .db
                 .with_face_data(id, |data, index| (Arc::new(data.to_vec()), index))
@@ -124,8 +178,25 @@ impl FontStore {
                 },
             )
             .map_err(|error| anyhow!("invalid font: {error}"))?;
-            self.fonts.insert(key.clone(), Loaded { font, data, index });
+            let kerning = Kerning::new(
+                &ttf_parser::Face::parse(&data, index)
+                    .map_err(|error| anyhow!("invalid font: {error}"))?,
+            );
+            self.fonts.insert(
+                key.clone(),
+                Loaded {
+                    font,
+                    data,
+                    index,
+                    synthetic_oblique: italic && upright,
+                    kerning,
+                },
+            );
         }
-        Ok(&self.fonts[&key])
+        Ok(self.fonts.get_mut(&key).expect("inserted above"))
     }
+}
+
+fn key(request: FontRequest) -> (String, u16, bool) {
+    (request.family.to_string(), request.weight, request.italic)
 }

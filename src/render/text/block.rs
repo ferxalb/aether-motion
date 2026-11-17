@@ -61,19 +61,24 @@ impl<'a> Renderer<'a> {
         let spans = &self.composition.elements[idx].spans;
         let styles = self.run_styles(idx);
         for style in &styles {
-            self.fonts.get(style.family, style.weight)?;
+            self.fonts.get(style.font())?;
         }
+        let kerning = self.text_kerning(idx, props.kerning, &styles)?;
         let fonts: Vec<&fontdue::Font> = styles
             .iter()
             .map(|style| {
                 self.fonts
-                    .loaded(style.family, style.weight)
+                    .loaded(style.font())
                     .expect("fonts were loaded above")
             })
             .collect();
         let advance = |offset: usize, ch: char| {
             let s = style_index(spans, offset);
-            fonts[s].metrics(ch, props.size).advance_width + styles[s].letter_spacing
+            let width = fonts[s].metrics(ch, props.size).advance_width + styles[s].letter_spacing;
+            match &kerning {
+                Some(kerning) => width + kerning[offset] * props.size,
+                None => width,
+            }
         };
         // One 1/64 px of slack keeps a block that exactly fills its box from re-wrapping.
         let slack_limit = quantized.map(|q| q.saturating_add(1) as f32 / 64.0);

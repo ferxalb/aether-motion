@@ -5,6 +5,7 @@
 //! Segment boundaries depend only on the frame rate, so any worker count or split of the segments
 //! between processes (see `parts.rs`) encodes the same frames with the same settings.
 
+use super::progress::Tracker;
 use super::{encode_one, make_encoder, Quality, Sample};
 use crate::render::Renderer;
 use anyhow::{anyhow, bail, Context, Result};
@@ -46,6 +47,7 @@ fn encode_segment(
     index: usize,
     range: Range<usize>,
     (fps, quality): (u32, Quality),
+    tracker: &Tracker<'_>,
 ) -> Result<EncodedSegment> {
     let (width, height) = renderer.dimensions();
     let dims = (width as usize, height as usize);
@@ -70,6 +72,7 @@ fn encode_segment(
             pps = nal.pps;
         }
         samples.push((nal.sample, frame_type == FrameType::IDR));
+        tracker.frame_done();
     }
     Ok(EncodedSegment {
         index,
@@ -83,13 +86,14 @@ fn encode_segment(
 
 /// Renders and encodes the segments in `segments` on up to `workers` threads and passes each one
 /// to `sink` in index order, after checking that every segment shares the first one's SPS/PPS.
-/// Returns the (rasterized, reused) frame counts.
+/// Each encoded frame is counted on `tracker`. Returns the (rasterized, reused) frame counts.
 pub(super) fn encode_segments(
     renderer: &Renderer<'_>,
     segments: Range<usize>,
     (fps, quality): (u32, Quality),
     workers: usize,
     frame_count: usize,
+    tracker: &Tracker<'_>,
     mut sink: impl FnMut(EncodedSegment) -> Result<()>,
 ) -> Result<(usize, usize)> {
     let segment_len = segment_frames(fps);
@@ -115,7 +119,8 @@ pub(super) fn encode_segments(
                     }
                     let start = index * segment_len;
                     let stop = (start + segment_len).min(frame_count);
-                    let result = encode_segment(&mut fork, index, start..stop, (fps, quality));
+                    let result =
+                        encode_segment(&mut fork, index, start..stop, (fps, quality), tracker);
                     if result.is_err() {
                         failed.store(true, Ordering::Relaxed);
                     }

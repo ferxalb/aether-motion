@@ -4,12 +4,15 @@
 //!
 //! Submodules: `segments` (the parallel pipeline of fixed one-second segments used by every render
 //! longer than a segment) and `parts` (distributed rendering: segment ranges written to part files
-//! by separate processes, then assembled into the MP4 a single-process render writes).
+//! by separate processes, then assembled into the MP4 a single-process render writes), and
+//! `progress` (throttled frame counts, throughput, and ETA for a [`ProgressObserver`]).
 
 mod parts;
+mod progress;
 mod segments;
 
-pub use parts::{assemble_parts, render_part, PART_EXTENSION};
+pub use parts::{assemble_parts, render_part, render_part_with_progress, PART_EXTENSION};
+pub use progress::{ProgressObserver, ProgressUpdate, REPORT_INTERVAL};
 pub use segments::{segment_count, segment_frames};
 
 use crate::audio::aac::AacStream;
@@ -162,6 +165,17 @@ pub fn encode_native_with_options(
     output: &Path,
     options: &EncodeOptions,
 ) -> Result<()> {
+    encode_native_with_progress(renderer, output, options, None)
+}
+
+/// [`encode_native_with_options`] that reports encoded frames to `observer` (throttled, see
+/// [`ProgressObserver`]). Progress never changes the output.
+pub fn encode_native_with_progress(
+    renderer: &mut Renderer<'_>,
+    output: &Path,
+    options: &EncodeOptions,
+    observer: Option<&dyn ProgressObserver>,
+) -> Result<()> {
     let EncodeOptions {
         fps,
         threads,
@@ -175,6 +189,8 @@ pub fn encode_native_with_options(
     let frame_count = renderer.frame_count(fps);
     let audio = audio::build_track(renderer.composition(), frame_count, fps, audio_bitrate)?;
     let audio = audio.as_ref();
+    let tracker = progress::Tracker::new(observer, frame_count);
+    let tracker = &tracker;
     let result = (|| -> Result<()> {
         if segment_count(frame_count, fps).is_some() {
             // Long enough for several independent GOPs: encode them in parallel.
@@ -185,6 +201,7 @@ pub fn encode_native_with_options(
                 threads as usize,
                 frame_count,
                 audio,
+                tracker,
             )?;
             renderer.add_stats(rasterized, reused);
         } else if threads > 1 && width as u64 * height as u64 >= 1920 * 1080 {
@@ -208,7 +225,7 @@ pub fn encode_native_with_options(
                     threads - 1,
                     frame_count,
                     receiver,
-                    audio,
+                    (audio, tracker),
                 );
                 producer
                     .join()
@@ -224,7 +241,7 @@ pub fn encode_native_with_options(
                 threads,
                 frame_count,
                 video_frames(renderer, fps),
-                audio,
+                (audio, tracker),
             )?;
         }
         fs::rename(&partial, output).context("could not save MP4")?;
@@ -461,7 +478,7 @@ fn write_video(
     threads: u32,
     frame_count: usize,
     frames: impl IntoIterator<Item = Result<Arc<YUVBuffer>>>,
-    audio: Option<&AacStream>,
+    (audio, tracker): (Option<&AacStream>, &progress::Tracker<'_>),
 ) -> Result<()> {
     let mut encoder = make_encoder(fps, threads, quality)?;
     let mut writer = None;
@@ -484,6 +501,7 @@ fn write_video(
             .unwrap()
             .video(frame, (nal.sample, frame_type == FrameType::IDR))?;
         written += 1;
+        tracker.frame_done();
     }
     if written != frame_count {
         bail!("produced {written} of {frame_count} frames");
@@ -518,6 +536,7 @@ fn write_segmented(
     workers: usize,
     frame_count: usize,
     audio: Option<&AacStream>,
+    tracker: &progress::Tracker<'_>,
 ) -> Result<(usize, usize)> {
     let segments = segment_count(frame_count, fps).unwrap_or(1);
     let dimensions = renderer.dimensions();
@@ -529,6 +548,7 @@ fn write_segmented(
         (fps, quality),
         workers,
         frame_count,
+        tracker,
         |segment| {
             let muxer = match &mut writer {
                 Some(muxer) => muxer,

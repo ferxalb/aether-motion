@@ -1,5 +1,6 @@
-//! MCP stdio server for the current stateless protocol and legacy clients.
-use crate::encode::{encode_native_with_options, EncodeOptions};
+//! MCP stdio server for the current stateless protocol and legacy clients. A `tools/call` whose
+//! `_meta` carries a `progressToken` receives `notifications/progress` while `aether_render` encodes.
+use crate::encode::{encode_native_with_progress, EncodeOptions, ProgressObserver, ProgressUpdate};
 use crate::model::Composition;
 use crate::parse::{parse_file_with, VariableValues};
 use crate::render::Renderer;
@@ -134,7 +135,7 @@ fn checked(path: &Path, args: &Value) -> Result<Value> {
     Ok(report)
 }
 
-fn call(name: &str, args: &Value) -> Result<Value> {
+fn call(name: &str, args: &Value, progress: Option<&dyn ProgressObserver>) -> Result<Value> {
     let string_arg = |key: &str| args.get(key).and_then(Value::as_str);
     let path = Path::new(string_arg("path").unwrap_or(""));
     match name {
@@ -205,7 +206,7 @@ fn call(name: &str, args: &Value) -> Result<Value> {
             let mut renderer = renderer_for(&composition, args)?;
             let started = std::time::Instant::now();
             match output.extension().and_then(|extension| extension.to_str()) {
-                Some("mp4") => encode_native_with_options(
+                Some("mp4") => encode_native_with_progress(
                     &mut renderer,
                     output,
                     &EncodeOptions {
@@ -213,6 +214,7 @@ fn call(name: &str, args: &Value) -> Result<Value> {
                         quality,
                         ..EncodeOptions::new(fps, threads)
                     },
+                    progress,
                 )?,
                 _ => {
                     return Err(anyhow!(
@@ -228,6 +230,42 @@ fn call(name: &str, args: &Value) -> Result<Value> {
             )))
         }
         _ => Err(anyhow!("unknown tool: {name}")),
+    }
+}
+
+/// Sends `notifications/progress` for a tool call whose request carried `_meta.progressToken`
+/// (a string or an integer), written to stdout between the request and its response.
+struct McpProgress {
+    token: Value,
+}
+
+impl McpProgress {
+    fn from_params(params: &Value) -> Option<Self> {
+        let token = params.get("_meta")?.get("progressToken")?;
+        (token.is_string() || token.is_i64() || token.is_u64()).then(|| Self {
+            token: token.clone(),
+        })
+    }
+
+    fn notification(&self, update: &ProgressUpdate) -> Value {
+        json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/progress",
+            "params": {
+                "progressToken": self.token,
+                "progress": update.done,
+                "total": update.total,
+                "message": update.summary().trim_start(),
+            }
+        })
+    }
+}
+
+impl ProgressObserver for McpProgress {
+    fn update(&self, update: ProgressUpdate) {
+        let mut stdout = std::io::stdout().lock();
+        let _ = writeln!(stdout, "{}", self.notification(&update));
+        let _ = stdout.flush();
     }
 }
 
@@ -278,7 +316,8 @@ fn tool_call(params: &Value) -> std::result::Result<Value, Value> {
         Some(Value::Object(_)) => params["arguments"].clone(),
         Some(_) => return Err(invalid_params("tools/call arguments must be an object")),
     };
-    let mut result = match call(name, &arguments) {
+    let reporter = McpProgress::from_params(params);
+    let mut result = match call(name, &arguments, reporter.as_ref().map(|r| r as _)) {
         Ok(result) => result,
         Err(error) => {
             json!({"content": [{"type": "text", "text": format!("{error:#}")}], "isError": true})
@@ -331,7 +370,8 @@ fn legacy_dispatch(method: &str, params: &Value) -> std::result::Result<Value, V
                 Some(Value::Object(_)) => params["arguments"].clone(),
                 Some(_) => return Err(invalid_params("tools/call arguments must be an object")),
             };
-            match call(name, &arguments) {
+            let reporter = McpProgress::from_params(params);
+            match call(name, &arguments, reporter.as_ref().map(|r| r as _)) {
                 Ok(result) => Ok(result),
                 Err(error) => Ok(
                     json!({"content": [{"type": "text", "text": format!("{error:#}")}], "isError": true}),
@@ -489,7 +529,7 @@ mod tests {
         .unwrap();
         let args = json!({"path": path, "variables": {"title": "B"}, "safeZone": "off"});
         let report: Value =
-            match call("aether_check", &args).unwrap()["content"][0]["text"].as_str() {
+            match call("aether_check", &args, None).unwrap()["content"][0]["text"].as_str() {
                 Some(text) => serde_json::from_str(text).unwrap(),
                 None => panic!("text content"),
             };
@@ -499,8 +539,30 @@ mod tests {
         let snapshot = call(
             "aether_snapshot",
             &json!({"path": path, "variables": {"title": 1}}),
+            None,
         );
         assert!(format!("{:#}", snapshot.unwrap_err()).contains("must be a string"));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn progress_tokens_become_progress_notifications() {
+        assert!(McpProgress::from_params(&json!({"name": "aether_render"})).is_none());
+        assert!(McpProgress::from_params(&json!({"_meta": {"progressToken": 1.5}})).is_none());
+        let reporter =
+            McpProgress::from_params(&json!({"_meta": {"progressToken": "r1"}})).unwrap();
+        let note = reporter.notification(&ProgressUpdate {
+            done: 30,
+            total: 60,
+            elapsed: std::time::Duration::from_secs(1),
+        });
+        assert_eq!(note["method"], "notifications/progress");
+        assert_eq!(note["params"]["progressToken"], "r1");
+        assert_eq!(note["params"]["progress"], 30);
+        assert_eq!(note["params"]["total"], 60);
+        assert_eq!(
+            note["params"]["message"],
+            "50% 30/60 frames, 30.0 fps, ETA 1.0 s"
+        );
     }
 }

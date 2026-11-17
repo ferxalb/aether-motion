@@ -55,7 +55,7 @@ fn fix_hint(message: &str) -> &'static str {
     } else if message.contains("data-hf-transition") || message.contains("transition ") {
         "on the incoming clip use data-hf-transition=crossfade|push-<dir>|cover-<dir>|wipe-<dir>|whip-<dir>|zoom-in|zoom-out|dip-to-black|dip-to-white|flash|blur|glitch|rgb-split (dir: left, right, up, down) and data-hf-transition-from=<outgoing id>; start it inside the outgoing clip (data-start=\"a-0.6\"), give the outgoing clip a data-duration, and draw it above on a higher data-track-index"
     } else if message.contains("data-hf-split") || message.contains("data-hf-stagger") {
-        "use data-hf-split=words|chars on an element with one line of plain text (no <br> or child elements); see AGENTS.md for data-hf-stagger, data-hf-split-from, and the other options"
+        "use data-hf-split=words|chars on an element with plain text (lines break only at <br>; no child elements); see AGENTS.md for data-hf-stagger, data-hf-split-from, and the other options"
     } else if message.contains("data-hf-camera") || message.contains("camera keyframe") {
         "use a JSON array of {at, zoom, x, y, easing} on a non-root container; at in local seconds, strictly increasing; zoom between 0.05 and 50"
     } else if message.contains("data-hf-keyframes") {

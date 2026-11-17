@@ -1,12 +1,14 @@
 //! Soft outer box shadows that follow the rounded box.
 //!
 //! Soft shadows (sigma of 2 px or more) are rasterized once per size into a coverage mask and
-//! blended on later frames. The mask is anchored to whole pixels, so a moving card's shadow
-//! snaps by at most half a pixel, which is invisible under a blur this wide. Sharp shadows are
-//! always drawn directly.
+//! blended on later frames. Only whole-pixel element boxes take that path; their first (uncached)
+//! draw computes the same mask texels for the visible pixels, so cached and uncached draws are
+//! identical. Sharp shadows and fractional boxes are always drawn directly.
 
 use crate::model::{Color, Shadow};
 use crate::render::geometry::{clip_pixels, PixelRect, Rect};
+use crate::render::paint::float_ops::round_to_u16;
+use crate::render::paint::kernels;
 use crate::render::paint::shape::{rounded_distance, GaussianEdge};
 use crate::render::paint::surface::Surface;
 use crate::render::paint::tile_cache::TileCache;
@@ -14,6 +16,10 @@ use anyhow::Result;
 
 /// Pixels at or above this blur radius (sigma) take the cached-mask path.
 const MIN_CACHED_SIGMA: f32 = 2.0;
+
+/// Opacity below which a shadow pixel is not blended (`kernels::shadow_mask` uses 0.002), with a
+/// margin far beyond `f32` rounding, so skipping a texel this faint never changes a pixel.
+const FAINT: f32 = 0.002 * 0.999;
 
 /// Shadow coverage (x65535, element interior already removed) over a rectangle of pixels
 /// relative to the element's top-left pixel, plus the painted column ranges of each row.
@@ -28,6 +34,44 @@ pub(in crate::render) struct ShadowTile {
 
 /// Masks keyed by element size, radius, spread, blur, and offset (all in output pixels).
 pub(in crate::render) type ShadowCache = TileCache<[u32; 7], ShadowTile>;
+
+/// Shadow coverage (x65535, element interior removed) at the element-relative pixel center
+/// `(px, py)`. Cached masks and uncached draws of a cacheable shadow both come from here, so a draw
+/// has the same pixels whether or not its mask is cached (and so for any thread count or split).
+#[inline]
+fn mask_texel(
+    px: f32,
+    py: f32,
+    element: [f32; 4],
+    element_radius: f32,
+    cast: [f32; 4],
+    cast_radius: f32,
+    edge: &GaussianEdge,
+) -> u16 {
+    texel_from(
+        edge.coverage(rounded_distance(px, py, cast, cast_radius)),
+        px,
+        py,
+        element,
+        element_radius,
+    )
+}
+
+/// The rest of [`mask_texel`] once the cast coverage `covered` is known.
+#[inline]
+fn texel_from(covered: f32, px: f32, py: f32, element: [f32; 4], element_radius: f32) -> u16 {
+    if covered <= 0.0 {
+        return 0;
+    }
+    let outside = (rounded_distance(px, py, element, element_radius) + 0.5).clamp(0.0, 1.0);
+    round_to_u16(covered * outside * 65535.0)
+}
+
+/// Blends shadow color `rgb` through mask texels at strength `k` per mask unit.
+#[inline]
+fn blend_mask(dest: &mut [[u8; 4]], mask: &[u16], rgb: [f32; 3], k: f32) {
+    kernels::shadow_mask(dest, mask, rgb, k);
+}
 
 impl ShadowTile {
     fn build(
@@ -55,12 +99,7 @@ impl ShadowTile {
             let row = &mut mask[j * width..(j + 1) * width];
             for (i, texel) in row.iter_mut().enumerate() {
                 let px = (x0 + i as i32) as f32 + 0.5;
-                let covered = edge.coverage(rounded_distance(px, py, cast, cast_radius));
-                if covered > 0.0 {
-                    let outside =
-                        (rounded_distance(px, py, element, element_radius) + 0.5).clamp(0.0, 1.0);
-                    *texel = (covered * outside * 65535.0).round() as u16;
-                }
+                *texel = mask_texel(px, py, element, element_radius, cast, cast_radius, edge);
             }
             spans.push(Self::row_spans(row));
         }
@@ -134,15 +173,7 @@ impl Surface {
                 let first = (lo - base) as usize;
                 let dest = &mut pixels[(y as usize * stride + lo as usize) * 4
                     ..(y as usize * stride + hi as usize) * 4];
-                for (pixel, &m) in dest.as_chunks_mut::<4>().0.iter_mut().zip(&mask[first..]) {
-                    let a = f32::from(m) * k;
-                    if a > 0.002 {
-                        for c in 0..3 {
-                            pixel[c] = (rgb[c] * a + f32::from(pixel[c]) * (1.0 - a) + 0.5) as u8;
-                        }
-                        pixel[3] = 255;
-                    }
-                }
+                blend_mask(dest.as_chunks_mut::<4>().0, &mask[first..], rgb, k);
             }
         }
     }
@@ -219,6 +250,18 @@ impl Surface {
             } else {
                 None
             };
+            let tile_rect = |reach: f32| {
+                (
+                    (cast[0] - reach).floor() as i32,
+                    (cast[1] - reach).floor() as i32,
+                    (cast[2] + reach).ceil() as i32,
+                    (cast[3] + reach).ceil() as i32,
+                )
+            };
+            let blend_color = Color {
+                a: 255,
+                ..shadow.color
+            };
             if let Some(tile) = tile {
                 let tx = i64::from(origin.0) + i64::from(tile.x0);
                 let ty = i64::from(origin.1) + i64::from(tile.y0);
@@ -233,14 +276,67 @@ impl Surface {
                     (width as i32, height as i32),
                     tile,
                     origin,
-                    Color {
-                        a: 255,
-                        ..shadow.color
-                    },
+                    blend_color,
                     strength,
                 );
                 if touched.x0 < touched.x1 && touched.y0 < touched.y1 {
                     self.mark_painted(touched);
+                }
+                return Ok(());
+            }
+            if valid_mask {
+                // The same mask texels as the tile, computed for the visible pixels only.
+                let (mx0, my0, mx1, my1) = tile_rect(reach);
+                let Some(bounds) = clip_pixels(
+                    (width, height),
+                    origin.0.saturating_add(mx0),
+                    origin.1.saturating_add(my0),
+                    origin.0.saturating_add(mx1),
+                    origin.1.saturating_add(my1),
+                ) else {
+                    return Ok(());
+                };
+                self.mark_painted(bounds);
+                let element = [0.0, 0.0, size.0 as f32, size.1 as f32];
+                let (k, rgb) = (
+                    strength / 65535.0,
+                    [blend_color.r, blend_color.g, blend_color.b].map(f32::from),
+                );
+                let stride = width as usize;
+                // Pixels well inside the element on its straight rows have zero coverage (the
+                // element hides them); they are skipped, as on the direct path.
+                let (inside_from, inside_to) = (
+                    i64::from(origin.0) + 1,
+                    i64::from(origin.0) + (size.0 as f32 - 1.5).floor() as i64,
+                );
+                let half_y = size.1 as f32 / 2.0;
+                for y in bounds.y0..bounds.y1 {
+                    let py = (y as i64 - i64::from(origin.1)) as f32 + 0.5;
+                    let straight = (py - half_y).abs() <= half_y - element_radius - 1.0;
+                    let (hole_from, hole_to) = if straight && inside_from <= inside_to {
+                        (
+                            inside_from.clamp(bounds.x0 as i64, bounds.x1 as i64) as usize,
+                            (inside_to + 1).clamp(bounds.x0 as i64, bounds.x1 as i64) as usize,
+                        )
+                    } else {
+                        (bounds.x1, bounds.x1)
+                    };
+                    for segment in [bounds.x0..hole_from, hole_to..bounds.x1] {
+                        let dest = &mut self.pixels
+                            [(y * stride + segment.start) * 4..(y * stride + segment.end) * 4];
+                        for (x, pixel) in segment.zip(dest.as_chunks_mut::<4>().0) {
+                            let px = (x as i64 - i64::from(origin.0)) as f32 + 0.5;
+                            let covered =
+                                edge.coverage(rounded_distance(px, py, cast, cast_radius));
+                            // Too faint to reach the blend threshold whatever the element hides:
+                            // the texel can only blend as nothing, so it is not evaluated further.
+                            if covered * strength + strength / 65535.0 <= FAINT {
+                                continue;
+                            }
+                            let m = texel_from(covered, px, py, element, element_radius);
+                            kernels::shadow_pixel(pixel, m, rgb, k);
+                        }
+                    }
                 }
                 return Ok(());
             }
@@ -345,7 +441,7 @@ mod tests {
     }
 
     #[test]
-    fn cached_mask_matches_direct_drawing_closely() {
+    fn cached_mask_matches_direct_drawing_exactly() {
         let shadow = Shadow {
             x: 0.0,
             y: 8.0,
@@ -396,13 +492,9 @@ mod tests {
         }
         // Drawing three times on one surface also reaches the cached path from the second call on;
         // a cache reset before each call keeps `direct` on the uncached (first sighting) path.
-        let worst = cached
-            .pixels
-            .iter()
-            .zip(&direct.pixels)
-            .map(|(a, b)| a.abs_diff(*b))
-            .max()
-            .unwrap();
-        assert!(worst <= 2, "cached shadow differs by {worst}");
+        assert!(
+            cached.pixels == direct.pixels,
+            "cached shadow differs from direct drawing"
+        );
     }
 }

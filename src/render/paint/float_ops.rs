@@ -13,6 +13,15 @@ pub(in crate::render) fn round_to_u8(value: f32) -> u8 {
     whole + u8::from(value - f32::from(whole) >= 0.5 && whole < 255)
 }
 
+/// `value.round() as u16` for finite values in `0.0..=65535.0` (fixed-point texels), without the
+/// runtime call: exact for the same reason as [`round_to_u8`].
+#[inline]
+pub(in crate::render) fn round_to_u16(value: f32) -> u16 {
+    let value = value.clamp(0.0, 65535.0);
+    let whole = value as u16;
+    whole + u16::from(value - f32::from(whole) >= 0.5 && whole < u16::MAX)
+}
+
 /// `x.hypot(y)` for finite arguments, inlined: the squares are exact in `f64`, so the result is
 /// the correctly rounded `sqrt(x² + y²)`. glibc's `hypotf` uses this same evaluation, so on Linux
 /// the result is bit-identical to `f32::hypot` (a test checks it); elsewhere it removes the
@@ -29,6 +38,27 @@ pub(in crate::render) fn hypot(x: f32, y: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn round_to_u16_matches_round() {
+        for i in 0..=2_000_000 {
+            let v = i as f32 * 0.0327;
+            assert_eq!(round_to_u16(v), v.round() as u16, "{v}");
+        }
+        for k in [0u32, 1, 2, 255, 4095, 32767, 65533, 65534] {
+            let half = k as f32 + 0.5;
+            for v in [
+                half,
+                f32::from_bits(half.to_bits() - 1),
+                f32::from_bits(half.to_bits() + 1),
+            ] {
+                assert_eq!(round_to_u16(v), v.round() as u16, "{v}");
+            }
+        }
+        for v in [0.0, 0.499_999_97, 65535.0, 4096.0] {
+            assert_eq!(round_to_u16(v), v.round() as u16, "{v}");
+        }
+    }
 
     #[test]
     fn round_to_u8_matches_round_and_clamp() {

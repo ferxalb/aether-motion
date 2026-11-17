@@ -20,7 +20,7 @@ Inside a project created by `aether-motion init`, `aether.json` supplies the ent
 1. Validate with `aether-motion check <composition.html>`. Read the JSON result, fix each reported issue, and rerun until `ok` is true. For 9:16 output, read `layout.findings` too: `outside_safe_zone` means text leaves the TikTok, Reels, or Shorts safe areas (10% margins on other frames); move it, or add `data-layout-allow-safe-zone` if intentional. `--caption-zone "x0=0;y0=0.7;x1=1;y1=1"` flags other text in the caption band (`caption_zone_collision`). Safe-zone findings are warnings and never fail the exit code.
 2. Inspect a still with `aether-motion render <composition.html> --output frame.png --frame N`. Choose frame `N` from the target time and output FPS. For several stills, render them from one process with `--output 'frame-{frame}.png' --frames 0,45,90` (the name must contain `{frame}`). For time-based snapshots or multiple moments, use MCP when available.
 3. Export video with `aether-motion render <composition.html> --output video.mp4 --fps 30`. Set `--size 1080p` or `--size 4k` for 16:9 or 9:16 outputs; these map to the matching landscape or portrait dimensions. `--size` and `--scale` are alternatives. The native encoder is the default. `--quality draft|standard|high|max` picks the H.264 quantizer (30, 26, 22, 18); the default `standard` suits most deliveries. Higher presets cost about the same CPU and give larger files; use them only when the user asks for it. Use `--quality draft` for small review exports.
-4. Check that the output exists and is non-empty, then inspect the result before reporting completion.
+4. Check that the output exists and is non-empty, then inspect the result before reporting completion. Long exports print a progress line with an ETA on a terminal; when a script or job runner needs progress, pass `--progress json` (one JSON object per update on stderr) or `--progress off`. Through MCP, send `_meta.progressToken` with the `aether_render` call to receive `notifications/progress`.
 
 ## Templates with variables
 
@@ -33,6 +33,7 @@ When the composition declares `data-composition-variables`, pass values as a JSO
 ## Operational constraints
 
 - The renderer defaults to low process priority and a limited thread count. Preserve those defaults for ordinary exports; use `--threads` when the user requests a different tradeoff.
+- Output is byte-identical for any `--threads` value, any distributed split, and any CPU, so a different worker count never changes the video.
 - Native MP4 output supports the documented audio formats and encodes AAC. `--encoder ffmpeg` rejects compositions containing `<audio>`.
 - Long exports can be split across processes or machines: `inspect <file> --fps N` prints the number of one-second segments, `render <file> --output part.aseg --segments A..B` renders one range with the same options on each worker, and `render <file> --output video.mp4 --parts a.aseg,b.aseg,...` (same `--variables`, `--audio-bitrate`) assembles them. Use it only when the user asks for distributed rendering; one process is simpler.
 - `aether-motion inspect <composition.html>` can provide parsed composition details. Use it when timing or resolved structure is unclear.

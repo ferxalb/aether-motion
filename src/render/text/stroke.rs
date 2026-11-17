@@ -1,6 +1,7 @@
 //! `-webkit-text-stroke`: glyph outlines (read with `ttf-parser`) stroked with `tiny-skia` into
 //! coverage masks at the paint size. The stroke is centered on the outline, as in CSS, and is placed
-//! from the same pen and baseline as the fill, so the two line up exactly.
+//! from the same pen and baseline as the fill, so the two line up exactly. Synthetic oblique text
+//! shears the outline itself (`skew`, see `oblique.rs`).
 
 use resvg::tiny_skia::{Mask, Paint, PathBuilder, Pixmap, Stroke, Transform};
 
@@ -14,27 +15,36 @@ pub(in crate::render) struct StrokeMask {
     pub(in crate::render) top: i32,
 }
 
-/// Builds a path in pixels (y down, origin at the pen on the baseline).
+/// Builds a path in pixels (y down, origin at the pen on the baseline), sheared right by `skew`
+/// per unit of height above the baseline.
 struct Outline {
     builder: PathBuilder,
     scale: f32,
+    skew: f32,
+}
+
+impl Outline {
+    fn point(&self, x: f32, y: f32) -> (f32, f32) {
+        ((x + self.skew * y) * self.scale, -y * self.scale)
+    }
 }
 
 impl ttf_parser::OutlineBuilder for Outline {
     fn move_to(&mut self, x: f32, y: f32) {
-        self.builder.move_to(x * self.scale, -y * self.scale);
+        let (x, y) = self.point(x, y);
+        self.builder.move_to(x, y);
     }
     fn line_to(&mut self, x: f32, y: f32) {
-        self.builder.line_to(x * self.scale, -y * self.scale);
+        let (x, y) = self.point(x, y);
+        self.builder.line_to(x, y);
     }
     fn quad_to(&mut self, x1: f32, y1: f32, x: f32, y: f32) {
-        let s = self.scale;
-        self.builder.quad_to(x1 * s, -y1 * s, x * s, -y * s);
+        let ((x1, y1), (x, y)) = (self.point(x1, y1), self.point(x, y));
+        self.builder.quad_to(x1, y1, x, y);
     }
     fn curve_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, x: f32, y: f32) {
-        let s = self.scale;
-        self.builder
-            .cubic_to(x1 * s, -y1 * s, x2 * s, -y2 * s, x * s, -y * s);
+        let (a, b, c) = (self.point(x1, y1), self.point(x2, y2), self.point(x, y));
+        self.builder.cubic_to(a.0, a.1, b.0, b.1, c.0, c.1);
     }
     fn close(&mut self) {
         self.builder.close();
@@ -42,12 +52,13 @@ impl ttf_parser::OutlineBuilder for Outline {
 }
 
 /// Strokes `ch` of the face at `size` px with a `width` px line; `None` for glyphs with no outline
-/// (spaces) or a zero width.
+/// (spaces) or a zero width. `skew` shears the glyph (0 for upright text).
 pub(in crate::render) fn stroke_glyph(
     face: &ttf_parser::Face,
     ch: char,
     size: f32,
     width: f32,
+    skew: f32,
 ) -> Option<StrokeMask> {
     if width <= 0.0 {
         return None;
@@ -56,6 +67,7 @@ pub(in crate::render) fn stroke_glyph(
     let mut outline = Outline {
         builder: PathBuilder::new(),
         scale: size / f32::from(face.units_per_em()),
+        skew,
     };
     face.outline_glyph(glyph, &mut outline)?;
     let path = outline.builder.finish()?;
@@ -102,14 +114,14 @@ mod tests {
     fn strokes_outline_glyphs_and_skips_spaces() {
         let data = include_bytes!("../../../assets/fonts/Roboto-Bold.ttf");
         let face = ttf_parser::Face::parse(data, 0).unwrap();
-        let mask = stroke_glyph(&face, 'O', 100.0, 4.0).unwrap();
+        let mask = stroke_glyph(&face, 'O', 100.0, 4.0, 0.0).unwrap();
         // The stroke rings the letter: the middle of the counter is empty, the edges are covered.
         let at = |x: usize, y: usize| mask.coverage[y * mask.width + x];
         let (cx, cy) = (mask.width / 2, mask.height / 2);
         assert_eq!(at(cx, cy), 0);
         assert!((0..mask.width).any(|x| at(x, cy) == 255));
         assert!(mask.top < 0, "glyphs sit above the baseline");
-        assert!(stroke_glyph(&face, ' ', 100.0, 4.0).is_none());
-        assert!(stroke_glyph(&face, 'O', 100.0, 0.0).is_none());
+        assert!(stroke_glyph(&face, ' ', 100.0, 4.0, 0.0).is_none());
+        assert!(stroke_glyph(&face, 'O', 100.0, 0.0, 0.0).is_none());
     }
 }

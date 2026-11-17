@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Kerning, italics, and multi-line kinetic text</title>
+<!-- font-kerning: normal applies the font's pair kerning; italics are synthesized when no italic face
+     is installed; data-hf-split takes <br> for several lines, staggering across them. -->
+<style>
+  #root { background: #0b0d14; }
+  .clip { position: absolute; }
+  .row { left: 160px; width: 1600px; color: #e8ecff; font-size: 140px; font-weight: 800; text-align: center; white-space: nowrap; }
+  #plain { top: 130px; color: #7d86a8; }
+  #kerned { top: 300px; font-kerning: normal; }
+  #note { left: 160px; top: 490px; width: 1600px; color: #9aa3c4; font-size: 44px; text-align: center; }
+  em { color: #ffd60a; }
+  #lines { left: 160px; top: 640px; width: 1600px; color: #e8ecff; font-size: 96px; font-weight: 800; text-align: center; line-height: 1.1; font-kerning: normal; }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="typography" data-width="1920" data-height="1080" data-duration="5">
+  <div id="plain" class="clip row" data-start="0" data-duration="5" data-track-index="1">AVATAR WAVE</div>
+  <div id="kerned" class="clip row" data-start="0" data-duration="5" data-track-index="1" data-hf-fade-in="0.4">AVATAR WAVE</div>
+  <div id="note" class="clip" data-start="0.6" data-duration="4.4" data-track-index="1" data-hf-fade-in="0.4">Top: <em>font-kerning: auto</em>. Below: <em>normal</em>, kerned by the font itself.</div>
+  <h1 id="lines" class="clip" data-start="1.2" data-duration="3.8" data-track-index="1" data-hf-split="chars" data-hf-stagger="0.04" data-hf-split-from="up">Two lines<br>of type</h1>
+</div>
+</body>
+</html>

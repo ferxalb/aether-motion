@@ -1,9 +1,10 @@
-//! Resolution of inherited text properties (family, size, color, alignment, wrapping, fill, stroke)
-//! and of the per-run styles of rich text (inline spans).
+//! Resolution of inherited text properties (family, size, weight, style, kerning, color, alignment,
+//! wrapping, fill, stroke) and of the per-run styles of rich text (inline spans).
 
 use crate::model::{
     Background, Color, Composition, Gradient, LineHeight, Shadow, TextSpan, WhiteSpace,
 };
+use crate::render::text::fonts::FontRequest;
 use crate::render::Renderer;
 
 /// Text properties after inheritance; sizes are composition px, before any scale.
@@ -11,6 +12,10 @@ pub(in crate::render) struct TextProps<'a> {
     pub(in crate::render) family: &'a str,
     pub(in crate::render) size: f32,
     pub(in crate::render) weight: u16,
+    /// `font-style: italic` or `oblique`.
+    pub(in crate::render) italic: bool,
+    /// `font-kerning: normal`: pair kerning from the font.
+    pub(in crate::render) kerning: bool,
     /// Extra advance after every glyph, in composition px.
     pub(in crate::render) letter_spacing: f32,
     pub(in crate::render) color: Color,
@@ -43,6 +48,7 @@ pub(in crate::render) enum Underlay {
 pub(in crate::render) struct RunStyle<'a> {
     pub(in crate::render) family: &'a str,
     pub(in crate::render) weight: u16,
+    pub(in crate::render) italic: bool,
     pub(in crate::render) letter_spacing: f32,
     pub(in crate::render) underlay: Option<Underlay>,
     pub(in crate::render) fill: Color,
@@ -50,7 +56,16 @@ pub(in crate::render) struct RunStyle<'a> {
     pub(in crate::render) stroke: Color,
 }
 
-impl RunStyle<'_> {
+impl<'a> RunStyle<'a> {
+    /// The face this run is drawn with.
+    pub(in crate::render) fn font(&self) -> FontRequest<'a> {
+        FontRequest {
+            family: self.family,
+            weight: self.weight,
+            italic: self.italic,
+        }
+    }
+
     /// Whether this run paints exactly like plain text of `fill` (no underlay or stroke).
     pub(in crate::render) fn is_plain(&self) -> bool {
         self.underlay.is_none() && self.stroke_width <= 0.0
@@ -82,7 +97,7 @@ impl<'a> Renderer<'a> {
     /// Inherited font, color, alignment, and wrapping for a text element.
     pub(in crate::render) fn text_props(&self, idx: usize) -> TextProps<'a> {
         let composition: &'a Composition = self.composition;
-        let (mut weight, mut spacing) = (None, None);
+        let (mut weight, mut spacing, mut italic, mut kerning) = (None, None, None, None);
         let (mut family, mut font_size, mut color, mut align) = (None, None, None, None);
         let (mut line_height, mut white_space, mut shadow) = (None, None, None);
         let (mut fill_color, mut stroke_width, mut stroke_color) = (None, None, None);
@@ -92,6 +107,8 @@ impl<'a> Renderer<'a> {
             family = family.or(node.style.font_family.as_deref());
             font_size = font_size.or(node.style.font_size);
             weight = weight.or(node.style.font_weight);
+            italic = italic.or(node.style.font_italic);
+            kerning = kerning.or(node.style.font_kerning);
             spacing = spacing.or(node.style.letter_spacing);
             color = color.or(node.style.color);
             align = align.or(node.style.text_align.as_deref());
@@ -113,6 +130,8 @@ impl<'a> Renderer<'a> {
             family: family.unwrap_or("sans-serif"),
             size,
             weight: weight.unwrap_or(400),
+            italic: italic.unwrap_or(false),
+            kerning: kerning.unwrap_or(false),
             letter_spacing: spacing.unwrap_or(0.0),
             color: color.unwrap_or(Color::WHITE),
             align: align.unwrap_or("left"),
@@ -136,6 +155,7 @@ impl<'a> Renderer<'a> {
         let base = RunStyle {
             family: props.family,
             weight: props.weight,
+            italic: props.italic,
             letter_spacing: props.letter_spacing,
             underlay: element
                 .style
@@ -154,6 +174,7 @@ impl<'a> Renderer<'a> {
             styles.push(RunStyle {
                 family: s.font_family.as_deref().unwrap_or(base.family),
                 weight: s.font_weight.unwrap_or(base.weight),
+                italic: s.font_italic.unwrap_or(base.italic),
                 letter_spacing: s.letter_spacing.unwrap_or(base.letter_spacing),
                 underlay: match &s.text_background {
                     Some(background) => Some(underlay(background, true)),

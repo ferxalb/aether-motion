@@ -22,7 +22,7 @@ Use this skill for compositions rendered by the `aether-motion` native renderer.
 4. When the same video must be produced with different text, colors, numbers, or assets, declare composition variables and bind them (`var(--id)`, `data-var-text`, `data-var-src`, `data-var-if`) instead of copying the file; see the composition contract.
 5. Prefer an existing AETHER Motion block or theme when one fits. If the companion `aether-motion-blocks` skill is installed, use it for discovery and parameterized markup; otherwise run `aether-motion block list`.
 6. Route SVG-heavy artwork through `aether-motion-svg` when available. For an explicit migration from an existing HyperFrames or Remotion project, use `aether-motion-import` and its source-specific reference.
-7. Use relative paths for local supported images (including static SVG), audio, and H.264 MP4 `<video>` clips. Do not introduce network fetches, wall-clock time, unseeded randomness, scripts, SVG animation or text, remote or non-H.264 video, canvas, or unsupported CSS. If a requested effect is outside the renderer's contract, explain the limit and offer a supported representation; never silently approximate it as if it were equivalent.
+7. Use relative paths for local supported images (including static SVG), audio, and H.264 MP4 `<video>` clips (re-encode sources with B-frames as `check` suggests). Do not introduce network fetches, wall-clock time, unseeded randomness, scripts, SVG animation or text, remote or non-H.264 video, canvas, or unsupported CSS. If a requested effect is outside the renderer's contract, explain the limit and offer a supported representation; never silently approximate it as if it were equivalent.
 
 ## Validate and inspect
 

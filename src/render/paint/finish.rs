@@ -3,12 +3,14 @@
 //! Both are pure functions of pixel position (and, for grain, of the frame time), so output stays
 //! deterministic and independent of render order. The vignette is a per-pixel brightness table built
 //! once per surface size and strength, so a frame costs one integer multiply per channel; the grain is
-//! an integer hash per pixel. All arithmetic is fixed point (1/256 steps).
+//! an integer hash per pixel. All arithmetic is fixed point (1/256 steps), in branch-free row loops
+//! that are also compiled for AVX2 and chosen at run time (same results on every CPU).
 
 use crate::render::geometry::PixelRect;
 use crate::render::paint::Surface;
 
 /// Integer hash of a pixel position and seed; every bit depends on all inputs.
+#[inline(always)]
 fn hash(x: u32, y: u32, seed: u32) -> u32 {
     let mut h =
         x.wrapping_mul(0x9E37_79B1) ^ y.wrapping_mul(0x85EB_CA77) ^ seed.wrapping_mul(0xC2B2_AE3D);
@@ -58,6 +60,102 @@ impl FinishLut {
     }
 }
 
+/// Applies the vignette `factors` (one per pixel, when present) and grain of `amplitude` to every
+/// row of `pixels`, with one loop per combination so the per-pixel work has no branches. Compiled for
+/// AVX2 when the CPU has it (integer arithmetic only, so the result is the same everywhere).
+fn finish_rows(
+    pixels: &mut [u8],
+    width: usize,
+    factors: Option<&[u16]>,
+    seed: u32,
+    amplitude: i32,
+) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::render::paint::kernels::use_avx2() {
+        #[target_feature(enable = "avx2")]
+        fn avx2(
+            pixels: &mut [u8],
+            width: usize,
+            factors: Option<&[u16]>,
+            seed: u32,
+            amplitude: i32,
+        ) {
+            finish_rows_impl(pixels, width, factors, seed, amplitude);
+        }
+        // SAFETY: the CPU supports AVX2, checked just above.
+        return unsafe { avx2(pixels, width, factors, seed, amplitude) };
+    }
+    finish_rows_impl(pixels, width, factors, seed, amplitude);
+}
+
+#[inline(always)]
+fn finish_rows_impl(
+    pixels: &mut [u8],
+    width: usize,
+    factors: Option<&[u16]>,
+    seed: u32,
+    amplitude: i32,
+) {
+    let rows = pixels.chunks_exact_mut(width * 4).enumerate();
+    match (factors, amplitude > 0) {
+        (Some(table), true) => rows.for_each(|(y, row)| {
+            finish_row::<true>(row, &table[y * width..(y + 1) * width], y, seed, amplitude)
+        }),
+        (Some(table), false) => rows.for_each(|(y, row)| {
+            finish_row::<false>(row, &table[y * width..(y + 1) * width], y, seed, 0)
+        }),
+        (None, _) => rows.for_each(|(y, row)| grain_row(row, y, seed, amplitude)),
+    }
+}
+
+/// Noise of pixel `(x, y)` in 1/256 of a level, for `amplitude` > 0.
+#[inline(always)]
+fn noise(x: usize, y: usize, seed: u32, amplitude: i32) -> i32 {
+    let bits = ((hash(x as u32, y as u32, seed) >> 8) & 0xFFFF) as i32;
+    ((bits * 2 - 65535) * amplitude) / 65535
+}
+
+#[inline(always)]
+fn shade(pixel: &mut [u8; 4], factor: i32, noise: i32) {
+    for channel in &mut pixel[..3] {
+        let value = (i32::from(*channel) * factor + noise + 128) >> 8;
+        *channel = value.clamp(0, 255) as u8;
+    }
+}
+
+/// Vignette (and, with `GRAIN`, grain) over one row of pixels with its row of factors.
+#[inline(always)]
+fn finish_row<const GRAIN: bool>(
+    row: &mut [u8],
+    factors: &[u16],
+    y: usize,
+    seed: u32,
+    amplitude: i32,
+) {
+    for (x, (pixel, &factor)) in row
+        .as_chunks_mut::<4>()
+        .0
+        .iter_mut()
+        .zip(factors)
+        .enumerate()
+    {
+        let noise = if GRAIN {
+            noise(x, y, seed, amplitude)
+        } else {
+            0
+        };
+        shade(pixel, i32::from(factor), noise);
+    }
+}
+
+/// Grain alone over one row of pixels.
+#[inline(always)]
+fn grain_row(row: &mut [u8], y: usize, seed: u32, amplitude: i32) {
+    for (x, pixel) in row.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+        shade(pixel, 256, noise(x, y, seed, amplitude));
+    }
+}
+
 impl Surface {
     /// Darkens the corners by `vignette` (0..=1) and adds monochrome noise of amplitude `grain` (0..=1),
     /// reseeded by `seed` each frame. Marks the whole surface as painted so the next frame resets it.
@@ -81,21 +179,7 @@ impl Surface {
         };
         // Noise amplitude in 1/256 of a level; the largest product below stays within i32.
         let amplitude = (grain * 64.0 * 256.0) as i32;
-        for (y, row) in self.pixels.chunks_exact_mut(width * 4).enumerate() {
-            for (x, pixel) in row.as_chunks_mut::<4>().0.iter_mut().enumerate() {
-                let factor = factors.map_or(256, |table| i32::from(table[y * width + x]));
-                let noise = if amplitude > 0 {
-                    let bits = ((hash(x as u32, y as u32, seed) >> 8) & 0xFFFF) as i32;
-                    ((bits * 2 - 65535) * amplitude) / 65535
-                } else {
-                    0
-                };
-                for channel in &mut pixel[..3] {
-                    let value = (i32::from(*channel) * factor + noise + 128) >> 8;
-                    *channel = value.clamp(0, 255) as u8;
-                }
-            }
-        }
+        finish_rows(&mut self.pixels, width, factors, seed, amplitude);
         self.mark_painted(PixelRect {
             x0: 0,
             y0: 0,

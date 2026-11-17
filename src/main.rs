@@ -1,8 +1,9 @@
 //! Command-line entry point: short project commands live in `cli`; this file keeps the legacy flag-based `inspect`, `render --output`, `bench`, `block`, and `mcp`.
 
+use aether_motion::cli::progress::{with_progress, ProgressMode};
 use aether_motion::encode::{
-    assemble_parts, encode_native_with_options, render_part, segment_count, EncodeOptions, Quality,
-    PART_EXTENSION,
+    assemble_parts, encode_native_with_progress, render_part_with_progress, segment_count,
+    EncodeOptions, Quality, PART_EXTENSION,
 };
 use aether_motion::parse::parse_file_with;
 use aether_motion::render::{OutputSize, Renderer};
@@ -31,7 +32,7 @@ Quick start:\n\
 `file` defaults to aether.json \"entry\", then index.html.\n\
 Advanced:\n\
   aether-motion inspect <composition.html>\n\
-  aether-motion render <composition.html> --output <video.mp4|frame.png> [--fps 30] [--scale 1 | --size 1080p|4k] [--threads N (default: cores/4, 1 to 4)] [--priority low|normal (default: low)] [--encoder native|ffmpeg] [--quality draft|standard|high|max (default: standard)] [--audio-bitrate 192] [--frame N | --frames N,N,... with {frame} in the PNG name]\n\
+  aether-motion render <composition.html> --output <video.mp4|frame.png> [--fps 30] [--scale 1 | --size 1080p|4k] [--threads N (default: cores/4, 1 to 4)] [--priority low|normal (default: low)] [--encoder native|ffmpeg] [--quality draft|standard|high|max (default: standard)] [--audio-bitrate 192] [--frame N | --frames N,N,... with {frame} in the PNG name] [--progress auto|json|off (stderr; auto: a status line on a terminal)]\n\
   aether-motion render <composition.html> --output <part.aseg> --segments A..B [render options]   (distributed render: encode one-second segments A..B; `inspect --fps N` prints the segment count)\n\
   aether-motion render <composition.html> --output <video.mp4> --parts a.aseg,b.aseg,... [--variables ...] [--audio-bitrate 192]   (assemble parts into the MP4 a single render would write)\n\
   aether-motion bench <composition.html> [--fps 30] [--scale 1 | --size 1080p|4k] [--frame START --count N]\n\
@@ -72,6 +73,8 @@ struct Options {
     parts: Option<Vec<PathBuf>>,
     /// Whether `--fps` was given (`inspect` prints the segment plan only then).
     fps_given: bool,
+    /// `--progress`: how native MP4 and part renders report progress on stderr.
+    progress: ProgressMode,
 }
 
 /// Parses `A..B` (segment indexes, end exclusive).
@@ -144,6 +147,7 @@ fn options() -> Result<Option<Options>> {
         segments: None,
         parts: None,
         fps_given: false,
+        progress: ProgressMode::default(),
     };
     while let Some(arg) = args.next() {
         let value = args
@@ -177,6 +181,7 @@ fn options() -> Result<Option<Options>> {
             "--frames" => opts.frames = Some(parse_list(&value, "--frames")?),
             "--segments" => opts.segments = Some(parse_range(&value)?),
             "--parts" => opts.parts = Some(parse_list(&value, "--parts")?),
+            "--progress" => opts.progress = value.parse()?,
             _ => bail!("unknown option: {arg}"),
         }
     }
@@ -466,7 +471,9 @@ fn main() -> Result<()> {
                     ..EncodeOptions::new(opts.fps, opts.threads)
                 };
                 let segments = opts.segments.clone().unwrap_or_default();
-                render_part(&mut renderer, output, &options, segments)?;
+                with_progress(opts.progress, |observer| {
+                    render_part_with_progress(&mut renderer, output, &options, segments, observer)
+                })?;
             }
             Some("mp4") => {
                 if opts.frame.is_some() {
@@ -478,7 +485,9 @@ fn main() -> Result<()> {
                         quality: opts.quality,
                         ..EncodeOptions::new(opts.fps, opts.threads)
                     };
-                    encode_native_with_options(&mut renderer, output, &options)?;
+                    with_progress(opts.progress, |observer| {
+                        encode_native_with_progress(&mut renderer, output, &options, observer)
+                    })?;
                 } else {
                     if !composition.audio.is_empty() {
                         bail!("<audio> requires the native encoder; remove --encoder ffmpeg");

@@ -1,11 +1,13 @@
 //! Inline rich text: an element with its own text and inline children (`<span>`, `<strong>`, `<b>`,
-//! `<code>`) becomes one text element whose styled runs (`model::TextSpan`) wrap and align together.
+//! `<em>`, `<i>`, `<code>`) becomes one text element whose styled runs (`model::TextSpan`) wrap and
+//! align together.
 //!
-//! Runs may change `color`, `font-family`, `font-weight`, `letter-spacing`,
-//! `-webkit-text-fill-color`, `-webkit-text-stroke`, and fill their glyphs with a gradient through
-//! `background` plus `background-clip: text`. Box properties (size, position, padding, borders,
-//! backgrounds without `background-clip: text`, transforms, effects, animation) and `font-size`
-//! changes are explicit errors, since a run is not a box. Whitespace collapses across runs exactly as
+//! Runs may change `color`, `font-family`, `font-weight`, `font-style` (`<em>`/`<i>` default to
+//! italic), `letter-spacing`, `-webkit-text-fill-color`, `-webkit-text-stroke`, and fill their
+//! glyphs with a gradient through `background` plus `background-clip: text`. Box properties (size,
+//! position, padding, borders, backgrounds without `background-clip: text`, transforms, effects,
+//! animation), `font-size` changes, and `font-kerning` (an element-level setting) are explicit
+//! errors, since a run is not a box. Whitespace collapses across runs exactly as
 //! the source spells it: no space is added between `Make<span>s</span>`.
 use crate::model::{InlineStyle, Style, TextSpan};
 use crate::parse::css::{Stylesheet, Vars};
@@ -15,7 +17,7 @@ use anyhow::{bail, Context, Result};
 use kuchiki::NodeRef;
 
 /// Tags that become inline runs inside an element with its own text.
-const INLINE: [&str; 4] = ["span", "strong", "b", "code"];
+const INLINE: [&str; 6] = ["span", "strong", "b", "em", "i", "code"];
 
 fn tag(node: &NodeRef) -> Option<String> {
     node.as_element().map(|e| e.name.local.to_string())
@@ -135,6 +137,7 @@ fn visit(
         color: style.color,
         font_family: style.font_family.clone(),
         font_weight: style.font_weight,
+        font_italic: style.font_italic,
         letter_spacing: style.letter_spacing,
         text_fill_color: style.text_fill_color,
         text_stroke_width: style.text_stroke_width,
@@ -146,6 +149,7 @@ fn visit(
     };
     match name.as_str() {
         "strong" | "b" => own.font_weight = own.font_weight.or(Some(700)),
+        "em" | "i" => own.font_italic = own.font_italic.or(Some(true)),
         "code" => own.font_family = own.font_family.or_else(|| Some("monospace".into())),
         _ => {}
     }
@@ -164,7 +168,7 @@ fn visit(
             visit(&child, Some(index), sheet, &inner_vars, styles, pieces)?;
         } else if let Some(inner) = tag(&child) {
             bail!(
-                "{}: <{inner}> cannot be inside inline text; only span, strong, b, code, and br",
+                "{}: <{inner}> cannot be inside inline text; only span, strong, b, em, i, code, and br",
                 label()
             );
         }
@@ -178,6 +182,7 @@ fn inherit(outer: &InlineStyle, own: InlineStyle) -> InlineStyle {
         color: own.color.or(outer.color),
         font_family: own.font_family.or_else(|| outer.font_family.clone()),
         font_weight: own.font_weight.or(outer.font_weight),
+        font_italic: own.font_italic.or(outer.font_italic),
         letter_spacing: own.letter_spacing.or(outer.letter_spacing),
         text_fill_color: own.text_fill_color.or(outer.text_fill_color),
         text_stroke_width: own.text_stroke_width.or(outer.text_stroke_width),
@@ -191,8 +196,9 @@ fn inherit(outer: &InlineStyle, own: InlineStyle) -> InlineStyle {
 
 /// The first property set on `style` that an inline run cannot have.
 fn box_property(style: &Style) -> Option<&'static str> {
-    let checks: [(bool, &'static str); 30] = [
+    let checks: [(bool, &'static str); 31] = [
         (style.font_size.is_some(), "font-size"),
+        (style.font_kerning.is_some(), "font-kerning"),
         (style.line_height.is_some(), "line-height"),
         (style.text_shadow.is_some(), "text-shadow"),
         (style.text_align.is_some(), "text-align"),

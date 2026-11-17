@@ -78,6 +78,8 @@ pub(in crate::parse) fn walk(
             | "small"
             | "strong"
             | "b"
+            | "em"
+            | "i"
             | "code"
             | "img"
             | "svg"
@@ -94,6 +96,9 @@ pub(in crate::parse) fn walk(
         animation,
     } = style_for(node, sheet, vars, parent.is_none())
         .with_context(|| format!("styles for <{tag}>"))?;
+    if matches!(tag.as_str(), "em" | "i") {
+        style.font_italic = style.font_italic.or(Some(true));
+    }
     let start_expr = attr(node, "data-start");
     let duration = attr(node, "data-duration")
         .map(|s| number(&s, "data-duration"))
@@ -219,15 +224,14 @@ pub(in crate::parse) fn walk(
         let Content::Text(text) = &content else {
             bail!("data-hf-split requires an element with direct text");
         };
-        if text.contains('\n')
-            || node
-                .children()
-                .any(|c| c.as_element().is_some_and(|e| &*e.name.local != "br"))
+        if node
+            .children()
+            .any(|c| c.as_element().is_some_and(|e| &*e.name.local != "br"))
         {
-            bail!("data-hf-split supports one line of plain text (no <br> or child elements)");
+            bail!("data-hf-split supports plain text with <br> line breaks (no child elements)");
         }
         split_text = Some(text.clone());
-        spec.apply_container_style(&mut style);
+        spec.apply_container_style(&mut style, text);
         Content::Container
     } else {
         content
@@ -296,6 +300,7 @@ pub(in crate::parse) fn walk(
             layout: LayoutHints {
                 allow_safe_zone: flag(node, "data-layout-allow-safe-zone")?,
                 allow_caption_zone: flag(node, "data-layout-allow-caption-zone")?,
+                ..LayoutHints::default()
             },
         },
         start_expr,

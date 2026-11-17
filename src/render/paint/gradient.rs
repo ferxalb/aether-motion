@@ -2,14 +2,17 @@
 //! and `radial-gradient`. Evaluated per pixel with an ordered dither so dark ramps do not band.
 //! The two-opaque-stop axis case stays on the faster `Surface::fill_gradient`.
 //!
-//! A square gradient that is drawn again with the same size (a drifting glow, for example) is
-//! rasterized once into a fixed-point tile; later frames only blend that tile at the new offset.
+//! A square, whole-pixel gradient is evaluated through fixed-point texels in box-relative
+//! coordinates. When it is drawn again with the same size (a drifting glow, for example) the texels
+//! are rasterized once into a tile and later frames only blend that tile at the new offset; an
+//! uncached draw computes the same texels for its visible pixels, so both paths match exactly.
 //! Full and quarter element opacities use exact integer tile blending, preserving ordered dithering.
 //! Stop colors are premultiplied once per draw, including uncached fractional-motion draws.
 
 use crate::model::{Color, Gradient, GradientKind, LinearDirection, Stop};
 use crate::render::geometry::{clip_pixels, Rect};
-use crate::render::paint::float_ops::{hypot, round_to_u8};
+use crate::render::paint::float_ops::{hypot, round_to_u16, round_to_u8};
+use crate::render::paint::kernels::{self, GradientRow, TwoStops};
 use crate::render::paint::surface::Surface;
 use crate::render::paint::tile_cache::TileCache;
 use anyhow::Result;
@@ -99,12 +102,25 @@ impl<'a> Sampler<'a> {
         if t >= self.stops[last].pos {
             return self.colors[last];
         }
-        let next = self.stops.partition_point(|stop| stop.pos <= t);
+        // With two stops, a `t` strictly between them always interpolates between stops 0 and 1.
+        let next = if last == 1 {
+            1
+        } else {
+            self.stops.partition_point(|stop| stop.pos <= t)
+        };
         let (a, b) = (self.stops[next - 1], self.stops[next]);
         let span = b.pos - a.pos;
         let f = if span <= 0.0 { 1.0 } else { (t - a.pos) / span };
         let (pa, pb) = (self.colors[next - 1], self.colors[next]);
         std::array::from_fn(|i| pa[i] + (pb[i] - pa[i]) * f)
+    }
+
+    /// Position past which every sample is the fully transparent last stop, when there is one.
+    fn transparent_after(&self) -> Option<f32> {
+        let last = self.stops.len() - 1;
+        let pos = self.stops[last].pos;
+        (self.colors[last][3] == 0.0 && pos > self.stops[0].pos && pos > 0.0 && pos.is_finite())
+            .then_some(pos)
     }
 }
 
@@ -164,6 +180,48 @@ impl Mapper {
                 }
             }
         }
+    }
+
+    /// `t` at the centers of pixels `columns` of row `y`, bit-identical to [`Mapper::t`] (the row's
+    /// own term is computed once per row).
+    fn row(&self, y: usize, columns: std::ops::Range<usize>, out: &mut Vec<f32>) {
+        out.clear();
+        let py = y as f32 + 0.5;
+        match *self {
+            Self::Linear { center, dir, len } => {
+                let across = (py - center.1) * dir.1;
+                let len = len.max(1e-3);
+                out.extend(
+                    columns.map(|x| ((x as f32 + 0.5 - center.0) * dir.0 + across) / len + 0.5),
+                );
+            }
+            Self::Radial { center, radii } => {
+                let v = (py - center.1) / radii.1;
+                if v.is_infinite() {
+                    out.extend(columns.map(|_| f32::INFINITY));
+                    return;
+                }
+                let vv = f64::from(v) * f64::from(v);
+                kernels::radial_row(out, columns, center.0, radii.0, vv);
+            }
+        }
+    }
+
+    /// Columns of row `y` that can have `t` below `limit`: pixels outside are guaranteed to sample
+    /// at or past it. Radial gradients only (`None` otherwise, or when nothing can be excluded).
+    /// The bound is widened by a relative 1e-4 plus one pixel, far beyond `f32` rounding.
+    fn columns_below(&self, y: usize, limit: f32) -> Option<std::ops::Range<f64>> {
+        let Self::Radial { center, radii } = *self else {
+            return None;
+        };
+        let limit = f64::from(limit) * (1.0 + 1e-4) + 1e-4;
+        let v = (f64::from(y as f32 + 0.5) - f64::from(center.1)).abs() / f64::from(radii.1);
+        if v >= limit {
+            return Some(f64::INFINITY..f64::NEG_INFINITY);
+        }
+        let half = f64::from(radii.0) * (limit * limit - v * v).sqrt() + 1.0;
+        let cx = f64::from(center.0);
+        Some(cx - half - 0.5..cx + half - 0.5)
     }
 
     #[inline]
@@ -250,17 +308,11 @@ impl Tile {
         let sampler = Sampler::new(&gradient.stops);
         let mut texels = Vec::with_capacity(width * height);
         let mut spans = Vec::with_capacity(height);
+        let mut ts = Vec::with_capacity(width);
         for y in 0..height {
             let start = texels.len();
-            for x in 0..width {
-                let [r, g, b, a] = sampler.sample(mapper.t(x as f32 + 0.5, y as f32 + 0.5));
-                texels.push([
-                    (r * 256.0).round() as u16,
-                    (g * 256.0).round() as u16,
-                    (b * 256.0).round() as u16,
-                    (a * 4096.0).round() as u16,
-                ]);
-            }
+            mapper.row(y, 0..width, &mut ts);
+            texels.extend(ts.iter().map(|&t| texel(&sampler, t)));
             let row = &texels[start..];
             let first = row.iter().position(|t| t[3] > 0);
             let last = row.iter().rposition(|t| t[3] > 0);
@@ -273,6 +325,44 @@ impl Tile {
             width,
             texels,
             spans,
+        }
+    }
+}
+
+/// The fixed-point texel at gradient parameter `t` (of a tile-relative pixel center, from
+/// [`Mapper::row`]): premultiplied color x256 and alpha x4096.
+/// Cached tiles and uncached draws of a tileable gradient both come from here, so a draw has the same
+/// pixels whether or not its tile is cached (and so for any thread count or render split).
+#[inline]
+fn texel(sampler: &Sampler, t: f32) -> [u16; 4] {
+    let [r, g, b, a] = sampler.sample(t);
+    [
+        round_to_u16(r * 256.0),
+        round_to_u16(g * 256.0),
+        round_to_u16(b * 256.0),
+        round_to_u16(a * 4096.0),
+    ]
+}
+
+/// Blends one row of texels onto `dest` (pixel `first` of row `y`) at element opacity `alpha`
+/// (0..=1). Texels with zero alpha leave their pixel unchanged.
+fn blend_row(dest: &mut [[u8; 4]], source: &[[u16; 4]], first: usize, y: usize, alpha: f32) {
+    if alpha == 1.0 {
+        return blend_full_opacity(dest, source, first, y);
+    }
+    if alpha == 0.25 || alpha == 0.5 || alpha == 0.75 {
+        return blend_quarter_opacity(dest, source, first, y, (alpha * 4.0) as i32);
+    }
+    let dither_row = [0, 1, 2, 3].map(|i| dither(i, y));
+    for (i, (pixel, texel)) in dest.iter_mut().zip(source).enumerate() {
+        let d = dither_row[(first + i) & 3];
+        let keep = 1.0 - f32::from(texel[3]) * (alpha / 4096.0);
+        for c in 0..3 {
+            let blended = f32::from(texel[c]) * (alpha / 256.0) + f32::from(pixel[c]) * keep + d;
+            pixel[c] = (blended + 0.5).clamp(0.0, 255.0) as u8;
+        }
+        if texel[3] > 0 {
+            pixel[3] = 255;
         }
     }
 }
@@ -310,14 +400,16 @@ impl Surface {
                 return Ok(());
             }
             let key = (gradient as *const Gradient as usize, w, h);
-            if let Some(tile) = self.gradient_cache.get_or_build(
+            let tile = self.gradient_cache.get_or_build(
                 key,
                 w.checked_mul(h)
                     .and_then(|n| n.checked_mul(8))
                     .unwrap_or(usize::MAX),
                 || Tile::build(gradient, w, h),
-            )? {
-                let alpha = alpha.clamp(0.0, 1.0);
+            )?;
+            let alpha = alpha.clamp(0.0, 1.0);
+            let pixels = self.pixels.as_chunks_mut::<4>().0;
+            if let Some(tile) = tile {
                 for y in bounds.y0..bounds.y1 {
                     let ty = (y as i32 - y0) as usize;
                     let (lo, hi) = tile.spans[ty];
@@ -327,68 +419,85 @@ impl Surface {
                         continue;
                     }
                     let row = &tile.texels[ty * tile.width..(ty + 1) * tile.width];
-                    let dither_row = [0, 1, 2, 3].map(|i| dither(i, y));
-                    let dest = &mut self.pixels[(y * width + first) * 4..(y * width + last) * 4];
                     let source = &row[(first as i32 - x0) as usize..(last as i32 - x0) as usize];
-                    if alpha == 1.0 {
-                        blend_full_opacity(dest.as_chunks_mut::<4>().0, source, first, y);
-                        continue;
-                    }
-                    if alpha == 0.25 || alpha == 0.5 || alpha == 0.75 {
-                        blend_quarter_opacity(
-                            dest.as_chunks_mut::<4>().0,
-                            source,
-                            first,
-                            y,
-                            (alpha * 4.0) as i32,
-                        );
-                        continue;
-                    }
-                    for (i, (pixel, texel)) in dest
-                        .as_chunks_mut::<4>()
-                        .0
-                        .iter_mut()
-                        .zip(source)
-                        .enumerate()
-                    {
-                        let d = dither_row[(first + i) & 3];
-                        let keep = 1.0 - f32::from(texel[3]) * (alpha / 4096.0);
-                        for c in 0..3 {
-                            let blended = f32::from(texel[c]) * (alpha / 256.0)
-                                + f32::from(pixel[c]) * keep
-                                + d;
-                            pixel[c] = (blended + 0.5).clamp(0.0, 255.0) as u8;
-                        }
-                        if texel[3] > 0 {
-                            pixel[3] = 255;
-                        }
-                    }
+                    blend_row(
+                        &mut pixels[y * width + first..y * width + last],
+                        source,
+                        first,
+                        y,
+                        alpha,
+                    );
                 }
-                return Ok(());
+            } else {
+                // The same texels as the tile, computed for the visible pixels only.
+                let mapper = Mapper::new(&gradient.kind, [0.0, 0.0, w as f32, h as f32]);
+                let sampler = Sampler::new(&gradient.stops);
+                let (first, last) = (bounds.x0, bounds.x1);
+                let columns = (first as i32 - x0) as usize..(last as i32 - x0) as usize;
+                let (mut row, mut ts) = (Vec::with_capacity(last - first), Vec::new());
+                for y in bounds.y0..bounds.y1 {
+                    let ty = (y as i32 - y0) as usize;
+                    mapper.row(ty, columns.clone(), &mut ts);
+                    row.clear();
+                    row.extend(ts.iter().map(|&t| texel(&sampler, t)));
+                    blend_row(
+                        &mut pixels[y * width + first..y * width + last],
+                        &row,
+                        first,
+                        y,
+                        alpha,
+                    );
+                }
             }
+            return Ok(());
         }
         let mapper = Mapper::new(&gradient.kind, float_edges);
         let sampler = Sampler::new(&gradient.stops);
+        let transparent_after = sampler.transparent_after();
+        let two_stops = (gradient.stops.len() == 2).then(|| TwoStops {
+            positions: [gradient.stops[0].pos, gradient.stops[1].pos],
+            colors: [sampler.colors[0], sampler.colors[1]],
+        });
+        let mut ts = Vec::with_capacity(bounds.x1 - bounds.x0);
         for y in bounds.y0..bounds.y1 {
             let (left, right) = Self::rounded_span(float_edges, radius, y);
-            let first = (left.floor().max(bounds.x0 as f32)) as usize;
-            let last = (right.ceil().min(bounds.x1 as f32)) as usize;
+            let mut first = (left.floor().max(bounds.x0 as f32)) as usize;
+            let mut last = (right.ceil().min(bounds.x1 as f32)) as usize;
+            // Pixels that sample the transparent last stop paint nothing; skip them unevaluated.
+            if let Some(range) = transparent_after.and_then(|pos| mapper.columns_below(y, pos)) {
+                first = first.max(range.start.ceil().max(0.0) as usize);
+                last = last.min((range.end.floor() + 1.0).max(0.0) as usize);
+            }
+            if first >= last {
+                continue;
+            }
             // Row invariants, hoisted out of the pixel loop (same expressions, same values).
             let vertical =
                 (float_edges[3].min(y as f32 + 1.0) - float_edges[1].max(y as f32)).clamp(0.0, 1.0);
             let dither_row = [0, 1, 2, 3].map(|i| dither(i, y));
-            for x in first..last {
+            mapper.row(y, first..last, &mut ts);
+            let row = &mut self.pixels[(y * width + first) * 4..(y * width + last) * 4];
+            if let Some(stops) = &two_stops {
+                let params = GradientRow {
+                    left,
+                    right,
+                    vertical,
+                    alpha,
+                    dither: dither_row,
+                };
+                kernels::two_stop_row(row.as_chunks_mut::<4>().0, &ts, first, &params, stops);
+                continue;
+            }
+            for ((x, dest), &t) in (first..last).zip(row.as_chunks_mut::<4>().0).zip(&ts) {
                 let coverage =
                     (right.min(x as f32 + 1.0) - left.max(x as f32)).clamp(0.0, 1.0) * vertical;
-                let [pr, pg, pb, pa] = sampler.sample(mapper.t(x as f32 + 0.5, y as f32 + 0.5));
+                let [pr, pg, pb, pa] = sampler.sample(t);
                 // `pa` carries the stop alpha; the premultiplied colors already include it.
                 let a = (alpha * coverage).clamp(0.0, 1.0);
                 if a <= 0.0 || pa <= 0.0 {
                     continue;
                 }
                 let d = dither_row[x & 3];
-                let offset = (y * width + x) * 4;
-                let dest = &mut self.pixels[offset..offset + 4];
                 for (channel, premult) in dest.iter_mut().take(3).zip([pr, pg, pb]) {
                     let blended = premult * a + f32::from(*channel) * (1.0 - pa * a) + d;
                     *channel = round_to_u8(blended);
@@ -505,6 +614,48 @@ mod tests {
     }
 
     #[test]
+    fn row_evaluation_and_transparent_skip_match_per_pixel_sampling() {
+        let boxes = [
+            [-300.4, -350.7, 1100.4, 850.2],
+            [12.25, 3.5, 77.75, 40.0],
+            [0.0, 0.0, 1.0, 900.0],
+        ];
+        let kinds = [
+            glow().kind,
+            GradientKind::Radial {
+                circle: true,
+                center: (0.2, 0.9),
+                farthest_side: false,
+            },
+            GradientKind::Linear(LinearDirection::Angle(135.0)),
+            GradientKind::Linear(LinearDirection::Corner(1, -1)),
+        ];
+        let stops = glow().stops;
+        let sampler = Sampler::new(&stops);
+        let limit = sampler.transparent_after().unwrap();
+        let mut row = Vec::new();
+        for edges in boxes {
+            for kind in &kinds {
+                let mapper = Mapper::new(kind, edges);
+                for y in (0..1000).step_by(7) {
+                    mapper.row(y, 0..1200, &mut row);
+                    let kept = mapper.columns_below(y, limit);
+                    for (x, &t) in (0..1200).zip(&row) {
+                        let exact = mapper.t(x as f32 + 0.5, y as f32 + 0.5);
+                        assert_eq!(t.to_bits(), exact.to_bits(), "{kind:?} {edges:?} {x},{y}");
+                        let inside = kept
+                            .as_ref()
+                            .is_none_or(|r| (x as f64) >= r.start && (x as f64) <= r.end);
+                        if !inside {
+                            assert_eq!(sampler.sample(t)[3], 0.0, "skipped pixel {x},{y} paints");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn integer_full_opacity_matches_cached_float_blend_exactly() {
         for y in 0..4 {
             for first in 0..4 {
@@ -538,7 +689,7 @@ mod tests {
     }
 
     #[test]
-    fn cached_tile_matches_direct_drawing_within_one_level() {
+    fn cached_tile_matches_direct_drawing_exactly() {
         let gradient = glow();
         let rect = |x| Rect {
             x,
@@ -547,26 +698,22 @@ mod tests {
             h: 70.0,
         };
         let mut cached = Surface::filled(64, 48, 1.0, Color::BLACK);
-        for x in [-30.0, -29.0, -26.5] {
+        for x in [-30.0, -29.0, -26.5, -29.0, 0.0] {
             cached
                 .fill_gradient_general(rect(x), &gradient, 0.8, 0.0)
                 .unwrap();
         }
         // Direct drawing of all three on a cache-less surface each time.
         let mut expected = Surface::filled(64, 48, 1.0, Color::BLACK);
-        for x in [-30.0, -29.0, -26.5] {
+        for x in [-30.0, -29.0, -26.5, -29.0, 0.0] {
             expected.gradient_cache = GradientCache::default();
             expected
                 .fill_gradient_general(rect(x), &gradient, 0.8, 0.0)
                 .unwrap();
         }
-        let worst = cached
-            .pixels
-            .iter()
-            .zip(&expected.pixels)
-            .map(|(a, b)| a.abs_diff(*b))
-            .max()
-            .unwrap();
-        assert!(worst <= 1, "tile differs from direct drawing by {worst}");
+        assert!(
+            cached.pixels == expected.pixels,
+            "tile differs from direct drawing"
+        );
     }
 }

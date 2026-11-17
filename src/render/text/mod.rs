@@ -1,9 +1,12 @@
 //! Text layout, fonts, stable glyph coverage, subpixel mask sampling, text shadows, rich-text runs
-//! (`props.rs`), and glyph strokes (`stroke.rs`).
+//! (`props.rs`), glyph strokes (`stroke.rs`), pair kerning (`kerning.rs`), and the synthetic
+//! oblique of italic text without an italic face (`oblique.rs`).
 
 mod block;
 mod fonts;
+mod kerning;
 mod mask;
+mod oblique;
 mod props;
 mod raster;
 mod shadow;
