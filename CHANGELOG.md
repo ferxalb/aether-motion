@@ -9,6 +9,20 @@ CLI/MCP output may still change between minor releases.
 
 ### Added
 
+- Inline rich text: `<span>`, `<strong>`, `<b>`, and `<code>` inside an element with its own text become
+  styled runs (color, family, weight, letter spacing, fill, stroke, gradient) that wrap and align together.
+  `-webkit-text-stroke` (stroked from the font outlines), `-webkit-text-fill-color`, and
+  `background-clip: text` gradient text. Plain text renders byte-identically. See `examples/rich-text.html`.
+- `data-hf-draw` on inline `<svg>`: strokes draw themselves along their measured length, staggered in
+  document order. `data-hf-motion-path`: any element travels along SVG path data (arcs included), with
+  optional `-rotate="auto"`. A new `vector` module measures paths. See `examples/vector-motion.html`.
+- `clip-path` with `inset()`, `circle()`, `ellipse()`, and `polygon()` (px or %), drawn with exact
+  antialiased coverage and animated through `clipPath` in `data-hf-keyframes`; `mask-image` with a linear
+  or radial gradient. Both apply after the element's `filter`. See `examples/clip-mask.html`.
+- Scene transitions `dip-to-black`, `dip-to-white`, `flash`, `blur`, `whip-left|right|up|down`, `glitch`,
+  and `rgb-split`, compiled to filter tracks and new pixel-effect tracks drawn through the effect layer.
+  `data-hf-keyframes` accepts `glitch` (0 to 1, a deterministic slice displacement that changes 24 times a
+  second) and `rgbSplit` (px). See `examples/light-transitions.html`.
 - Audio effects on `<audio>` and the sound of `<video>`: `data-hf-volume-ramp` (eased gain keyframes in
   `volume` or `db`), `data-hf-duck` (sidechain ducking under trigger clips with look-ahead attack, hold,
   release, amount, and threshold), and `data-hf-eq` (up to 16 RBJ biquad bands or the `voice`, `music-bed`,

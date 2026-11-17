@@ -1,10 +1,29 @@
-//! Text properties: color, font size, family and weight, and alignment.
+//! Text properties: color, font size, family and weight, alignment, wrapping, shadow, fill color, and
+//! stroke.
 
 use crate::model::{Length, LineHeight, Style, WhiteSpace};
 use crate::parse::values::color::parse_color;
 use crate::parse::values::length::parse_length;
 use crate::parse::values::shadow::parse_shadow;
+use crate::parse::values::tokens::split_top;
 use anyhow::{bail, Result};
+
+/// A text stroke width: non-negative px (`thin`, `medium`, and `thick` are 1, 3, and 5 px).
+fn stroke_width(value: &str, key: &str) -> Result<f32> {
+    let n = match value.trim() {
+        "thin" => 1.0,
+        "medium" => 3.0,
+        "thick" => 5.0,
+        other => match parse_length(other, key)? {
+            Length::Px(n) => n,
+            Length::Percent(_) => bail!("{key}: only px is supported: {value}"),
+        },
+    };
+    if !(0.0..=200.0).contains(&n) {
+        bail!("{key} must be between 0 and 200 px");
+    }
+    Ok(n)
+}
 
 /// Applies a text declaration to `style`; `Ok(false)` means the property is not a text property.
 pub(super) fn apply(key: &str, value: &str, style: &mut Style) -> Result<bool> {
@@ -54,6 +73,24 @@ pub(super) fn apply(key: &str, value: &str, style: &mut Style) -> Result<bool> {
                     ),
                 },
             });
+        }
+        "-webkit-text-fill-color" => style.text_fill_color = Some(parse_color(value)?),
+        "-webkit-text-stroke" | "text-stroke" => {
+            let parts: Vec<&str> = split_top(value, ' ');
+            let (width, color) = match parts.as_slice() {
+                ["none"] => ("0", None),
+                [width] => (*width, None),
+                [width, color] => (*width, Some(*color)),
+                _ => bail!("{key}: use <width> [<color>]: {value}"),
+            };
+            style.text_stroke_width = Some(stroke_width(width, key)?);
+            style.text_stroke_color = color.map(parse_color).transpose()?;
+        }
+        "-webkit-text-stroke-width" | "text-stroke-width" => {
+            style.text_stroke_width = Some(stroke_width(value, key)?);
+        }
+        "-webkit-text-stroke-color" | "text-stroke-color" => {
+            style.text_stroke_color = Some(parse_color(value)?);
         }
         "white-space" => {
             style.white_space = Some(match value {

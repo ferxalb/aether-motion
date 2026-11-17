@@ -107,6 +107,10 @@ pub struct Renderer<'a> {
     grade: paint::ColorChain,
     /// Per-channel sums of the sub-frame samples while a motion-blurred frame is accumulated.
     shutter_sums: Vec<u16>,
+    /// Composition time of the states in `current` (animated clip paths are evaluated at it).
+    time: f64,
+    /// Element whose clip-path or mask layer is being drawn, so it is not masked twice.
+    mask_guard: Option<usize>,
 }
 
 pub(crate) fn check_image(path: &Path) -> Result<()> {
@@ -218,6 +222,8 @@ impl<'a> Renderer<'a> {
             isolated: 0,
             grade: paint::ColorChain::new(&composition.grade),
             shutter_sums: Vec::new(),
+            time: 0.0,
+            mask_guard: None,
         })
     }
 
@@ -286,6 +292,7 @@ impl<'a> Renderer<'a> {
 
     /// Fills `current` with every element's state at `time`.
     pub(in crate::render) fn sample_states(&mut self, time: f64) {
+        self.time = time;
         self.current.clear();
         for element in &self.composition.elements {
             let parent_alpha = element.parent.map_or(1.0, |idx| self.current[idx].alpha);

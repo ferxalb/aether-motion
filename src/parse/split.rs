@@ -263,6 +263,7 @@ pub(in crate::parse) fn push_piece(
             track: 0,
             motion,
             layout: LayoutHints::default(),
+            spans: Vec::new(),
         },
         start_expr: None,
         duration: None,
@@ -271,6 +272,7 @@ pub(in crate::parse) fn push_piece(
         transition: None,
         reveal: None,
         animation: None,
+        motion_path: None,
     });
     out[parent].element.children.push(idx);
     idx

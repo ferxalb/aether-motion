@@ -1,7 +1,9 @@
-//! Visual properties: background, border, radius, shadow, opacity, filters, blend mode, object-fit, and transform.
+//! Visual properties: background, border, radius, shadow, opacity, filters, blend mode, clip-path,
+//! mask-image, object-fit, and transform.
 
 use crate::model::{Background, BlendMode, Length, Style};
 use crate::parse::values::background::parse_background;
+use crate::parse::values::clip::{parse_clip_path, parse_mask_image};
 use crate::parse::values::color::parse_color;
 use crate::parse::values::filter::{parse_backdrop_filter, parse_filter};
 use crate::parse::values::length::{parse_length, spacing_px};
@@ -66,6 +68,18 @@ pub(super) fn apply(key: &str, value: &str, style: &mut Style) -> Result<bool> {
             style.drop_shadow = chain.drop_shadow;
         }
         "mix-blend-mode" => style.blend = parse_blend_mode(value)?,
+        "background-clip" | "-webkit-background-clip" => {
+            style.background_clip_text = match value.trim() {
+                "text" => true,
+                "border-box" => false,
+                other => bail!("{key}: only text and border-box are supported: {other}"),
+            }
+        }
+        "clip-path" | "-webkit-clip-path" => style.clip_path = parse_clip_path(value)?,
+        "mask-image" | "-webkit-mask-image" => style.mask = parse_mask_image(value)?,
+        "mask" | "-webkit-mask" => {
+            bail!("{key}: use mask-image with a linear-gradient() or radial-gradient() (the mask shorthand is not supported)")
+        }
         "border" => {
             (style.border_width, style.border_color) = (0.0, None);
             for token in split_top(value, ' ') {

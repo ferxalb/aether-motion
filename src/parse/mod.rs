@@ -11,6 +11,7 @@ mod captions;
 mod counter;
 mod css;
 mod html;
+mod rich_text;
 mod speed;
 mod split;
 mod style;
@@ -19,6 +20,7 @@ mod transition;
 mod tree;
 mod values;
 mod variables;
+mod vector;
 mod video;
 
 pub use values::color::parse_color;
@@ -172,7 +174,10 @@ pub fn parse_file_with(path: &Path, values: &VariableValues) -> Result<Compositi
             p.duration
                 .or_else(|| {
                     if p.start_expr.is_some()
-                        && matches!(p.element.content, Content::Image(_) | Content::InlineSvg(_))
+                        && matches!(
+                            p.element.content,
+                            Content::Image(_) | Content::InlineSvg(_) | Content::DrawnSvg(_)
+                        )
                     {
                         Some(3.0)
                     } else {
@@ -210,7 +215,10 @@ pub fn parse_file_with(path: &Path, values: &VariableValues) -> Result<Compositi
         p.element.end = if let Some(d) = p.duration {
             p.element.start + d
         } else if p.start_expr.is_some()
-            && matches!(p.element.content, Content::Image(_) | Content::InlineSvg(_))
+            && matches!(
+                p.element.content,
+                Content::Image(_) | Content::InlineSvg(_) | Content::DrawnSvg(_)
+            )
         {
             p.element.start + 3.0
         } else {
@@ -245,6 +253,8 @@ pub fn parse_file_with(path: &Path, values: &VariableValues) -> Result<Compositi
                 bail!("data-hf-keyframes exceeds the duration of {label}");
             }
             p.element.motion = motion_from_keyframes(rest, filter_rest, &p.keyframes);
+            clip_from_keyframes(&mut p.element, &p.keyframes)
+                .with_context(|| format!("data-hf-keyframes clipPath on {label}"))?;
         } else if !p.camera.is_empty() {
             if idx == 0 {
                 bail!("data-hf-camera cannot be on the root; add a container inside it");
@@ -256,6 +266,20 @@ pub fn parse_file_with(path: &Path, values: &VariableValues) -> Result<Compositi
                 bail!("data-hf-camera exceeds the duration of {label}");
             }
             p.element.motion = motion_from_camera(rest, &p.camera);
+        }
+        if let Some(path) = p.motion_path.take() {
+            if idx == 0 {
+                bail!("data-hf-motion-path cannot be on the root; add a container inside it");
+            }
+            if path.at + path.duration > clip_len + 1e-9 {
+                bail!("data-hf-motion-path exceeds the duration of {label}");
+            }
+            p.element.motion.path = Some(std::sync::Arc::new(path));
+        }
+        if let Content::DrawnSvg(drawing) = &p.element.content {
+            if drawing.end() > clip_len + 1e-9 {
+                bail!("data-hf-draw on {label} ends at {:.2}s, after the clip ({clip_len:.2}s); shorten -duration or -stagger", drawing.end());
+            }
         }
         order_animated_filters(&mut p.element, idx == 0)
             .with_context(|| format!("animated filter on {label}"))?;
@@ -280,6 +304,14 @@ pub fn parse_file_with(path: &Path, values: &VariableValues) -> Result<Compositi
             // Color functions on the root grade every finished frame instead of a layer.
             grade = std::mem::take(&mut style.filter_colors);
         }
+        if p.element.style.background_clip_text && !matches!(p.element.content, Content::Text(_)) {
+            bail!("background-clip: text on {label} needs text of its own (it fills the element's glyphs; descendants are not clipped)");
+        }
+        if p.element.style.background_clip_text && p.element.style.background.is_none() {
+            bail!("background-clip: text on {label} needs a background (for example a linear-gradient)");
+        }
+        check_clip_and_mask(&p.element, idx == 0)
+            .with_context(|| format!("clip-path or mask-image on {label}"))?;
         if let Some(spec) = p.reveal.take() {
             if idx == 0 {
                 bail!("data-hf-reveal cannot be on the root; add a container inside it");
@@ -287,7 +319,7 @@ pub fn parse_file_with(path: &Path, values: &VariableValues) -> Result<Compositi
             if spec.end() > clip_len + 1e-9 {
                 bail!("data-hf-reveal exceeds the duration of {label}");
             }
-            if p.element.style.rotate != 0.0 || !p.element.motion.rotate.0.is_empty() {
+            if p.element.style.rotate != 0.0 || p.element.motion.rotates() {
                 bail!("data-hf-reveal cannot be combined with rotate on {label}");
             }
             spec.apply(&mut p.element.motion);
@@ -298,6 +330,15 @@ pub fn parse_file_with(path: &Path, values: &VariableValues) -> Result<Compositi
         elements.push(p.element);
     }
     apply_transitions(&mut elements, &transitions, &ids, (width, height))?;
+    // Light and focus transitions add filter tracks to scenes that had none.
+    for element in elements.iter_mut().skip(1) {
+        let label = element
+            .id
+            .clone()
+            .unwrap_or_else(|| "element with no id".into());
+        order_animated_filters(element, false)
+            .with_context(|| format!("animated filter on {label}"))?;
+    }
     check_blend_isolation(&elements)?;
     let background = match elements[0].style.background {
         Some(Background::Solid(color)) => color,
@@ -351,6 +392,61 @@ fn parse_motion_blur(node: &kuchiki::NodeRef) -> Result<Option<MotionBlur>> {
     }))
 }
 
+/// `data-hf-keyframes` `clipPath`: one track per shape value. The static `clip-path` (or the first
+/// keyframe's shape when there is none) fixes the function, point count, and units; keyframes
+/// without `clipPath` inherit the previous values.
+fn clip_from_keyframes(
+    element: &mut crate::model::Element,
+    frames: &[crate::model::Keyframe],
+) -> Result<()> {
+    use crate::model::{Track, TrackPoint};
+    let Some(first) = frames.iter().find_map(|k| k.clip.as_ref()) else {
+        return Ok(());
+    };
+    let base = element
+        .style
+        .clip_path
+        .get_or_insert_with(|| first.clone())
+        .clone();
+    for shape in frames.iter().filter_map(|k| k.clip.as_ref()) {
+        crate::parse::values::clip::check_compatible(&base, shape)?;
+    }
+    let mut values = base.values();
+    let mut tracks = vec![Track::default(); values.len()];
+    for frame in frames {
+        if let Some(shape) = &frame.clip {
+            values = shape.values();
+        }
+        for (track, &value) in tracks.iter_mut().zip(&values) {
+            track.0.push(TrackPoint {
+                at: frame.at,
+                value,
+                easing: frame.easing,
+            });
+        }
+    }
+    element.motion.clip = tracks;
+    Ok(())
+}
+
+/// `clip-path` and `mask-image` draw through an offscreen layer that does not rotate.
+fn check_clip_and_mask(element: &crate::model::Element, root: bool) -> Result<()> {
+    let style = &element.style;
+    if style.clip_path.is_none() && style.mask.is_none() {
+        return Ok(());
+    }
+    if root {
+        bail!("not supported on the root; add a full-size container inside it");
+    }
+    if style.rotate != 0.0 || element.motion.rotates() {
+        bail!("cannot be combined with rotate on the same element; wrap the rotated element in a container");
+    }
+    if style.blend != BlendMode::Normal {
+        bail!("cannot be combined with mix-blend-mode on the same element; wrap it in a container");
+    }
+    Ok(())
+}
+
 /// Blend modes need the real backdrop, which an ancestor drawn through an offscreen layer hides.
 fn check_blend_isolation(elements: &[crate::model::Element]) -> Result<()> {
     for element in elements
@@ -367,12 +463,14 @@ fn check_blend_isolation(elements: &[crate::model::Element]) -> Result<()> {
                 || (idx != 0
                     && (!ancestor.motion.filter.is_static()
                         || style.rotate != 0.0
-                        || ancestor.motion.base.rotate != 0.0
-                        || !ancestor.motion.rotate.0.is_empty()
+                        || ancestor.motion.rotates()
                         || ancestor.motion.wipe.is_some()
                         || style.filter_blur > 0.0
                         || !style.filter_colors.is_empty()
                         || style.drop_shadow.is_some()
+                        || style.clip_path.is_some()
+                        || style.mask.is_some()
+                        || !ancestor.motion.fx.is_static()
                         || style.blend != BlendMode::Normal));
             if layered {
                 let name = |e: &crate::model::Element| {
@@ -380,7 +478,7 @@ fn check_blend_isolation(elements: &[crate::model::Element]) -> Result<()> {
                         .map_or_else(|| format!("<{}>", e.tag), |id| format!("#{id}"))
                 };
                 bail!(
-                    "mix-blend-mode on {} cannot be inside {} (overflow: hidden, rotation, a reveal, a wipe, a filter, or a blend mode); move it out of that element",
+                    "mix-blend-mode on {} cannot be inside {} (overflow: hidden, rotation, a reveal, a wipe, a filter, a clip-path or mask, or a blend mode); move it out of that element",
                     name(element),
                     name(ancestor)
                 );
@@ -392,7 +490,7 @@ fn check_blend_isolation(elements: &[crate::model::Element]) -> Result<()> {
 }
 
 /// Resting amount of each animatable filter channel: the static `filter` value, else neutral.
-fn filter_base(style: &crate::model::Style) -> [f32; 8] {
+pub(in crate::parse) fn filter_base(style: &crate::model::Style) -> [f32; 8] {
     use crate::model::FilterChannel;
     let mut base = FilterChannel::ALL.map(FilterChannel::neutral);
     base[FilterChannel::Blur.index()] = style.filter_blur;
@@ -409,6 +507,7 @@ fn filter_base(style: &crate::model::Style) -> [f32; 8] {
 fn order_animated_filters(element: &mut crate::model::Element, root: bool) -> Result<()> {
     use crate::model::FilterChannel;
     let filter = &mut element.motion.filter;
+    filter.appended.clear();
     if filter.is_static() {
         return Ok(());
     }

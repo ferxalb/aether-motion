@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Self-drawing strokes and motion paths</title>
+<style>
+  #root { background: #0b0d14; }
+  .clip { position: absolute; }
+  #route { left: 160px; top: 200px; width: 1600px; height: 600px; }
+  #plane { left: 140px; top: 680px; width: 40px; height: 40px; border-radius: 8px;
+           background: linear-gradient(135deg, #ffd60a, #ff8a00); box-shadow: 0 0 24px rgba(255, 200, 0, 0.6); }
+  #icons { left: 660px; top: 820px; width: 600px; height: 200px; }
+  .title { position: absolute; left: 160px; top: 80px; width: 1600px; color: #e8ecff; font-size: 72px; font-weight: 800; text-align: center; }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="vector-motion" data-width="1920" data-height="1080" data-duration="5">
+  <div class="title clip" data-start="0" data-duration="5" data-track-index="2">Draw and follow</div>
+  <!-- The route draws itself while the square follows the same curve, turning with it. -->
+  <svg id="route" class="clip" data-start="0" data-duration="5" data-track-index="0" viewBox="0 0 1600 600"
+       data-hf-draw data-hf-draw-at="0.3" data-hf-draw-duration="3" data-hf-draw-easing="linear">
+    <path d="M0 500 C 300 500 400 100 800 100 S 1300 500 1600 300" fill="none" stroke="#4a7dff" stroke-width="8" stroke-linecap="round"/>
+  </svg>
+  <div id="plane" class="clip" data-start="0" data-duration="5" data-track-index="1"
+       data-hf-motion-path="M0 500 C 300 500 400 100 800 100 S 1300 500 1600 300"
+       data-hf-motion-path-at="0.3" data-hf-motion-path-duration="3" data-hf-motion-path-easing="linear"
+       data-hf-motion-path-rotate="auto"></div>
+  <!-- Three icons draw one after another. -->
+  <svg id="icons" class="clip" data-start="0" data-duration="5" data-track-index="0" viewBox="0 0 300 100"
+       data-hf-draw data-hf-draw-at="1" data-hf-draw-duration="0.8" data-hf-draw-stagger="0.4">
+    <circle cx="50" cy="50" r="36" fill="none" stroke="#1fbf8f" stroke-width="6"/>
+    <rect x="114" y="14" width="72" height="72" rx="12" fill="none" stroke="#ff6b3d" stroke-width="6"/>
+    <polyline points="214,70 238,30 262,70 286,30" fill="none" stroke="#ffd60a" stroke-width="6" stroke-linejoin="round"/>
+  </svg>
+</div>
+</body>
+</html>

@@ -1,7 +1,9 @@
 //! `data-hf-keyframes` JSON attribute parsing: offsets, opacity, easing, and filter amounts
-//! (`blur`, `brightness`, `contrast`, `saturate`, `grayscale`, `sepia`, `hueRotate`, `invert`).
+//! (`blur`, `brightness`, `contrast`, `saturate`, `grayscale`, `sepia`, `hueRotate`, `invert`), and
+//! the `glitch` (0 to 1) and `rgbSplit` (px) pixel effects, and `clipPath` shapes.
 use crate::model::{Easing, FilterChannel, Keyframe};
 use crate::parse::animation::timing::parse_keyframe_easing;
+use crate::parse::values::clip::parse_clip_path;
 use anyhow::{anyhow, bail, Context, Result};
 use std::collections::BTreeMap;
 
@@ -18,13 +20,18 @@ pub(in crate::parse) fn parse_keyframes(raw: &str) -> Result<Vec<Keyframe>> {
         opacity: 1.0,
         easing: Easing::Linear,
         filters: [None; 8],
+        effects: [None; 2],
+        clip: None,
     };
     let mut keyframes = Vec::with_capacity(frames.len());
     for (index, frame) in frames.into_iter().enumerate() {
         let keyframe = (|| -> Result<Keyframe> {
             for key in frame.keys() {
                 let filter = FilterChannel::ALL.iter().any(|c| c.key() == key);
-                if !filter && !matches!(key.as_str(), "at" | "x" | "y" | "opacity" | "easing") {
+                if !filter && !matches!(
+                        key.as_str(),
+                        "at" | "x" | "y" | "opacity" | "easing" | "glitch" | "rgbSplit" | "clipPath"
+                    ) {
                     bail!("unknown field: {key}");
                 }
             }
@@ -81,6 +88,33 @@ pub(in crate::parse) fn parse_keyframes(raw: &str) -> Result<Vec<Keyframe>> {
                 }
                 filters[channel.index()] = Some(n as f32);
             }
+            let mut effects = [None; 2];
+            for (slot, (key, range)) in effects
+                .iter_mut()
+                .zip([("glitch", 0.0..=1.0), ("rgbSplit", -500.0..=500.0)])
+            {
+                if let Some(value) = frame.get(key) {
+                    let n = value
+                        .as_f64()
+                        .ok_or_else(|| anyhow!("{key} must be a number"))?;
+                    if !range.contains(&n) {
+                        bail!("{key} is out of range (glitch 0 to 1; rgbSplit -500 to 500 px)");
+                    }
+                    *slot = Some(n as f32);
+                }
+            }
+            let clip = match frame.get("clipPath") {
+                None => None,
+                Some(value) => {
+                    let raw = value
+                        .as_str()
+                        .ok_or_else(|| anyhow!("clipPath must be a string such as \"circle(40% at 50% 50%)\""))?;
+                    Some(
+                        parse_clip_path(raw)?
+                            .ok_or_else(|| anyhow!("clipPath cannot be none in a keyframe"))?,
+                    )
+                }
+            };
             Ok(Keyframe {
                 at,
                 x,
@@ -88,11 +122,13 @@ pub(in crate::parse) fn parse_keyframes(raw: &str) -> Result<Vec<Keyframe>> {
                 opacity: opacity as f32,
                 easing,
                 filters,
+                effects,
+                clip,
             })
         })()
         .with_context(|| format!("keyframe {}", index + 1))?;
+        previous = keyframe.clone();
         keyframes.push(keyframe);
-        previous = keyframe;
     }
     Ok(keyframes)
 }

@@ -9,6 +9,7 @@ use anyhow::{anyhow, Result};
 use fontdb::{Database, Family, Query, Weight};
 use fontdue::{Font, FontSettings};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Family name of the embedded fonts, used for every generic family.
 const EMBEDDED_FAMILY: &str = "Roboto";
@@ -19,9 +20,16 @@ const EMBEDDED_FONTS: [&[u8]; 2] = [
     include_bytes!("../../../assets/fonts/Roboto-Bold.ttf"),
 ];
 
+/// A parsed font plus the face bytes it came from (for glyph outlines, see `stroke.rs`).
+struct Loaded {
+    font: Font,
+    data: Arc<Vec<u8>>,
+    index: u32,
+}
+
 /// Font index plus the parsed fonts requested so far, keyed by the CSS family list and weight.
 pub(in crate::render) struct FontStore {
-    fonts: HashMap<(String, u16), Font>,
+    fonts: HashMap<(String, u16), Loaded>,
     db: Database,
 }
 
@@ -56,6 +64,27 @@ impl FontStore {
 
     /// Resolves the first available family of a CSS list, falling back to `sans-serif`.
     pub(in crate::render) fn get(&mut self, family: &str, weight: u16) -> Result<&Font> {
+        Ok(&self.load(family, weight)?.font)
+    }
+
+    /// A font already resolved by [`Self::get`].
+    pub(in crate::render) fn loaded(&self, family: &str, weight: u16) -> Option<&Font> {
+        self.fonts
+            .get(&(family.to_string(), weight))
+            .map(|loaded| &loaded.font)
+    }
+
+    /// Face bytes and collection index of a font, for outline access.
+    pub(in crate::render) fn face_data(
+        &mut self,
+        family: &str,
+        weight: u16,
+    ) -> Result<(Arc<Vec<u8>>, u32)> {
+        let loaded = self.load(family, weight)?;
+        Ok((Arc::clone(&loaded.data), loaded.index))
+    }
+
+    fn load(&mut self, family: &str, weight: u16) -> Result<&Loaded> {
         let key = (family.to_string(), weight);
         if !self.fonts.contains_key(&key) {
             let id = family.split(',').find_map(|item| {
@@ -83,22 +112,19 @@ impl FontStore {
                     })
                 })
                 .ok_or_else(|| anyhow!("no system font is available"))?;
-            let font = self
+            let (data, index) = self
                 .db
-                .with_face_data(id, |data, index| {
-                    Font::from_bytes(
-                        // Font must own these bytes after fontdb's callback returns.
-                        #[allow(clippy::unnecessary_to_owned)]
-                        data.to_vec(),
-                        FontSettings {
-                            collection_index: index,
-                            ..Default::default()
-                        },
-                    )
-                })
-                .ok_or_else(|| anyhow!("could not read font"))?
-                .map_err(|error| anyhow!("invalid font: {error}"))?;
-            self.fonts.insert(key.clone(), font);
+                .with_face_data(id, |data, index| (Arc::new(data.to_vec()), index))
+                .ok_or_else(|| anyhow!("could not read font"))?;
+            let font = Font::from_bytes(
+                data.as_slice(),
+                FontSettings {
+                    collection_index: index,
+                    ..Default::default()
+                },
+            )
+            .map_err(|error| anyhow!("invalid font: {error}"))?;
+            self.fonts.insert(key.clone(), Loaded { font, data, index });
         }
         Ok(&self.fonts[&key])
     }

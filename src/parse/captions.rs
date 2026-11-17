@@ -366,6 +366,7 @@ mod tests {
                 track: 0,
                 motion: Motion::default(),
                 layout: Default::default(),
+                spans: Vec::new(),
             },
             start_expr: None,
             duration: None,
@@ -374,6 +375,7 @@ mod tests {
             transition: None,
             reveal: None,
             animation: None,
+            motion_path: None,
         };
         let mut out = vec![host];
         spec(mode).expand(0, &Style::default(), &mut out).unwrap();

@@ -21,10 +21,25 @@ fn fix_hint(message: &str) -> &'static str {
         || message.contains(": variable ")
     {
         "declare data-composition-variables='[{\"id\":\"title\",\"type\":\"string\",\"label\":\"Title\",\"default\":\"Hello\"}]' on <html> or the composition root (types string, number, color, boolean, enum, image, font); bind with var(--id) in CSS, data-var-text, data-var-src (img, video, audio, source), or data-var-if (id, !id, id=value, id!=value); pass values as a JSON object of declared ids with matching types"
+    } else if message.contains("inline text")
+        || message.contains("inline <")
+        || message.contains("background-clip")
+    {
+        "inline runs (span, strong, b, code inside an element with its own text) may set only color, font-family, font-weight, letter-spacing, -webkit-text-fill-color, -webkit-text-stroke, and background with background-clip: text; move box styles, font-size, and animation to the text element or a separate element; background-clip: text needs a background and text of its own"
+    } else if message.contains("data-hf-draw") {
+        "put data-hf-draw on an inline <svg> with stroked shapes, with optional data-hf-draw-at, -duration (per shape), -stagger, and -easing; the drawing must end inside the clip"
+    } else if message.contains("data-hf-motion-path") {
+        "use data-hf-motion-path=\"M0 0 C ...\" (SVG path data in composition px; the element moves by the path's displacement from its first point) with optional -at, -duration, -easing, and -rotate=\"auto\"; it must end inside the clip, and -rotate cannot be combined with clip-path, mask-image, or data-hf-reveal"
     } else if message.contains("data-hf-reveal") {
         "use data-hf-reveal=from-left|from-right|from-top|from-bottom on a non-root element, with optional data-hf-reveal-at, -duration, and -easing; not with rotate"
     } else if message.contains("data-hf-counter") {
         "use data-hf-counter=<end value> on an empty element, with optional data-hf-counter-from, -duration (0.05 to 10), -delay, -decimals (0 to 6), -prefix, -suffix, -separator, and -easing"
+    } else if message.contains("clip-path")
+        || message.contains("clipPath")
+        || message.contains("mask-image")
+        || message.contains("mask shorthand")
+    {
+        "use clip-path: inset(t r b l [round Npx]) | circle(r [at x y]) | ellipse(rx ry [at x y]) | polygon(x y, ...) with px or %, animate it with clipPath in data-hf-keyframes using the same function, point count, and units, and use mask-image with one linear-gradient() or radial-gradient(); not on the root and not with rotate or mix-blend-mode on the same element"
     } else if message.contains("backdrop-filter") {
         "use backdrop-filter: blur(<px>) or none (at most 200px); no other filter functions are supported"
     } else if message.contains("animated filter") || message.contains("not animatable") {
@@ -38,13 +53,13 @@ fn fix_hint(message: &str) -> &'static str {
     } else if message.contains("data-hf-vignette") || message.contains("data-hf-grain") {
         "set data-hf-vignette and data-hf-grain on the composition root to a number between 0 and 1"
     } else if message.contains("data-hf-transition") || message.contains("transition ") {
-        "on the incoming clip use data-hf-transition=crossfade|push-left|cover-left|wipe-left|zoom-in|zoom-out and data-hf-transition-from=<outgoing id>; start it inside the outgoing clip (data-start=\"a-0.6\"), give the outgoing clip a data-duration, and draw it above on a higher data-track-index"
+        "on the incoming clip use data-hf-transition=crossfade|push-<dir>|cover-<dir>|wipe-<dir>|whip-<dir>|zoom-in|zoom-out|dip-to-black|dip-to-white|flash|blur|glitch|rgb-split (dir: left, right, up, down) and data-hf-transition-from=<outgoing id>; start it inside the outgoing clip (data-start=\"a-0.6\"), give the outgoing clip a data-duration, and draw it above on a higher data-track-index"
     } else if message.contains("data-hf-split") || message.contains("data-hf-stagger") {
         "use data-hf-split=words|chars on an element with one line of plain text (no <br> or child elements); see AGENTS.md for data-hf-stagger, data-hf-split-from, and the other options"
     } else if message.contains("data-hf-camera") || message.contains("camera keyframe") {
         "use a JSON array of {at, zoom, x, y, easing} on a non-root container; at in local seconds, strictly increasing; zoom between 0.05 and 50"
     } else if message.contains("data-hf-keyframes") {
-        "use a JSON array of {at, x, y, opacity, easing} plus optional filter amounts blur (0 to 200 px), brightness, contrast, saturate (0 to 100), grayscale, sepia, invert (0 to 1), and hueRotate (degrees); at in local seconds, strictly increasing and within the clip; check the indicated field"
+        "use a JSON array of {at, x, y, opacity, easing} plus optional filter amounts blur (0 to 200 px), brightness, contrast, saturate (0 to 100), grayscale, sepia, invert (0 to 1), and hueRotate (degrees), and the effects glitch (0 to 1) and rgbSplit (-500 to 500 px); at in local seconds, strictly increasing and within the clip; check the indicated field"
     } else if message.contains("CSS variable") || message.contains("var()") {
         "define --name on :root or an ancestor, or add a fallback: var(--name, value)"
     } else if message.contains("animation") || message.contains("@keyframes") {

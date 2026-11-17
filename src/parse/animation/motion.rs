@@ -1,6 +1,6 @@
 //! Compiles resolved animations and `data-hf-keyframes` into time-sampled motion tracks.
 use crate::model::{
-    Easing, FilterChannel, FilterMotion, Keyframe, Motion, Pose, Track, TrackPoint,
+    Easing, FilterChannel, FilterMotion, FxMotion, Keyframe, Motion, Pose, Track, TrackPoint,
 };
 use crate::parse::animation::{AnimationSpec, CssFrame, Direction, Iterations, MAX_TRACK_POINTS};
 use anyhow::{bail, Result};
@@ -113,6 +113,9 @@ pub(in crate::parse) fn build_motion(
             tracks,
             appended: Vec::new(),
         },
+        fx: FxMotion::default(),
+        clip: Vec::new(),
+        path: None,
         hold_before: decl.backwards,
         hold_after: decl.forwards,
     })
@@ -148,6 +151,34 @@ fn filter_from_keyframes(filter_base: [f32; 8], frames: &[Keyframe]) -> FilterMo
     }
 }
 
+/// `data-hf-keyframes` `glitch` and `rgbSplit`: like filter amounts, with a resting value of 0.
+fn fx_from_keyframes(frames: &[Keyframe]) -> FxMotion {
+    let track = |i: usize| {
+        if frames.iter().all(|k| k.effects[i].is_none()) {
+            return Track::default();
+        }
+        let mut value = 0.0;
+        Track(
+            frames
+                .iter()
+                .map(|k| {
+                    value = k.effects[i].unwrap_or(value);
+                    TrackPoint {
+                        at: k.at,
+                        value,
+                        easing: k.easing,
+                    }
+                })
+                .collect(),
+        )
+    };
+    FxMotion {
+        glitch: track(0),
+        rgb_split: track(1),
+        ..FxMotion::default()
+    }
+}
+
 /// `data-hf-keyframes` offsets add to the resting pose; opacity multiplies it; filter amounts are
 /// absolute.
 pub(in crate::parse) fn motion_from_keyframes(
@@ -177,6 +208,9 @@ pub(in crate::parse) fn motion_from_keyframes(
         reveal: Track::default(),
         wipe: None,
         filter: filter_from_keyframes(filter_base, frames),
+        fx: fx_from_keyframes(frames),
+        clip: Vec::new(),
+        path: None,
         hold_before: true,
         hold_after: true,
     }

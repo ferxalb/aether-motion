@@ -134,6 +134,45 @@ impl<'a> Renderer<'a> {
     }
 }
 
+impl<'a> Renderer<'a> {
+    /// Draws an inline `<svg>` with `data-hf-draw`: while strokes are still drawing, the markup for
+    /// this instant is rasterized directly (it changes every frame); afterwards the finished
+    /// drawing goes through the image cache.
+    pub(in crate::render) fn draw_drawn_svg(
+        &mut self,
+        idx: usize,
+        drawing: &'a crate::vector::DrawOnSvg,
+        rect: Rect,
+        fit: &'a str,
+        alpha: f32,
+    ) -> Result<()> {
+        let elapsed = self.time - self.composition.elements[idx].start;
+        let Some(markup) = drawing.markup_at(elapsed) else {
+            return self.draw_image(ImageSrc::Inline(&drawing.markup), rect, fit, alpha);
+        };
+        let w = (rect.w * self.scale).round().max(1.0) as u32;
+        let h = (rect.h * self.scale).round().max(1.0) as u32;
+        let bytes = (w as usize)
+            .checked_mul(h as usize)
+            .and_then(|n| n.checked_mul(4))
+            .ok_or_else(|| anyhow!("rasterized image is too large"))?;
+        if bytes > CACHE_LIMIT {
+            return Err(anyhow!("rasterized image exceeds 64 MiB; use --scale"));
+        }
+        let tree = svg::parse_svg(markup.as_bytes()).context("data-hf-draw")?;
+        let pixels = svg::rasterize(&tree, w, h, fit)?;
+        let image = CachedImage {
+            opaque: pixels.pixels().all(|pixel| pixel[3] == 255),
+            pixels,
+            rows: Vec::new(),
+        };
+        let x0 = (rect.x * self.scale).round() as i32;
+        let y0 = (rect.y * self.scale).round() as i32;
+        blit(&mut self.surface, &image, x0, y0, w, h, alpha);
+        Ok(())
+    }
+}
+
 /// Resizes `image` to a `w` x `h` canvas following `object-fit` (`fill`, `contain`, or `cover`).
 pub(in crate::render) fn fit_pixels(
     image: &RgbaImage,

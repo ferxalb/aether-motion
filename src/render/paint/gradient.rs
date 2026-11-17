@@ -7,9 +7,7 @@
 //! Full and quarter element opacities use exact integer tile blending, preserving ordered dithering.
 //! Stop colors are premultiplied once per draw, including uncached fractional-motion draws.
 
-#[cfg(test)]
-use crate::model::Color;
-use crate::model::{Gradient, GradientKind, LinearDirection, Stop};
+use crate::model::{Color, Gradient, GradientKind, LinearDirection, Stop};
 use crate::render::geometry::{clip_pixels, Rect};
 use crate::render::paint::float_ops::{hypot, round_to_u8};
 use crate::render::paint::surface::Surface;
@@ -177,6 +175,63 @@ impl Mapper {
             Self::Radial { center, radii } => {
                 hypot((x - center.0) / radii.0, (y - center.1) / radii.1)
             }
+        }
+    }
+}
+
+/// Alpha (0..=1) of `gradient` laid over the box with pixel edges `[x0, y0, x1, y1]`, sampled at the
+/// center of every pixel of `rows` x `columns` (absolute pixel ranges), row by row. Used by
+/// `mask-image`.
+pub(in crate::render) fn alpha_plane(
+    gradient: &Gradient,
+    edges: [f32; 4],
+    columns: std::ops::Range<usize>,
+    rows: std::ops::Range<usize>,
+) -> Vec<f32> {
+    let mapper = Mapper::new(&gradient.kind, edges);
+    let sampler = Sampler::new(&gradient.stops);
+    let mut out = Vec::with_capacity(columns.len() * rows.len());
+    for y in rows {
+        for x in columns.clone() {
+            out.push(sampler.sample(mapper.t(x as f32 + 0.5, y as f32 + 0.5))[3]);
+        }
+    }
+    out
+}
+
+/// A gradient laid over a box in output pixels, sampled per pixel (gradient-filled text).
+pub(in crate::render) struct GradientPaint<'a> {
+    mapper: Mapper,
+    sampler: Sampler<'a>,
+}
+
+impl<'a> GradientPaint<'a> {
+    pub(in crate::render) fn new(gradient: &'a Gradient, edges: [f32; 4]) -> Self {
+        Self {
+            mapper: Mapper::new(&gradient.kind, edges),
+            sampler: Sampler::new(&gradient.stops),
+        }
+    }
+
+    /// Straight (unpremultiplied) color at the center of pixel `(x, y)`.
+    pub(in crate::render) fn color_at(&self, x: usize, y: usize) -> Color {
+        let [r, g, b, a] = self
+            .sampler
+            .sample(self.mapper.t(x as f32 + 0.5, y as f32 + 0.5));
+        if a <= 0.0 {
+            return Color {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 0,
+            };
+        }
+        let channel = |v: f32| (v / a).round().clamp(0.0, 255.0) as u8;
+        Color {
+            r: channel(r),
+            g: channel(g),
+            b: channel(b),
+            a: (a * 255.0).round().clamp(0.0, 255.0) as u8,
         }
     }
 }

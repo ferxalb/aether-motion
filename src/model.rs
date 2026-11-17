@@ -26,7 +26,7 @@ impl Color {
     };
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Length {
     Px(f32),
     Percent(f32),
@@ -46,7 +46,7 @@ impl Length {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Background {
     Solid(Color),
     Linear {
@@ -56,6 +56,37 @@ pub enum Background {
     },
     /// Any other gradient: angles, corners, several stops, translucency, or radial.
     Gradient(Gradient),
+}
+
+impl Background {
+    /// The general gradient this background paints (`None` for a solid color).
+    pub fn to_gradient(&self) -> Option<Gradient> {
+        match self {
+            Self::Solid(_) => None,
+            Self::Gradient(gradient) => Some(gradient.clone()),
+            Self::Linear {
+                from,
+                to,
+                horizontal,
+            } => Some(Gradient {
+                kind: GradientKind::Linear(LinearDirection::Angle(if *horizontal {
+                    90.0
+                } else {
+                    180.0
+                })),
+                stops: vec![
+                    Stop {
+                        pos: 0.0,
+                        color: *from,
+                    },
+                    Stop {
+                        pos: 1.0,
+                        color: *to,
+                    },
+                ],
+            }),
+        }
+    }
 }
 
 /// Color stop at `pos` (0..=1 along the gradient line or radius).
@@ -248,6 +279,89 @@ pub enum BlendMode {
     PlusLighter,
 }
 
+/// Shape function of a `clip-path`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClipKind {
+    /// `inset(top right bottom left round radius)`: params `[top, right, bottom, left, radius]`.
+    Inset,
+    /// `circle(r at x y)`: params `[r, x, y]`; a % radius is relative to
+    /// `sqrt(width² + height²) / sqrt(2)`.
+    Circle,
+    /// `ellipse(rx ry at x y)`: params `[rx, ry, x, y]`.
+    Ellipse,
+    /// `polygon(x y, ...)`: params `[x0, y0, x1, y1, ...]`.
+    Polygon,
+}
+
+/// A `clip-path` basic shape in the element's border box. Each parameter keeps the unit it was
+/// written in (`px` or `%`); horizontal % values are relative to the width and vertical ones to the
+/// height. Px values follow the element's scale.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClipPath {
+    pub kind: ClipKind,
+    pub params: Vec<Length>,
+}
+
+impl ClipPath {
+    /// The parameters with `values` in place of their numbers (same units), as animated.
+    pub fn with_values(&self, values: &[f32]) -> Self {
+        Self {
+            kind: self.kind,
+            params: self
+                .params
+                .iter()
+                .zip(values)
+                .map(|(param, &value)| match param {
+                    Length::Px(_) => Length::Px(value),
+                    Length::Percent(_) => Length::Percent(value),
+                })
+                .collect(),
+        }
+    }
+
+    /// The numbers of the parameters, in order.
+    pub fn values(&self) -> Vec<f32> {
+        self.params
+            .iter()
+            .map(|param| match *param {
+                Length::Px(n) | Length::Percent(n) => n,
+            })
+            .collect()
+    }
+}
+
+/// `-webkit-text-stroke`: an outline of the glyphs centered on their edges, painted over the fill.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TextStroke {
+    /// Width in composition px; 0 means none.
+    pub width: f32,
+    /// `None` is `currentColor` (the text's `color`).
+    pub color: Option<Color>,
+}
+
+/// Text style of an inline run (`<span>`, `<strong>`, `<b>`, `<code>`) over its element's text style.
+/// `None` fields inherit from the enclosing run or element.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct InlineStyle {
+    pub color: Option<Color>,
+    pub font_family: Option<String>,
+    pub font_weight: Option<u16>,
+    pub letter_spacing: Option<f32>,
+    pub text_fill_color: Option<Color>,
+    pub text_stroke_width: Option<f32>,
+    pub text_stroke_color: Option<Color>,
+    /// `background` with `background-clip: text`: the run's glyphs are filled with it.
+    pub text_background: Option<Background>,
+}
+
+/// A styled byte range `[start, end)` of an element's text.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextSpan {
+    pub start: usize,
+    pub end: usize,
+    pub style: InlineStyle,
+}
+
 /// `line-height`: a multiple of the font size (unitless) or an absolute size in px.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum LineHeight {
@@ -281,6 +395,13 @@ pub struct Style {
     pub letter_spacing: Option<f32>,
     pub opacity: Option<f32>,
     pub text_align: Option<String>,
+    /// Inherited `-webkit-text-fill-color`: the glyph fill, in place of `color`.
+    pub text_fill_color: Option<Color>,
+    /// Inherited `-webkit-text-stroke-width` (composition px) and `-webkit-text-stroke-color`.
+    pub text_stroke_width: Option<f32>,
+    pub text_stroke_color: Option<Color>,
+    /// `background-clip: text`: the background fills the glyphs instead of the box.
+    pub background_clip_text: bool,
     /// Inherited text wrapping controls; see [`LineHeight`] and [`WhiteSpace`].
     /// Inherited `text-shadow`: outer `None` means unset (inherit), inner `None` is `none`.
     pub text_shadow: Option<Option<Shadow>>,
@@ -310,6 +431,10 @@ pub struct Style {
     pub drop_shadow: Option<Shadow>,
     /// `mix-blend-mode`: how the element (with its subtree) combines with what is behind it.
     pub blend: BlendMode,
+    /// `clip-path`: only the part of the element inside this shape is drawn.
+    pub clip_path: Option<ClipPath>,
+    /// `mask-image`: a gradient over the border box whose alpha scales the element's.
+    pub mask: Option<Gradient>,
     /// Solid border drawn inside the box (border-box sizing); `None` color means white.
     pub border_width: f32,
     pub border_color: Option<Color>,
@@ -336,6 +461,8 @@ pub enum Content {
     InlineSvg(std::sync::Arc<str>),
     /// A local H.264 video drawn one source frame per output frame.
     Video(VideoSource),
+    /// Inline `<svg>` with `data-hf-draw`: strokes reveal themselves over time.
+    DrawnSvg(std::sync::Arc<crate::vector::DrawOnSvg>),
 }
 
 /// A `<video>` clip: which file, where in it playback starts, and its frame table.
@@ -453,7 +580,7 @@ fn cubic_bezier(x1: f64, y1: f64, x2: f64, y2: f64, t: f64) -> f64 {
     sample(cy, (lo + hi) / 2.0)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Keyframe {
     pub at: f64,
     pub x: f32,
@@ -462,6 +589,10 @@ pub struct Keyframe {
     pub easing: Easing,
     /// Filter amounts given explicitly at this keyframe, indexed by [`FilterChannel::index`].
     pub filters: [Option<f32>; 8],
+    /// `glitch` and `rgbSplit` given explicitly at this keyframe.
+    pub effects: [Option<f32>; 2],
+    /// `clipPath` given explicitly at this keyframe.
+    pub clip: Option<ClipPath>,
 }
 
 /// Layout-check opt-outs from `data-layout-allow-*` attributes; descendants inherit them when checked.
@@ -486,6 +617,8 @@ pub struct Element {
     pub track: i32,
     pub motion: Motion,
     pub layout: LayoutHints,
+    /// Inline runs of styled text (sorted, non-overlapping); empty for plain text.
+    pub spans: Vec<TextSpan>,
 }
 
 #[derive(Debug)]
@@ -715,6 +848,13 @@ pub struct Motion {
     pub wipe: Option<RevealFrom>,
     /// Animated `filter` amounts.
     pub filter: FilterMotion,
+    /// Animated tint, glitch, and channel split.
+    pub fx: FxMotion,
+    /// `data-hf-motion-path`: an offset (and optional turn) along a vector path.
+    pub path: Option<std::sync::Arc<MotionPath>>,
+    /// Animated `clip-path` parameters (one track per [`ClipPath::params`] entry, in its unit);
+    /// empty when the clip path is static. Always holds its first and last values.
+    pub clip: Vec<Track>,
     /// Hold the first value before the first point (`animation-fill-mode: backwards`).
     pub hold_before: bool,
     /// Hold the last value after the last point (`animation-fill-mode: forwards`).
@@ -750,9 +890,115 @@ impl FilterMotion {
     }
 }
 
+/// Pixel effects outside CSS `filter`, applied in the effect layer after the color functions and
+/// before `drop-shadow`, in this order: tint, channel split, glitch. All are neutral at 0.
+#[derive(Clone, Debug, Default)]
+pub struct FxMotion {
+    /// Share (0..=1) of the color replaced by `tint_color`, keeping the element's alpha.
+    pub tint: Track,
+    pub tint_color: Option<Color>,
+    /// Glitch strength (0..=1): horizontal slices displaced by a pattern that changes 24 times a second.
+    pub glitch: Track,
+    /// Red and blue channel offset in composition px (red moves left, blue right).
+    pub rgb_split: Track,
+}
+
+/// `data-hf-motion-path`: the element travels along a path, offset by the path's displacement from
+/// its first point, so it starts where it rests.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MotionPath {
+    pub measure: crate::vector::PathMeasure,
+    /// Seconds from the clip start at which the travel starts.
+    pub at: f64,
+    /// Seconds the travel takes.
+    pub duration: f64,
+    pub easing: Easing,
+    /// `Some(offset)`: the element turns with the path's direction plus `offset` degrees.
+    pub rotate: Option<f32>,
+}
+
+impl MotionPath {
+    /// `(dx, dy, turn)` `elapsed` seconds after the clip start; the ends hold outside the travel.
+    pub fn offset(&self, elapsed: f64) -> (f32, f32, f32) {
+        let linear = if self.duration <= 0.0 {
+            if elapsed >= self.at {
+                1.0
+            } else {
+                0.0
+            }
+        } else {
+            ((elapsed - self.at) / self.duration).clamp(0.0, 1.0) as f32
+        };
+        // Overshooting easings may run past the ends; the path clamps there.
+        let (x, y, angle) = self
+            .measure
+            .sample(self.easing.apply(linear) * self.measure.length());
+        let (x0, y0) = self.measure.start();
+        let turn = self.rotate.map_or(0.0, |offset| angle + offset);
+        (x - x0, y - y0, turn)
+    }
+}
+
+/// Rate at which the glitch pattern changes, independent of the output frame rate.
+pub const GLITCH_RATE: f64 = 24.0;
+
+impl FxMotion {
+    pub fn is_static(&self) -> bool {
+        self.tint.0.is_empty() && self.glitch.0.is_empty() && self.rgb_split.0.is_empty()
+    }
+
+    /// `[tint, glitch, rgb_split]` amounts `elapsed` seconds after the clip start.
+    pub fn eval(&self, elapsed: f64, hold_before: bool, hold_after: bool) -> [f32; 3] {
+        let value = |track: &Track| track.eval(elapsed, 0.0, hold_before, hold_after);
+        [
+            value(&self.tint).clamp(0.0, 1.0),
+            value(&self.glitch).clamp(0.0, 1.0),
+            value(&self.rgb_split).clamp(-500.0, 500.0),
+        ]
+    }
+
+    fn tracks(&self) -> [&Track; 3] {
+        [&self.tint, &self.glitch, &self.rgb_split]
+    }
+}
+
 impl Motion {
+    /// The element's `clip-path` `elapsed` seconds after the clip start: `base` (the static
+    /// `clip-path`, or the shape of the first animated one) with its animated values, if any.
+    pub fn clip_at(&self, base: Option<&ClipPath>, elapsed: f64) -> Option<ClipPath> {
+        let base = base?;
+        if self.clip.is_empty() {
+            return Some(base.clone());
+        }
+        let values: Vec<f32> = self
+            .clip
+            .iter()
+            .zip(base.values())
+            .map(|(track, rest)| track.eval(elapsed, rest, true, true))
+            .collect();
+        Some(base.with_values(&values))
+    }
+
+    /// Whether the element can be drawn rotated (static, animated, or turning along a path).
+    pub fn rotates(&self) -> bool {
+        self.base.rotate != 0.0
+            || !self.rotate.0.is_empty()
+            || self.path.as_ref().is_some_and(|path| path.rotate.is_some())
+    }
+
     pub fn pose(&self, elapsed: f64) -> Pose {
         let (b, hb, ha) = (self.base, self.hold_before, self.hold_after);
+        let mut pose = self.track_pose(elapsed, b, hb, ha);
+        if let Some(path) = &self.path {
+            let (dx, dy, turn) = path.offset(elapsed);
+            pose.x += dx;
+            pose.y += dy;
+            pose.rotate += turn;
+        }
+        pose
+    }
+
+    fn track_pose(&self, elapsed: f64, b: Pose, hb: bool, ha: bool) -> Pose {
         Pose {
             x: self.x.eval(elapsed, b.x, hb, ha),
             y: self.y.eval(elapsed, b.y, hb, ha),
@@ -775,6 +1021,9 @@ impl Motion {
         .iter()
         .all(|track| track.0.is_empty())
             && self.filter.is_static()
+            && self.fx.is_static()
+            && self.clip.is_empty()
+            && self.path.is_none()
     }
 
     /// Sorted, distinct point times across all channels.
@@ -789,7 +1038,14 @@ impl Motion {
         ]
         .into_iter()
         .chain(&self.filter.tracks)
+        .chain(self.fx.tracks())
+        .chain(&self.clip)
         .flat_map(|track| track.0.iter().map(|point| point.at))
+        .chain(
+            self.path
+                .iter()
+                .flat_map(|path| [path.at, path.at + path.duration]),
+        )
         .collect();
         times.sort_by(f64::total_cmp);
         times.dedup();
