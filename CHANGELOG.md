@@ -9,6 +9,10 @@ CLI/MCP output may still change between minor releases.
 
 ### Added
 
+- Inline rich text: `<span>`, `<strong>`, `<b>`, and `<code>` inside an element with its own text become
+  styled runs (color, family, weight, letter spacing, fill, stroke, gradient) that wrap and align together.
+  `-webkit-text-stroke` (stroked from the font outlines), `-webkit-text-fill-color`, and
+  `background-clip: text` gradient text. Plain text renders byte-identically. See `examples/rich-text.html`.
 - `data-hf-draw` on inline `<svg>`: strokes draw themselves along their measured length, staggered in
   document order. `data-hf-motion-path`: any element travels along SVG path data (arcs included), with
   optional `-rotate="auto"`. A new `vector` module measures paths. See `examples/vector-motion.html`.

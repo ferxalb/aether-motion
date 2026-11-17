@@ -4,6 +4,7 @@
 //! under `--scale`, `--size`, and animated CSS `scale`. Results are cached per element and limit.
 
 use crate::model::Content;
+use crate::render::text::props::style_index;
 use crate::render::text::wrap::{break_lines, Line};
 use crate::render::Renderer;
 use anyhow::Result;
@@ -57,16 +58,38 @@ impl<'a> Renderer<'a> {
             Content::Text(text) => text.as_str(),
             _ => "",
         };
-        let font = self.fonts.get(props.family, props.weight)?;
-        let advance = |ch: char| font.metrics(ch, props.size).advance_width + props.letter_spacing;
+        let spans = &self.composition.elements[idx].spans;
+        let styles = self.run_styles(idx);
+        for style in &styles {
+            self.fonts.get(style.family, style.weight)?;
+        }
+        let fonts: Vec<&fontdue::Font> = styles
+            .iter()
+            .map(|style| {
+                self.fonts
+                    .loaded(style.family, style.weight)
+                    .expect("fonts were loaded above")
+            })
+            .collect();
+        let advance = |offset: usize, ch: char| {
+            let s = style_index(spans, offset);
+            fonts[s].metrics(ch, props.size).advance_width + styles[s].letter_spacing
+        };
         // One 1/64 px of slack keeps a block that exactly fills its box from re-wrapping.
         let slack_limit = quantized.map(|q| q.saturating_add(1) as f32 / 64.0);
+        let mut max_content = 0.0_f32;
+        let mut base = 0;
+        for paragraph in text.split('\n') {
+            let width: f32 = paragraph
+                .char_indices()
+                .map(|(i, ch)| advance(base + i, ch))
+                .sum();
+            max_content = max_content.max(width);
+            base += paragraph.len() + 1;
+        }
         let block = Arc::new(TextBlock {
             lines: break_lines(text, slack_limit, advance),
-            max_content: text
-                .split('\n')
-                .map(|paragraph| paragraph.chars().map(advance).sum::<f32>())
-                .fold(0.0, f32::max),
+            max_content,
             line_height: props.line_height,
             nowrap: props.nowrap,
             limit_key: key.1,

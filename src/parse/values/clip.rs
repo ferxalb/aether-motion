@@ -3,9 +3,7 @@
 //!
 //! Shapes use px or % (no keywords such as `closest-side`, no `<geometry-box>`, `path()`, or
 //! `url()`), so every parameter is a number that can be interpolated by `data-hf-keyframes`.
-use crate::model::{
-    Background, ClipKind, ClipPath, Gradient, GradientKind, Length, LinearDirection, Stop,
-};
+use crate::model::{ClipKind, ClipPath, Gradient, Length};
 use crate::parse::values::background::parse_background;
 use crate::parse::values::length::parse_length;
 use crate::parse::values::tokens::split_top;
@@ -180,31 +178,10 @@ pub(in crate::parse) fn parse_mask_image(raw: &str) -> Result<Option<Gradient>> 
         bail!("mask-image: only linear-gradient() and radial-gradient() are supported (no url() images)");
     }
     let background = parse_background(raw).context("mask-image")?;
-    Ok(Some(match background {
-        Background::Gradient(gradient) => gradient,
-        Background::Linear {
-            from,
-            to,
-            horizontal,
-        } => Gradient {
-            kind: GradientKind::Linear(LinearDirection::Angle(if horizontal {
-                90.0
-            } else {
-                180.0
-            })),
-            stops: vec![
-                Stop {
-                    pos: 0.0,
-                    color: from,
-                },
-                Stop {
-                    pos: 1.0,
-                    color: to,
-                },
-            ],
-        },
-        Background::Solid(_) => return Err(anyhow!("mask-image needs a gradient")),
-    }))
+    background
+        .to_gradient()
+        .map(Some)
+        .ok_or_else(|| anyhow!("mask-image needs a gradient"))
 }
 
 #[cfg(test)]

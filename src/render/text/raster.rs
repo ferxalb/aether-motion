@@ -3,17 +3,30 @@
 use crate::model::{Color, Content};
 use crate::render::geometry::{PixelRect, Rect};
 use crate::render::layout::in_flow;
+use crate::render::paint::GradientPaint;
 #[cfg(test)]
 use crate::render::paint::Surface;
 use crate::render::text::block::TextBlock;
-use crate::render::text::props::TextProps;
+use crate::render::text::props::{style_index, TextProps, Underlay};
 use crate::render::text::shadow::{BlockLayout, ShadowMask};
+use crate::render::text::stroke::{stroke_glyph, StrokeMask};
 use crate::render::Renderer;
 use anyhow::Result;
 
 pub(in crate::render) struct Glyph {
     pub(super) metrics: fontdue::Metrics,
     pub(super) coverage: Vec<u8>,
+    /// Index into [`TextRun::paints`].
+    pub(super) style: usize,
+    /// `-webkit-text-stroke` coverage, when the glyph's run has a stroke.
+    pub(super) stroke: Option<StrokeMask>,
+}
+
+/// How one run of glyphs is painted (see `props::RunStyle`).
+pub(super) struct GlyphPaint {
+    underlay: Option<Underlay>,
+    fill: Color,
+    stroke: Color,
 }
 
 /// Glyphs of one line: `glyphs[first..last]` and their total advance, in pixels.
@@ -30,7 +43,10 @@ pub(in crate::render) struct TextRun {
     /// Font size and baseline distance in pixels.
     size: f32,
     line_height: f32,
-    color: Color,
+    /// One entry per run style: the element's own text first, then each inline span.
+    paints: Vec<GlyphPaint>,
+    /// Plain text of one color: painted exactly as before rich text existed.
+    plain: bool,
     center_x: bool,
     center_y: bool,
     right: bool,
@@ -81,16 +97,57 @@ impl<'a> Renderer<'a> {
                 && parent_style.and_then(|p| p.style.justify_content.as_deref()) == Some("center"));
         let center_y = parent_flex
             && parent_style.and_then(|p| p.style.align_items.as_deref()) == Some("center");
-        let font = self.fonts.get(props.family, props.weight)?;
+        let spans = &element.spans;
+        let styles = self.run_styles(idx);
+        for style in &styles {
+            self.fonts.get(style.family, style.weight)?;
+        }
+        let face_data = styles
+            .iter()
+            .map(|style| {
+                (style.stroke_width > 0.0)
+                    .then(|| self.fonts.face_data(style.family, style.weight))
+                    .transpose()
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let faces: Vec<Option<ttf_parser::Face>> = face_data
+            .iter()
+            .map(|data| {
+                data.as_ref()
+                    .and_then(|(bytes, index)| ttf_parser::Face::parse(bytes, *index).ok())
+            })
+            .collect();
+        let fonts: Vec<&fontdue::Font> = styles
+            .iter()
+            .map(|style| {
+                self.fonts
+                    .loaded(style.family, style.weight)
+                    .expect("fonts were loaded above")
+            })
+            .collect();
+        let unit = self.scale * zoom;
         let mut glyphs = Vec::new();
         let mut lines = Vec::with_capacity(block.lines.len());
         for line in &block.lines {
             let first = glyphs.len();
-            glyphs.extend(text[line.start..line.end].chars().map(|ch| {
-                let (mut metrics, coverage) = font.rasterize(ch, size);
-                metrics.advance_width += spacing;
-                Glyph { metrics, coverage }
-            }));
+            for (offset, ch) in text[line.start..line.end].char_indices() {
+                let s = style_index(spans, line.start + offset);
+                let (mut metrics, coverage) = fonts[s].rasterize(ch, size);
+                metrics.advance_width += if s == 0 {
+                    spacing
+                } else {
+                    styles[s].letter_spacing * unit
+                };
+                let stroke = faces[s]
+                    .as_ref()
+                    .and_then(|face| stroke_glyph(face, ch, size, styles[s].stroke_width * unit));
+                glyphs.push(Glyph {
+                    metrics,
+                    coverage,
+                    style: s,
+                    stroke,
+                });
+            }
             let advance = glyphs[first..]
                 .iter()
                 .map(|glyph| glyph.metrics.advance_width)
@@ -116,12 +173,22 @@ impl<'a> Renderer<'a> {
             }
             None => None,
         };
+        let plain = styles.len() == 1 && styles[0].is_plain();
+        let paints = styles
+            .into_iter()
+            .map(|style| GlyphPaint {
+                underlay: style.underlay,
+                fill: style.fill,
+                stroke: style.stroke,
+            })
+            .collect();
         Ok(TextRun {
             glyphs,
             lines,
             size,
             line_height,
-            color: props.color,
+            paints,
+            plain,
             center_x,
             center_y,
             right,
@@ -130,10 +197,12 @@ impl<'a> Renderer<'a> {
     }
 
     /// Paints the text of element `idx` inside `rect` (layout units), wrapped to its width.
+    /// `paint_box` (layout units) is the area a `background-clip: text` gradient spans.
     pub(in crate::render) fn draw_text(
         &mut self,
         idx: usize,
         rect: Rect,
+        paint_box: Rect,
         alpha: f32,
         zoom: f32,
     ) -> Result<()> {
@@ -156,7 +225,11 @@ impl<'a> Renderer<'a> {
             let bytes = prepared
                 .glyphs
                 .iter()
-                .map(|glyph| std::mem::size_of::<Glyph>() + glyph.coverage.len())
+                .map(|glyph| {
+                    std::mem::size_of::<Glyph>()
+                        + glyph.coverage.len()
+                        + glyph.stroke.as_ref().map_or(0, |s| s.coverage.len())
+                })
                 .sum::<usize>()
                 + prepared.shadow.as_ref().map_or(0, ShadowMask::bytes);
             if self.text_runs.len() < 4096
@@ -213,22 +286,164 @@ impl<'a> Renderer<'a> {
                 zoom,
             );
         }
+        let element_box = [
+            paint_box.x * scale,
+            paint_box.y * scale,
+            (paint_box.x + paint_box.w) * scale,
+            (paint_box.y + paint_box.h) * scale,
+        ];
         for (index, line) in run.lines.iter().enumerate() {
             let pen = rect.x * scale
                 + pen_offset(run.center_x, run.right, rect.w * scale, line.advance * zoom);
             let baseline = top + baseline_offset(index, run.line_height, run.size) * zoom;
-            paint_scaled_line(
-                &mut self.surface.pixels,
-                (self.surface.width, self.surface.height),
-                &mut painted,
-                &run.glyphs[line.first..line.last],
-                (pen, baseline),
-                (run.color, alpha),
+            let glyphs = &run.glyphs[line.first..line.last];
+            let dimensions = (self.surface.width, self.surface.height);
+            if run.plain {
+                paint_scaled_line(
+                    &mut self.surface.pixels,
+                    dimensions,
+                    &mut painted,
+                    glyphs,
+                    (pen, baseline),
+                    (run.paints[0].fill, alpha),
+                    zoom,
+                );
+                continue;
+            }
+            let line_top = top + index as f32 * run.line_height * zoom;
+            let rich = RichLine {
+                pen,
+                baseline,
+                band: (line_top, line_top + run.line_height * zoom),
+                element_box,
+                alpha,
                 zoom,
+            };
+            rich.paint(
+                &mut self.surface.pixels,
+                dimensions,
+                &mut painted,
+                glyphs,
+                &run.paints,
             );
         }
         self.surface.painted = painted;
         Ok(())
+    }
+}
+
+/// Placement of one line of rich text in output pixels.
+struct RichLine {
+    pen: f32,
+    baseline: f32,
+    /// Top and bottom of the line box, the height of a run's own gradient.
+    band: (f32, f32),
+    /// Padding box of the element, the extent of its `background-clip: text` gradient.
+    element_box: [f32; 4],
+    alpha: f32,
+    zoom: f32,
+}
+
+impl RichLine {
+    /// Paints each glyph's underlay and fill, then every stroke on top, as CSS does for a text run.
+    fn paint(
+        &self,
+        pixels: &mut [u8],
+        dimensions: (u32, u32),
+        painted: &mut Option<PixelRect>,
+        glyphs: &[Glyph],
+        paints: &[GlyphPaint],
+    ) {
+        let zoom = self.zoom;
+        // A run's own gradient spans the run's extent on this line.
+        let mut extents: Vec<Option<(f32, f32)>> = vec![None; paints.len()];
+        let mut pen = self.pen;
+        for glyph in glyphs {
+            let next = pen + glyph.metrics.advance_width * zoom;
+            let extent = &mut extents[glyph.style];
+            *extent = Some(extent.map_or((pen, next), |(a, b)| (a.min(pen), b.max(next))));
+            pen = next;
+        }
+        let gradients: Vec<Option<GradientPaint>> = paints
+            .iter()
+            .zip(&extents)
+            .map(|(paint, extent)| match (&paint.underlay, extent) {
+                (Some(Underlay::Gradient { gradient, run }), Some((x0, x1))) => {
+                    let edges = if *run {
+                        [*x0, self.band.0, *x1, self.band.1]
+                    } else {
+                        self.element_box
+                    };
+                    Some(GradientPaint::new(gradient, edges))
+                }
+                _ => None,
+            })
+            .collect();
+        let mut pen = self.pen;
+        for glyph in glyphs {
+            let metrics = glyph.metrics;
+            let paint = &paints[glyph.style];
+            let mask = (&glyph.coverage[..], (metrics.width, metrics.height));
+            let origin = (
+                pen + metrics.xmin as f32 * zoom,
+                self.baseline - (metrics.ymin as f32 + metrics.height as f32) * zoom,
+            );
+            match (&paint.underlay, &gradients[glyph.style]) {
+                (Some(Underlay::Solid(color)), _) => super::mask::paint_mask(
+                    pixels,
+                    dimensions,
+                    painted,
+                    mask.0,
+                    mask.1,
+                    origin,
+                    (*color, self.alpha),
+                    zoom,
+                ),
+                (_, Some(gradient)) => super::mask::paint_mask_with(
+                    pixels,
+                    dimensions,
+                    painted,
+                    mask.0,
+                    mask.1,
+                    origin,
+                    (|x, y| gradient.color_at(x, y), self.alpha),
+                    zoom,
+                ),
+                _ => {}
+            }
+            if paint.fill.a > 0 {
+                super::mask::paint_mask(
+                    pixels,
+                    dimensions,
+                    painted,
+                    mask.0,
+                    mask.1,
+                    origin,
+                    (paint.fill, self.alpha),
+                    zoom,
+                );
+            }
+            pen += metrics.advance_width * zoom;
+        }
+        let mut pen = self.pen;
+        for glyph in glyphs {
+            if let Some(stroke) = &glyph.stroke {
+                super::mask::paint_mask(
+                    pixels,
+                    dimensions,
+                    painted,
+                    &stroke.coverage,
+                    (stroke.width, stroke.height),
+                    (
+                        pen + stroke.left as f32 * zoom,
+                        self.baseline + stroke.top as f32 * zoom,
+                    ),
+                    (paints[glyph.style].stroke, self.alpha),
+                    zoom,
+                );
+            }
+            pen += glyph.metrics.advance_width * zoom;
+        }
     }
 }
 
@@ -308,7 +523,8 @@ mod tests {
                     lines: Vec::new(),
                     size: 1.0,
                     line_height: 1.0,
-                    color: Color::WHITE,
+                    paints: Vec::new(),
+                    plain: true,
                     center_x: false,
                     center_y: false,
                     right: false,
@@ -319,6 +535,12 @@ mod tests {
         renderer
             .draw_text(
                 idx,
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 16.0,
+                    h: 16.0,
+                },
                 Rect {
                     x: 0.0,
                     y: 0.0,
@@ -347,6 +569,8 @@ mod tests {
                 ..Default::default()
             },
             coverage: (0..512).map(|i| i as u8).collect(),
+            style: 0,
+            stroke: None,
         };
         for alpha in [0.0, 0.17, 1.0] {
             for opacity in [0, 137, 255] {

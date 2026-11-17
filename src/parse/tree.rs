@@ -9,6 +9,7 @@ use crate::parse::captions::parse_captions;
 use crate::parse::counter::parse_counter;
 use crate::parse::css::{Stylesheet, Vars};
 use crate::parse::html::{attr, direct_text, number};
+use crate::parse::rich_text::{collect as collect_rich_text, has_inline_runs};
 use crate::parse::split::parse_split;
 use crate::parse::style::{style_for, Resolved};
 use crate::parse::transition::{parse_transition, TransitionSpec};
@@ -76,6 +77,8 @@ pub(in crate::parse) fn walk(
             | "span"
             | "small"
             | "strong"
+            | "b"
+            | "code"
             | "img"
             | "svg"
             | "video"
@@ -139,6 +142,8 @@ pub(in crate::parse) fn walk(
         .map(|s| s.parse::<i32>().context("invalid data-track-index"))
         .transpose()?
         .unwrap_or(0);
+    let mut spans = Vec::new();
+    let mut inline_children: Vec<NodeRef> = Vec::new();
     let mut video_length = None;
     let mut video_audio = None;
     let motion_path = parse_motion_path(node).with_context(|| {
@@ -172,6 +177,16 @@ pub(in crate::parse) fn walk(
         video_length = Some(parsed.default_duration);
         video_audio = parsed.audio;
         Content::Video(parsed.source)
+    } else if has_inline_runs(node) {
+        let rich = collect_rich_text(node, sheet, &vars).with_context(|| {
+            format!(
+                "text of <{tag}> ({})",
+                attr(node, "id").as_deref().unwrap_or("no id")
+            )
+        })?;
+        spans = rich.spans;
+        inline_children = rich.consumed;
+        Content::Text(rich.text)
     } else {
         let text = direct_text(node);
         if text.is_empty() {
@@ -277,6 +292,7 @@ pub(in crate::parse) fn walk(
                 base: rest,
                 ..Motion::default()
             },
+            spans,
             layout: LayoutHints {
                 allow_safe_zone: flag(node, "data-layout-allow-safe-zone")?,
                 allow_caption_zone: flag(node, "data-layout-allow-caption-zone")?,
@@ -320,6 +336,10 @@ pub(in crate::parse) fn walk(
         return Ok(());
     }
     for child in node.children() {
+        // Inline runs were folded into this element's text.
+        if inline_children.contains(&child) {
+            continue;
+        }
         walk(&child, Some(idx), base, sheet, &vars, out, audio)?;
     }
     Ok(())

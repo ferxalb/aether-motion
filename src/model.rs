@@ -46,7 +46,7 @@ impl Length {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Background {
     Solid(Color),
     Linear {
@@ -56,6 +56,37 @@ pub enum Background {
     },
     /// Any other gradient: angles, corners, several stops, translucency, or radial.
     Gradient(Gradient),
+}
+
+impl Background {
+    /// The general gradient this background paints (`None` for a solid color).
+    pub fn to_gradient(&self) -> Option<Gradient> {
+        match self {
+            Self::Solid(_) => None,
+            Self::Gradient(gradient) => Some(gradient.clone()),
+            Self::Linear {
+                from,
+                to,
+                horizontal,
+            } => Some(Gradient {
+                kind: GradientKind::Linear(LinearDirection::Angle(if *horizontal {
+                    90.0
+                } else {
+                    180.0
+                })),
+                stops: vec![
+                    Stop {
+                        pos: 0.0,
+                        color: *from,
+                    },
+                    Stop {
+                        pos: 1.0,
+                        color: *to,
+                    },
+                ],
+            }),
+        }
+    }
 }
 
 /// Color stop at `pos` (0..=1 along the gradient line or radius).
@@ -299,6 +330,38 @@ impl ClipPath {
     }
 }
 
+/// `-webkit-text-stroke`: an outline of the glyphs centered on their edges, painted over the fill.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TextStroke {
+    /// Width in composition px; 0 means none.
+    pub width: f32,
+    /// `None` is `currentColor` (the text's `color`).
+    pub color: Option<Color>,
+}
+
+/// Text style of an inline run (`<span>`, `<strong>`, `<b>`, `<code>`) over its element's text style.
+/// `None` fields inherit from the enclosing run or element.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct InlineStyle {
+    pub color: Option<Color>,
+    pub font_family: Option<String>,
+    pub font_weight: Option<u16>,
+    pub letter_spacing: Option<f32>,
+    pub text_fill_color: Option<Color>,
+    pub text_stroke_width: Option<f32>,
+    pub text_stroke_color: Option<Color>,
+    /// `background` with `background-clip: text`: the run's glyphs are filled with it.
+    pub text_background: Option<Background>,
+}
+
+/// A styled byte range `[start, end)` of an element's text.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextSpan {
+    pub start: usize,
+    pub end: usize,
+    pub style: InlineStyle,
+}
+
 /// `line-height`: a multiple of the font size (unitless) or an absolute size in px.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum LineHeight {
@@ -332,6 +395,13 @@ pub struct Style {
     pub letter_spacing: Option<f32>,
     pub opacity: Option<f32>,
     pub text_align: Option<String>,
+    /// Inherited `-webkit-text-fill-color`: the glyph fill, in place of `color`.
+    pub text_fill_color: Option<Color>,
+    /// Inherited `-webkit-text-stroke-width` (composition px) and `-webkit-text-stroke-color`.
+    pub text_stroke_width: Option<f32>,
+    pub text_stroke_color: Option<Color>,
+    /// `background-clip: text`: the background fills the glyphs instead of the box.
+    pub background_clip_text: bool,
     /// Inherited text wrapping controls; see [`LineHeight`] and [`WhiteSpace`].
     /// Inherited `text-shadow`: outer `None` means unset (inherit), inner `None` is `none`.
     pub text_shadow: Option<Option<Shadow>>,
@@ -547,6 +617,8 @@ pub struct Element {
     pub track: i32,
     pub motion: Motion,
     pub layout: LayoutHints,
+    /// Inline runs of styled text (sorted, non-overlapping); empty for plain text.
+    pub spans: Vec<TextSpan>,
 }
 
 #[derive(Debug)]

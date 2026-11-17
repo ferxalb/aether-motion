@@ -24,6 +24,7 @@ dependencies = [
  "resvg",
  "serde_json",
  "symphonia",
+ "ttf-parser",
 ]
 
 [[package]]

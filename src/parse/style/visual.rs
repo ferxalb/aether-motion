@@ -68,6 +68,13 @@ pub(super) fn apply(key: &str, value: &str, style: &mut Style) -> Result<bool> {
             style.drop_shadow = chain.drop_shadow;
         }
         "mix-blend-mode" => style.blend = parse_blend_mode(value)?,
+        "background-clip" | "-webkit-background-clip" => {
+            style.background_clip_text = match value.trim() {
+                "text" => true,
+                "border-box" => false,
+                other => bail!("{key}: only text and border-box are supported: {other}"),
+            }
+        }
         "clip-path" | "-webkit-clip-path" => style.clip_path = parse_clip_path(value)?,
         "mask-image" | "-webkit-mask-image" => style.mask = parse_mask_image(value)?,
         "mask" | "-webkit-mask" => {

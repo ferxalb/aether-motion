@@ -23,5 +23,6 @@ mod tile_cache;
 mod video;
 
 pub(super) use effects::color::ColorChain;
+pub(super) use gradient::GradientPaint;
 pub(super) use images::{CachedImage, ImageKey, ImageSrc};
 pub(super) use surface::Surface;

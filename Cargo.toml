@@ -20,6 +20,7 @@ openh264 = "0.9"
 oxideav-aac = "0.1.7"
 symphonia = { version = "0.6.1", default-features = false, features = ["wav", "flac", "ogg", "vorbis", "mp3", "pcm", "aac", "isomp4"] }
 resvg = { version = "0.45", default-features = false }
+ttf-parser = { version = "0.25", default-features = false, features = ["std", "opentype-layout", "apple-layout", "variable-fonts", "glyph-names"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

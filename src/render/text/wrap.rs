@@ -10,13 +10,13 @@ pub(in crate::render) struct Line {
 
 /// Breaks `text` (words separated by single spaces) into lines no wider than `limit`.
 ///
-/// `advance` gives the width of one character. A word wider than `limit` gets its own line and
+/// `advance` gives the width of the character at a byte offset of `text`. A word wider than `limit` gets its own line and
 /// overflows, like `overflow-wrap: normal`. `limit: None` keeps everything on one line. Empty text
 /// yields one empty line so every text element has a height.
 pub(in crate::render) fn break_lines(
     text: &str,
     limit: Option<f32>,
-    mut advance: impl FnMut(char) -> f32,
+    mut advance: impl FnMut(usize, char) -> f32,
 ) -> Vec<Line> {
     let mut lines = Vec::new();
     let mut base = 0;
@@ -33,9 +33,8 @@ fn break_paragraph(
     text: &str,
     base: usize,
     limit: Option<f32>,
-    advance: &mut impl FnMut(char) -> f32,
+    advance: &mut impl FnMut(usize, char) -> f32,
 ) -> Vec<Line> {
-    let space = advance(' ');
     let mut lines = Vec::new();
     let mut current: Option<Line> = None;
     let mut offset = base;
@@ -46,10 +45,15 @@ fn break_paragraph(
             continue;
         }
         let end = start + word.len();
-        let width: f32 = word.chars().map(&mut *advance).sum();
+        let width: f32 = word
+            .char_indices()
+            .map(|(i, ch)| advance(start + i, ch))
+            .sum();
         current = Some(match current.take() {
             None => Line { start, end, width },
             Some(line) => {
+                // The space before the word, styled like the text it sits in.
+                let space = advance(start - 1, ' ');
                 let joined = line.width + space + width;
                 if limit.is_none_or(|limit| joined <= limit) {
                     Line {
@@ -81,7 +85,7 @@ mod tests {
 
     /// Monospace metrics: every character is 1 unit wide.
     fn lines(text: &str, limit: Option<f32>) -> Vec<&str> {
-        break_lines(text, limit, |_| 1.0)
+        break_lines(text, limit, |_, _| 1.0)
             .iter()
             .map(|line| &text[line.start..line.end])
             .collect()
@@ -122,11 +126,11 @@ mod tests {
 
     #[test]
     fn reports_line_widths_and_empty_text() {
-        let found = break_lines("aaa bb c", Some(6.0), |_| 1.0);
+        let found = break_lines("aaa bb c", Some(6.0), |_, _| 1.0);
         assert_eq!(
             found.iter().map(|line| line.width).collect::<Vec<_>>(),
             [6.0, 1.0]
         );
-        assert_eq!(break_lines("", Some(3.0), |_| 1.0).len(), 1);
+        assert_eq!(break_lines("", Some(3.0), |_, _| 1.0).len(), 1);
     }
 }

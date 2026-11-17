@@ -11,6 +11,7 @@ mod captions;
 mod counter;
 mod css;
 mod html;
+mod rich_text;
 mod speed;
 mod split;
 mod style;
@@ -302,6 +303,12 @@ pub fn parse_file_with(path: &Path, values: &VariableValues) -> Result<Compositi
             }
             // Color functions on the root grade every finished frame instead of a layer.
             grade = std::mem::take(&mut style.filter_colors);
+        }
+        if p.element.style.background_clip_text && !matches!(p.element.content, Content::Text(_)) {
+            bail!("background-clip: text on {label} needs text of its own (it fills the element's glyphs; descendants are not clipped)");
+        }
+        if p.element.style.background_clip_text && p.element.style.background.is_none() {
+            bail!("background-clip: text on {label} needs a background (for example a linear-gradient)");
         }
         check_clip_and_mask(&p.element, idx == 0)
             .with_context(|| format!("clip-path or mask-image on {label}"))?;

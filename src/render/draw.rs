@@ -119,14 +119,21 @@ impl<'a> Renderer<'a> {
             let sigma = element.style.backdrop_blur * cumulative * self.surface.scale;
             self.surface.backdrop_blur(rect, radius, sigma, alpha);
         }
-        match element.style.background {
+        // With `background-clip: text` the background fills the glyphs instead (see `draw_text`).
+        let background = element
+            .style
+            .background
+            .as_ref()
+            .filter(|_| !element.style.background_clip_text);
+        match background {
             Some(Background::Solid(color)) => {
+                let color = *color;
                 let base = self.composition.background;
                 if idx != 0 || (color.r, color.g, color.b) != (base.r, base.g, base.b) {
                     self.surface.fill(rect, color, alpha, radius);
                 }
             }
-            Some(Background::Linear {
+            Some(&Background::Linear {
                 from,
                 to,
                 horizontal,
@@ -134,7 +141,7 @@ impl<'a> Renderer<'a> {
                 self.surface
                     .fill_gradient(rect, [from, to], horizontal, alpha, radius);
             }
-            Some(Background::Gradient(ref gradient)) => {
+            Some(Background::Gradient(gradient)) => {
                 self.surface
                     .fill_gradient_general(rect, gradient, alpha, radius)?;
             }
@@ -210,7 +217,17 @@ impl<'a> Renderer<'a> {
                 element.style.object_fit.as_deref().unwrap_or("fill"),
                 alpha,
             )?,
-            Content::Text(_) => self.draw_text(idx, content, alpha, cumulative)?,
+            Content::Text(_) => {
+                // A `background-clip: text` background spans the padding box.
+                let border = element.style.border_width * cumulative;
+                let padding_box = Rect {
+                    x: rect.x + border,
+                    y: rect.y + border,
+                    w: (rect.w - 2.0 * border).max(0.0),
+                    h: (rect.h - 2.0 * border).max(0.0),
+                };
+                self.draw_text(idx, content, padding_box, alpha, cumulative)?
+            }
             Content::Container => {}
         }
         let layout = if element.style.display.as_deref() == Some("flex") {

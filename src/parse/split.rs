@@ -263,6 +263,7 @@ pub(in crate::parse) fn push_piece(
             track: 0,
             motion,
             layout: LayoutHints::default(),
+            spans: Vec::new(),
         },
         start_expr: None,
         duration: None,

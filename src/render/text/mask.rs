@@ -12,9 +12,33 @@ pub(super) fn paint_mask(
     dimensions: (u32, u32),
     painted: &mut Option<PixelRect>,
     mask: &[u8],
+    size: (usize, usize),
+    position: (f32, f32),
+    (color, alpha): (Color, f32),
+    zoom: f32,
+) {
+    paint_mask_with(
+        pixels,
+        dimensions,
+        painted,
+        mask,
+        size,
+        position,
+        (|_, _| color, alpha),
+        zoom,
+    );
+}
+
+/// [`paint_mask`] with a color per destination pixel (gradient-filled text).
+#[allow(clippy::too_many_arguments)]
+pub(super) fn paint_mask_with(
+    pixels: &mut [u8],
+    dimensions: (u32, u32),
+    painted: &mut Option<PixelRect>,
+    mask: &[u8],
     (mw, mh): (usize, usize),
     (left, top): (f32, f32),
-    (color, alpha): (Color, f32),
+    (paint, alpha): (impl Fn(usize, usize) -> Color, f32),
     zoom: f32,
 ) {
     if mw == 0 || mh == 0 || alpha <= 0.0 {
@@ -47,6 +71,10 @@ pub(super) fn paint_mask(
             let fx = sx - sx.floor();
             let coverage = (texel(ix, iy) * (1.0 - fx) + texel(ix + 1, iy) * fx) * (1.0 - fy)
                 + (texel(ix, iy + 1) * (1.0 - fx) + texel(ix + 1, iy + 1) * fx) * fy;
+            if coverage <= 0.0 {
+                continue;
+            }
+            let color = paint(x, y);
             let a = ((alpha * (coverage / 255.0)) * color.a as f32 / 255.0).clamp(0.0, 1.0);
             if a > 0.0 {
                 let offset = (y * dimensions.0 as usize + x) * 4;

@@ -18,7 +18,7 @@ The composition root declares `data-composition-id`, `data-width`, `data-height`
 </div>
 ```
 
-Use supported elements (`div`, text, local PNG, JPEG, WebP, or SVG images, and inline static `<svg>`), inline styles or type/class/ID selectors, and documented CSS properties only. Layout dimensions accept pixels or percentages. Flex layout is available for centered and grouped content; do not rely on full browser layout behavior.
+Use supported elements (`div`, text, local PNG, JPEG, WebP, or SVG images, and inline static `<svg>`), inline styles or type/class/ID selectors, and documented CSS properties only. Layout dimensions accept pixels or percentages. Flex layout is available for centered and grouped content; do not rely on full browser layout behavior. Text can mix styles inline: `<span>`, `<strong>`, `<b>`, and `<code>` inside an element with its own text change color, weight, family, letter spacing, fill, or stroke, and fill with a gradient through `background` plus `background-clip: text`; `-webkit-text-stroke` with `color: transparent` gives outline type. Inline runs cannot be boxes (no padding, size, or `font-size`); see `examples/rich-text.html`.
 
 ## Templates
 

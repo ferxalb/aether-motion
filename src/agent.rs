@@ -21,6 +21,11 @@ fn fix_hint(message: &str) -> &'static str {
         || message.contains(": variable ")
     {
         "declare data-composition-variables='[{\"id\":\"title\",\"type\":\"string\",\"label\":\"Title\",\"default\":\"Hello\"}]' on <html> or the composition root (types string, number, color, boolean, enum, image, font); bind with var(--id) in CSS, data-var-text, data-var-src (img, video, audio, source), or data-var-if (id, !id, id=value, id!=value); pass values as a JSON object of declared ids with matching types"
+    } else if message.contains("inline text")
+        || message.contains("inline <")
+        || message.contains("background-clip")
+    {
+        "inline runs (span, strong, b, code inside an element with its own text) may set only color, font-family, font-weight, letter-spacing, -webkit-text-fill-color, -webkit-text-stroke, and background with background-clip: text; move box styles, font-size, and animation to the text element or a separate element; background-clip: text needs a background and text of its own"
     } else if message.contains("data-hf-draw") {
         "put data-hf-draw on an inline <svg> with stroked shapes, with optional data-hf-draw-at, -duration (per shape), -stagger, and -easing; the drawing must end inside the clip"
     } else if message.contains("data-hf-motion-path") {
