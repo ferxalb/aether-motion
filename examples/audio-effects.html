@@ -1,0 +1,61 @@
+<!doctype html>
+<html>
+<head>
+<!-- Audio effects: a music bed under a voice. The music is EQ'd to leave room for speech, ducks
+     12 dB while the voice talks (look-ahead attack, hold, release), and its level is automated
+     with data-hf-volume-ramp (intro at full level, eased fade to silence at the end).
+     Check: aether-motion check examples/audio-effects.html (see audio.clips[].effects)
+     Render: aether-motion render examples/audio-effects.html --output audio-effects.mp4 -->
+<style>
+  :root { --bg: #0b1020; --text: #f4f6ff; --muted: #8b95b8; --accent: #7aa2ff; --accent-2: #4be0b8; --panel: rgba(255, 255, 255, 0.06); }
+  #title { left: 0; top: 150px; width: 1920px; font-size: 84px; font-weight: bold; color: var(--text); text-align: center; }
+  #sub { left: 0; top: 260px; width: 1920px; font-size: 32px; color: var(--accent); text-align: center; }
+  .lane { left: 260px; width: 1400px; height: 150px; border-radius: 24px; background: var(--panel); border: 2px solid rgba(255, 255, 255, 0.08); }
+  #lane-music { top: 420px; }
+  #lane-voice { top: 620px; }
+  .label { left: 300px; width: 600px; font-size: 34px; font-weight: 600; color: var(--text); }
+  #label-music { top: 450px; }
+  #label-voice { top: 650px; }
+  .note { left: 300px; width: 1300px; font-size: 26px; color: var(--muted); }
+  #note-music { top: 505px; }
+  #note-voice { top: 705px; }
+  .badge { left: 1300px; width: 320px; height: 64px; border-radius: 32px; font-size: 28px; font-weight: 600; color: #0b1020;
+           text-align: center; line-height: 64px; }
+  .duck { top: 463px; background: var(--accent-2); }
+  .talk { top: 663px; background: var(--accent); }
+  #footer { left: 0; top: 900px; width: 1920px; font-size: 26px; color: var(--muted); text-align: center; }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="audio-effects" data-width="1920" data-height="1080" data-duration="8" style="background: var(--bg)">
+  <div id="title" class="clip" data-start="0" data-duration="8" data-track-index="2" data-hf-fade-in="0.4" data-hf-fade-out="0.6">Audio effects</div>
+  <div id="sub" class="clip" data-start="0.2" data-duration="7.8" data-track-index="2" data-hf-fade-in="0.4" data-hf-fade-out="0.6">volume automation · ducking under the voice · equalizer</div>
+
+  <div id="lane-music" class="clip lane" data-start="0" data-duration="8" data-track-index="1"></div>
+  <div id="label-music" class="clip label" data-start="0" data-duration="8" data-track-index="2">Music bed</div>
+  <div id="note-music" class="clip note" data-start="0" data-duration="8" data-track-index="2">data-hf-eq="music-bed" · data-hf-duck="voice" (-12 dB) · data-hf-volume-ramp</div>
+  <div id="lane-voice" class="clip lane" data-start="0" data-duration="8" data-track-index="1"></div>
+  <div id="label-voice" class="clip label" data-start="0" data-duration="8" data-track-index="2">Voice</div>
+  <div id="note-voice" class="clip note" data-start="0" data-duration="8" data-track-index="2">data-hf-eq="voice" · keys the ducking</div>
+
+  <!-- Badges follow the three phrases of the voice (1.0-2.6 s, 3.3-4.6 s, 5.2-6.7 s). -->
+  <div id="duck-1" class="clip badge duck" data-start="0.85" data-duration="2.15" data-track-index="3" data-hf-fade-in="0.15" data-hf-fade-out="0.3">ducked −12 dB</div>
+  <div id="talk-1" class="clip badge talk" data-start="1" data-duration="1.6" data-track-index="3" data-hf-fade-in="0.1" data-hf-fade-out="0.2">speaking</div>
+  <div id="duck-2" class="clip badge duck" data-start="3.15" data-duration="1.85" data-track-index="3" data-hf-fade-in="0.15" data-hf-fade-out="0.3">ducked −12 dB</div>
+  <div id="talk-2" class="clip badge talk" data-start="3.3" data-duration="1.3" data-track-index="3" data-hf-fade-in="0.1" data-hf-fade-out="0.2">speaking</div>
+  <div id="duck-3" class="clip badge duck" data-start="5.05" data-duration="2.05" data-track-index="3" data-hf-fade-in="0.15" data-hf-fade-out="0.3">ducked −12 dB</div>
+  <div id="talk-3" class="clip badge talk" data-start="5.2" data-duration="1.5" data-track-index="3" data-hf-fade-in="0.1" data-hf-fade-out="0.2">speaking</div>
+
+  <div id="footer" class="clip" data-start="6.8" data-duration="1.2" data-track-index="2" data-hf-fade-in="0.3">automated fade-out · deterministic, sample-accurate</div>
+
+  <!-- The voice: EQ preset for clarity. Its post-effects level keys the music's ducking. -->
+  <audio id="voice" src="audio/voice.wav" data-start="1" data-hf-eq="voice"></audio>
+  <!-- The music: looped, EQ'd to leave room for speech, ducked under the voice, and automated:
+       full level for the intro, settled at 0.8, then an eased fade to silence. -->
+  <audio id="music" src="audio/music.wav" data-start="0" data-duration="8" data-hf-loop="true"
+         data-hf-eq="music-bed"
+         data-hf-duck="voice" data-hf-duck-amount="12" data-hf-duck-attack="0.15" data-hf-duck-hold="0.15" data-hf-duck-release="0.5"
+         data-hf-volume-ramp='[{"at":0,"volume":1},{"at":0.8,"volume":0.8,"easing":"ease-in-out"},{"at":6.8,"volume":0.8},{"at":8,"db":-60,"easing":"ease-in-cubic"}]'></audio>
+</div>
+</body>
+</html>

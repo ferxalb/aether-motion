@@ -632,6 +632,8 @@ pub struct AudioClip {
     pub loop_from: f64,
     /// `data-hf-speed` or `data-hf-speed-ramp` (varispeed: pitch follows the rate); `None` is 1x.
     pub speed: Option<std::sync::Arc<crate::speed::SpeedCurve>>,
+    /// `data-hf-volume-ramp`, `data-hf-eq`, and `data-hf-duck` (see `crate::audio::effects`).
+    pub effects: crate::audio::effects::AudioEffects,
 }
 
 /// Edge a reveal grows from: `Left` uncovers the element starting at its left edge, and so on.

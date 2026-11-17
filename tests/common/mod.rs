@@ -102,3 +102,25 @@ pub fn render(
         height: h as usize,
     }
 }
+
+/// 16-bit PCM WAV, interleaved samples.
+pub fn write_wav(path: &std::path::Path, rate: u32, channels: u16, samples: &[i16]) {
+    let data_len = (samples.len() * 2) as u32;
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"RIFF");
+    bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
+    bytes.extend_from_slice(b"WAVEfmt ");
+    bytes.extend_from_slice(&16_u32.to_le_bytes());
+    bytes.extend_from_slice(&1_u16.to_le_bytes());
+    bytes.extend_from_slice(&channels.to_le_bytes());
+    bytes.extend_from_slice(&rate.to_le_bytes());
+    bytes.extend_from_slice(&(rate * u32::from(channels) * 2).to_le_bytes());
+    bytes.extend_from_slice(&(channels * 2).to_le_bytes());
+    bytes.extend_from_slice(&16_u16.to_le_bytes());
+    bytes.extend_from_slice(b"data");
+    bytes.extend_from_slice(&data_len.to_le_bytes());
+    for sample in samples {
+        bytes.extend_from_slice(&sample.to_le_bytes());
+    }
+    std::fs::write(path, bytes).unwrap();
+}

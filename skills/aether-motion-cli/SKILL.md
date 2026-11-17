@@ -26,6 +26,8 @@ Inside a project created by `aether-motion init`, `aether.json` supplies the ent
 
 For `<video>` or `<audio>` with `data-hf-speed` or `data-hf-speed-ramp`, read `videos[].speed` and `mediaEnd` and `audio.clips[].speed`, `end`, and `mediaSeconds` in the `check` report to confirm how much source each clip consumes, then snapshot before, inside, and after each ramp segment (`aether-motion preview --at T` or `aether_snapshot` with `t`). A ramp that ends at speed 0 without `data-duration` fails with a `fix`.
 
+For audio effects (`data-hf-volume-ramp`, `data-hf-eq`, `data-hf-duck`), `aether-motion check` reports `audio.clips[].effects`: verify that `duck.regions` cover the voice with the intended look-ahead and release, that `duckedSeconds` and `deepestDb` match the requested amount, that `eq.responseDb` has the intended shape, and that `audio.peak` stays at or below 1.0 before rendering. Render with the native encoder (`--encoder ffmpeg` rejects audio).
+
 When the composition declares `data-composition-variables`, pass values as a JSON object keyed by id: `--variables '{"title":"Q4","accent":"#ff7a45"}'` or `--variables-file values.json` on `check`, `render`, `preview`, `bench`, and `inspect`, `"variables"` in `aether.json` (flags override it id by id), or the `variables` argument of `aether_check`, `aether_write`, `aether_snapshot`, and `aether_render`. Omitted ids keep their defaults; unknown ids and wrong types fail with a `fix`. Read `variables` in the `check` report (`value`, `overridden`, `uses`, `unused`, `removedElements`), and run `check` and a snapshot with every value set you deliver, because values change text length, layout, and safe-zone findings. For batches, render each value file to its own output name.
 
 ## Operational constraints

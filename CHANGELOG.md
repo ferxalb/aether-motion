@@ -9,6 +9,12 @@ CLI/MCP output may still change between minor releases.
 
 ### Added
 
+- Audio effects on `<audio>` and the sound of `<video>`: `data-hf-volume-ramp` (eased gain keyframes in
+  `volume` or `db`), `data-hf-duck` (sidechain ducking under trigger clips with look-ahead attack, hold,
+  release, amount, and threshold), and `data-hf-eq` (up to 16 RBJ biquad bands or the `voice`, `music-bed`,
+  `telephone`, `warm`, and `bright` presets). `check`/`aether_check` report `audio.clips[].effects` with the
+  EQ response, ducked regions, and automation keys. Clips without effects mix byte-identically. See
+  `examples/audio-effects.html`.
 - Variable speed on `<video>` and `<audio>`: `data-hf-speed` (constant rate, 0.05 to 16) and
   `data-hf-speed-ramp` (JSON keyframes with `at`, `speed` 0 to 16, and `easing`) for slow motion, fast
   forward, freezes, and speed ramps. Source time is the integral of the rate; a video's sound follows its
