@@ -48,7 +48,9 @@ fn outline(shape: &ClipPath, rect: Rect, k: f32, cumulative: f32) -> Vec<(f32, f
             resolve(p[1], h),
         ),
         ClipKind::Polygon => p
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|xy| (x0 + resolve(xy[0], w), y0 + resolve(xy[1], h)))
             .collect(),
     }

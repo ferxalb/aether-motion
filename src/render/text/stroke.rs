@@ -78,7 +78,13 @@ pub(in crate::render) fn stroke_glyph(
     };
     let shift = Transform::from_translate(-left as f32, -top as f32);
     pixmap.stroke_path(&path, &paint, &stroke, shift, None::<&Mask>);
-    let coverage = pixmap.data().chunks_exact(4).map(|px| px[3]).collect();
+    let coverage = pixmap
+        .data()
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|px| px[3])
+        .collect();
     Some(StrokeMask {
         coverage,
         width: w as usize,
