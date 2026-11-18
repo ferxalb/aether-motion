@@ -52,15 +52,17 @@ pub(in crate::parse) struct SplitSpec {
     distance: f32,
     easing: Easing,
     gap: f32,
-    /// The element's own `text-align`, which each line row of multi-line text follows.
+    /// The element's `text-align` (its own, else inherited), which its rows follow.
     align: Option<String>,
 }
 
 /// Reads the split attributes of `node`; `None` when `data-hf-split` is absent.
+/// `inherited_align` is the nearest ancestor's `text-align`, used when the element sets none.
 pub(in crate::parse) fn parse_split(
     node: &NodeRef,
     tag: &str,
     style: &Style,
+    inherited_align: Option<&str>,
 ) -> Result<Option<SplitSpec>> {
     let Some(unit) = attr(node, "data-hf-split") else {
         return Ok(None);
@@ -129,7 +131,10 @@ pub(in crate::parse) fn parse_split(
         distance: distance as f32,
         easing,
         gap: gap as f32,
-        align: style.text_align.clone(),
+        align: style
+            .text_align
+            .clone()
+            .or_else(|| inherited_align.map(str::to_string)),
     }))
 }
 
@@ -144,7 +149,10 @@ impl SplitSpec {
             style.align_items = None;
             style.justify_content = None;
         } else {
+            let own = style.text_align.clone();
+            style.text_align = self.align.clone();
             row_container_style(style, self.gap);
+            style.text_align = own;
         }
     }
 
@@ -284,9 +292,10 @@ impl SplitSpec {
     }
 }
 
-/// Lines of split text: `<br>` breaks, without the empty line a trailing `<br>` would leave.
+/// Lines of split text: its `<br>` breaks. `html::direct_text` already dropped the empty line of a
+/// single trailing `<br>`, so a remaining empty line (from consecutive breaks) is a blank row.
 fn lines(text: &str) -> impl Iterator<Item = &str> {
-    text.strip_suffix('\n').unwrap_or(text).split('\n')
+    text.split('\n')
 }
 
 /// Appends a generated child of `parent` that reuses `tag` (so default font sizes still apply) and

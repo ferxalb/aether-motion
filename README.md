@@ -150,7 +150,7 @@ aether-motion block theme-midnight
 ## Why AETHER Motion?
 
 - **One binary:** no browser, no Node.js, no FFmpeg. Runs on macOS, Linux, and Windows, including CI runners and servers.
-- **Deterministic:** same input, same frames, same output, byte for byte for any `--threads` value, render split, or CPU (vectorized paths produce the same bits as scalar ones). Generic fonts use an embedded Roboto, so text matches across machines.
+- **Deterministic:** same input, same frames, same output, byte for byte for any `--threads` value, render split, or CPU (vectorized paths produce the same bits as scalar ones). Generic families (`sans-serif`, `serif`, `monospace`, and the fallback) always use the embedded Roboto, italic included (synthesized), so their text matches across machines; a named family matches only where the same font file is installed.
 - **Honest errors:** unsupported HTML or CSS returns the exact problem and a suggested fix, never a silently wrong video.
 - **Native motion:** keyframes with expo, back, and `cubic-bezier` easing, CSS `@keyframes`, camera zoom and pan, kinetic text, reveals, counters, and crossfade, push, cover, wipe, and zoom transitions.
 - **Captions:** `data-hf-captions` turns a transcript (`transcript.json`, OpenAI Whisper or whisper.cpp JSON, SRT, VTT) into word-highlighted captions; `aether-motion captions` converts transcripts to SRT or VTT. See `examples/captions.html`.

@@ -14,7 +14,8 @@ CLI/MCP output may still change between minor releases.
 - Typography: `font-kerning: normal` applies the font's pair kerning (GPOS `kern` pair adjustments or
   the legacy `kern` table; on the embedded Roboto it matches Chromium's shaping on every tested pair),
   including across the letters of `data-hf-split="chars"`. `font-style: italic|oblique` uses an
-  installed italic face or slants the upright one by 14 degrees around the baseline, as browsers do;
+  installed italic face or slants the upright one by 14 degrees around the baseline, as browsers do
+  (generic families always slant the embedded Roboto, so they match on every machine);
   `<em>` and `<i>` are italic, as elements and as inline runs. The default `font-kerning: auto` does
   not kern, so existing layouts are unchanged. See `examples/typography.html`.
 - Multi-line kinetic text: `data-hf-split` accepts `<br>`; each line becomes a row that follows the

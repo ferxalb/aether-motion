@@ -330,17 +330,23 @@ impl Tile {
 }
 
 /// The fixed-point texel at gradient parameter `t` (of a tile-relative pixel center, from
-/// [`Mapper::row`]): premultiplied color x256 and alpha x4096.
+/// [`Mapper::row`]): premultiplied color x256 and alpha x4096; a texel whose alpha rounds to zero
+/// is transparent black, so it leaves every pixel unchanged in all blend paths.
 /// Cached tiles and uncached draws of a tileable gradient both come from here, so a draw has the same
 /// pixels whether or not its tile is cached (and so for any thread count or render split).
 #[inline]
 fn texel(sampler: &Sampler, t: f32) -> [u16; 4] {
     let [r, g, b, a] = sampler.sample(t);
+    let alpha = round_to_u16(a * 4096.0);
+    if alpha == 0 {
+        // Transparent black: a faint color left on a zero-alpha texel could still nudge a pixel.
+        return [0; 4];
+    }
     [
         round_to_u16(r * 256.0),
         round_to_u16(g * 256.0),
         round_to_u16(b * 256.0),
-        round_to_u16(a * 4096.0),
+        alpha,
     ]
 }
 
@@ -686,6 +692,64 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn zero_alpha_texels_never_change_pixels() {
+        // A bright stop fading to nothing: near the edge, alpha rounds to zero before color does.
+        let stops = vec![
+            Stop {
+                pos: 0.0,
+                color: Color::WHITE,
+            },
+            Stop {
+                pos: 1.0,
+                color: Color {
+                    r: 255,
+                    g: 255,
+                    b: 255,
+                    a: 0,
+                },
+            },
+        ];
+        let sampler = Sampler::new(&stops);
+        for i in 0..=100_000 {
+            let t = 0.999 + i as f32 * 1e-8;
+            let texel = texel(&sampler, t);
+            if texel[3] == 0 {
+                assert_eq!(texel, [0; 4], "t {t}");
+            }
+        }
+        for alpha in [1.0, 0.75, 0.3] {
+            for y in 0..4 {
+                let mut pixels: Vec<[u8; 4]> = (0..=255).map(|v| [v, v, 255 - v, 9]).collect();
+                let before = pixels.clone();
+                blend_row(&mut pixels, &[[0; 4]; 256], 0, y, alpha);
+                assert_eq!(pixels, before);
+            }
+        }
+    }
+
+    #[test]
+    fn cached_tile_matches_direct_drawing_at_full_opacity() {
+        let gradient = glow();
+        let rect = |x| Rect {
+            x,
+            y: -3.0,
+            w: 120.0,
+            h: 60.0,
+        };
+        let positions = [-40.0, -39.0, -41.0, -39.0, 2.0];
+        let mut warm = Surface::filled(96, 54, 1.0, Color::BLACK);
+        let mut cold = Surface::filled(96, 54, 1.0, Color::BLACK);
+        for x in positions {
+            warm.fill_gradient_general(rect(x), &gradient, 1.0, 0.0)
+                .unwrap();
+            cold.gradient_cache = GradientCache::default();
+            cold.fill_gradient_general(rect(x), &gradient, 1.0, 0.0)
+                .unwrap();
+        }
+        assert!(warm.pixels == cold.pixels, "warm and cold caches differ");
     }
 
     #[test]

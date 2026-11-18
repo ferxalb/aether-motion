@@ -2,8 +2,9 @@
 //!
 //! The adjustment of a glyph pair comes from the GPOS `kern` feature (pair adjustment lookups, both
 //! the glyph-pair and the class-pair formats, applied like a shaping engine: in each lookup the first
-//! subtable that covers the pair wins, and the lookups add up), or, for fonts without GPOS kerning,
-//! from the legacy `kern` table (horizontal format 0 and 2 subtables). Values are in em units, so the
+//! subtable that covers the pair wins, and the lookups add up; only the default language system of
+//! each script is read), or, for fonts without GPOS kerning, from the legacy `kern` table (horizontal,
+//! non-cross-stream format 0 and 2 subtables). Values are in em units, so the
 //! same pair scales exactly with the font size; contextual, vertical, and device adjustments are not
 //! applied. Results are memoized per character pair, and kerning is a pure function of the font
 //! bytes, so it stays deterministic across machines that resolve the same font.
@@ -33,12 +34,18 @@ impl Kerning {
     /// Reads which kerning data `face` has; cheap, nothing is evaluated until a pair is asked for.
     pub(in crate::render) fn new(face: &Face) -> Self {
         let kern = Tag::from_bytes(b"kern");
+        // The `kern` features of each script's default language system: language-specific
+        // systems (alternative kerning for one language) are not applied. Lookups of other scripts
+        // only cover their own glyphs, so taking every script needs no script detection.
         let mut lookups: Vec<u16> = face
             .tables()
             .gpos
             .map(|gpos| {
-                gpos.features
+                gpos.scripts
                     .into_iter()
+                    .filter_map(|script| script.default_language)
+                    .flat_map(|language| language.feature_indices.into_iter())
+                    .filter_map(|index| gpos.features.get(index))
                     .filter(|feature| feature.tag == kern)
                     .flat_map(|feature| feature.lookup_indices.into_iter())
                     .collect()
@@ -131,7 +138,7 @@ fn legacy_pair(face: &Face, left: GlyphId, right: GlyphId) -> i16 {
     };
     kern.subtables
         .into_iter()
-        .filter(|subtable| subtable.horizontal && !subtable.variable)
+        .filter(|subtable| subtable.horizontal && !subtable.variable && !subtable.has_cross_stream)
         .filter_map(|subtable| subtable.glyphs_kerning(left, right))
         .fold(0i16, i16::saturating_add)
 }

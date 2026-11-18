@@ -7,7 +7,8 @@
 //!
 //! A request names a family list, a weight, and whether the text is italic. When no italic face of
 //! the family is installed (the embedded Roboto has none) the upright face is used and the request
-//! is marked for a synthetic oblique (see `oblique.rs`), as browsers do. Each loaded face also carries
+//! is marked for a synthetic oblique (see `oblique.rs`), as browsers do. Generic families always
+//! resolve italic requests to the embedded upright face, so they stay identical across machines. Each loaded face also carries
 //! its pair [`Kerning`].
 
 use crate::render::text::kerning::Kerning;
@@ -134,13 +135,15 @@ impl FontStore {
         let key = key(request);
         if !self.fonts.contains_key(&key) {
             let style = if italic { Style::Italic } else { Style::Normal };
+            // Generic families (and the fallback) always take the embedded upright face, so italic
+            // text in them is the same synthetic oblique on every machine, whatever is installed.
             let id = family.split(',').find_map(|item| {
                 let item = item.trim().trim_matches(['\'', '"']);
-                let requested = match item.to_ascii_lowercase().as_str() {
-                    "sans-serif" => Family::SansSerif,
-                    "serif" => Family::Serif,
-                    "monospace" => Family::Monospace,
-                    _ => Family::Name(item),
+                let (requested, style) = match item.to_ascii_lowercase().as_str() {
+                    "sans-serif" => (Family::SansSerif, Style::Normal),
+                    "serif" => (Family::Serif, Style::Normal),
+                    "monospace" => (Family::Monospace, Style::Normal),
+                    _ => (Family::Name(item), style),
                 };
                 let list = [requested];
                 self.db.query(&Query {
@@ -156,7 +159,7 @@ impl FontStore {
                     self.db.query(&Query {
                         families: &fallback,
                         weight: Weight(weight),
-                        style,
+                        style: Style::Normal,
                         ..Default::default()
                     })
                 })

@@ -187,3 +187,25 @@ fn inline_runs_reject_font_kerning() {
     .unwrap_err();
     assert!(format!("{error:#}").contains("font-kerning"), "{error:#}");
 }
+
+#[test]
+fn split_rows_keep_blank_lines_and_inherit_text_align() {
+    let path = write(
+        "split_inherit",
+        r#"<div class="clip" data-start="0" data-duration="2" style="position:absolute; left:0; top:0; width:600px; text-align:center"><h1 data-hf-split="words" data-hf-stagger="0" data-hf-split-duration="0.1" data-hf-split-from="fade" style="font-size:40px; color:#ffffff">a<br><br>b</h1></div>"#,
+    );
+    let composition = parse_file(&path).unwrap();
+    let h1 = composition
+        .elements
+        .iter()
+        .position(|e| e.tag == "h1" && e.style.column)
+        .unwrap();
+    // Three rows: "a", the blank line from the second break, and "b".
+    assert_eq!(composition.elements[h1].children.len(), 3);
+    let mut renderer = Renderer::new(&composition, 1.0).unwrap();
+    let pixels = renderer.render_at(1.0).unwrap().to_vec();
+    let (x0, y0, x1, y1) = ink(&pixels).unwrap();
+    // Centered by the parent's text-align, and spanning three 40 px lines.
+    assert!(((x0 + x1) as f32 / 2.0 - 300.0).abs() < 20.0, "{x0}..{x1}");
+    assert!(y1 - y0 > 80, "{y0}..{y1}");
+}

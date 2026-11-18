@@ -88,8 +88,9 @@ pub(super) struct Tracker<'a> {
     total: usize,
     done: AtomicUsize,
     start: Instant,
-    /// Time of the last report; the lock also keeps observer calls from overlapping.
-    last: Mutex<Option<Instant>>,
+    /// Time and frame count of the last report; the lock also keeps observer calls from
+    /// overlapping.
+    last: Mutex<(Option<Instant>, usize)>,
 }
 
 impl<'a> Tracker<'a> {
@@ -99,7 +100,7 @@ impl<'a> Tracker<'a> {
             total,
             done: AtomicUsize::new(0),
             start: Instant::now(),
-            last: Mutex::new(None),
+            last: Mutex::new((None, 0)),
         }
     }
 
@@ -122,12 +123,20 @@ impl<'a> Tracker<'a> {
             // Another thread is reporting right now; this frame shows up in the next report.
             return;
         };
-        if !final_frame && last.is_some_and(|at| now.duration_since(at) < REPORT_INTERVAL) {
+        if !final_frame
+            && last
+                .0
+                .is_some_and(|at| now.duration_since(at) < REPORT_INTERVAL)
+        {
             return;
         }
-        *last = Some(now);
-        // Re-read under the lock so reports never go backwards.
+        // Re-read under the lock so reports never go backwards, and never repeat a count (a
+        // throttled report can already have seen every frame before the last one reports).
         let done = self.done.load(Ordering::Relaxed).min(self.total);
+        if last.0.is_some() && done <= last.1 {
+            return;
+        }
+        *last = (Some(now), done);
         observer.update(ProgressUpdate {
             done,
             total: self.total,
@@ -162,7 +171,7 @@ mod tests {
         let last = Mutex::new(0);
         let observer = |update: ProgressUpdate| {
             let mut last = last.lock().unwrap();
-            assert!(update.done >= *last);
+            assert!(update.done > *last, "{} after {}", update.done, *last);
             *last = update.done;
         };
         let tracker = Tracker::new(Some(&observer), 4000);

@@ -213,7 +213,9 @@ pub(in crate::parse) fn walk(
             attr(node, "id").as_deref().unwrap_or("no id")
         )
     })?;
-    let split = parse_split(node, &tag, &style).with_context(|| {
+    let inherited_align = std::iter::successors(parent, |&i| out[i].element.parent)
+        .find_map(|i| out[i].element.style.text_align.clone());
+    let split = parse_split(node, &tag, &style, inherited_align.as_deref()).with_context(|| {
         format!(
             "data-hf-split on <{tag}> ({})",
             attr(node, "id").as_deref().unwrap_or("no id")
