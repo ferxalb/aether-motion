@@ -1,4 +1,5 @@
-//! Pixel painting for the renderer: the `Surface` buffer and one submodule per visual feature.
+//! Pixel painting for the renderer: the `Surface` buffer, one submodule per visual feature, and
+//! `kernels` (branch-free per-row kernels with runtime CPU dispatch and bit-identical results).
 
 mod backdrop;
 mod border;
@@ -11,6 +12,7 @@ mod float_ops;
 mod gradient;
 mod images;
 mod inset;
+mod kernels;
 mod masked;
 mod resample;
 mod reveal;

@@ -7,6 +7,7 @@ use crate::render::paint::GradientPaint;
 #[cfg(test)]
 use crate::render::paint::Surface;
 use crate::render::text::block::TextBlock;
+use crate::render::text::oblique::{slant, SKEW};
 use crate::render::text::props::{style_index, TextProps, Underlay};
 use crate::render::text::shadow::{BlockLayout, ShadowMask};
 use crate::render::text::stroke::{stroke_glyph, StrokeMask};
@@ -99,14 +100,18 @@ impl<'a> Renderer<'a> {
             && parent_style.and_then(|p| p.style.align_items.as_deref()) == Some("center");
         let spans = &element.spans;
         let styles = self.run_styles(idx);
+        let mut skews = Vec::with_capacity(styles.len());
         for style in &styles {
-            self.fonts.get(style.family, style.weight)?;
+            // Loads the face, and says whether it must be slanted.
+            let synthetic = self.fonts.synthetic_oblique(style.font())?;
+            skews.push(if synthetic { SKEW } else { 0.0 });
         }
+        let kerning = self.text_kerning(idx, props.kerning, &styles)?;
         let face_data = styles
             .iter()
             .map(|style| {
                 (style.stroke_width > 0.0)
-                    .then(|| self.fonts.face_data(style.family, style.weight))
+                    .then(|| self.fonts.face_data(style.font()))
                     .transpose()
             })
             .collect::<Result<Vec<_>>>()?;
@@ -121,7 +126,7 @@ impl<'a> Renderer<'a> {
             .iter()
             .map(|style| {
                 self.fonts
-                    .loaded(style.family, style.weight)
+                    .loaded(style.font())
                     .expect("fonts were loaded above")
             })
             .collect();
@@ -132,15 +137,21 @@ impl<'a> Renderer<'a> {
             let first = glyphs.len();
             for (offset, ch) in text[line.start..line.end].char_indices() {
                 let s = style_index(spans, line.start + offset);
-                let (mut metrics, coverage) = fonts[s].rasterize(ch, size);
+                let (mut metrics, mut coverage) = fonts[s].rasterize(ch, size);
                 metrics.advance_width += if s == 0 {
                     spacing
                 } else {
                     styles[s].letter_spacing * unit
                 };
-                let stroke = faces[s]
-                    .as_ref()
-                    .and_then(|face| stroke_glyph(face, ch, size, styles[s].stroke_width * unit));
+                if let Some(kerning) = &kerning {
+                    metrics.advance_width += kerning[line.start + offset] * size;
+                }
+                if skews[s] != 0.0 {
+                    coverage = slant(&mut metrics, &coverage);
+                }
+                let stroke = faces[s].as_ref().and_then(|face| {
+                    stroke_glyph(face, ch, size, styles[s].stroke_width * unit, skews[s])
+                });
                 glyphs.push(Glyph {
                     metrics,
                     coverage,

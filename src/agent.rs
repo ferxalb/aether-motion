@@ -55,7 +55,7 @@ fn fix_hint(message: &str) -> &'static str {
     } else if message.contains("data-hf-transition") || message.contains("transition ") {
         "on the incoming clip use data-hf-transition=crossfade|push-<dir>|cover-<dir>|wipe-<dir>|whip-<dir>|zoom-in|zoom-out|dip-to-black|dip-to-white|flash|blur|glitch|rgb-split (dir: left, right, up, down) and data-hf-transition-from=<outgoing id>; start it inside the outgoing clip (data-start=\"a-0.6\"), give the outgoing clip a data-duration, and draw it above on a higher data-track-index"
     } else if message.contains("data-hf-split") || message.contains("data-hf-stagger") {
-        "use data-hf-split=words|chars on an element with one line of plain text (no <br> or child elements); see AGENTS.md for data-hf-stagger, data-hf-split-from, and the other options"
+        "use data-hf-split=words|chars on an element with plain text (lines break only at <br>; no child elements); see AGENTS.md for data-hf-stagger, data-hf-split-from, and the other options"
     } else if message.contains("data-hf-camera") || message.contains("camera keyframe") {
         "use a JSON array of {at, zoom, x, y, easing} on a non-root container; at in local seconds, strictly increasing; zoom between 0.05 and 50"
     } else if message.contains("data-hf-keyframes") {
@@ -84,7 +84,7 @@ fn fix_hint(message: &str) -> &'static str {
     } else if message.contains("data-hf-volume-ramp") {
         "use data-hf-volume-ramp='[{\"at\":0,\"volume\":1},{\"at\":2,\"db\":-12,\"easing\":\"ease-in-out\"}]': at in clip seconds, strictly increasing (0 to 3600); volume 0 to 8 or db up to +18 (not both); omitted values inherit; it multiplies data-volume and the fades"
     } else if message.contains("<video>") {
-        "use <video src=\"clip.mp4\" muted data-start=\"0\" data-duration=\"4\" style=\"width:..px;height:..px\"> with a local H.264 MP4 (closed GOPs, not fragmented, not mirrored), optional data-media-start, muted, data-volume, loop (needs data-duration), and data-hf-speed=\"0.5\" (0.05 to 16) or data-hf-speed-ramp='[{\"at\":0,\"speed\":1},{\"at\":1,\"speed\":0.25,\"easing\":\"ease-in-out\"}]' (speed 0 to 16, at strictly increasing); its AAC track plays unless muted; re-encode with `ffmpeg -i in -c:v libx264 -x264-params open-gop=0 -an out.mp4` if needed"
+        "use <video src=\"clip.mp4\" muted data-start=\"0\" data-duration=\"4\" style=\"width:..px;height:..px\"> with a local H.264 MP4 (no B-frames, closed GOPs, not fragmented, not mirrored), optional data-media-start, muted, data-volume, loop (needs data-duration), and data-hf-speed=\"0.5\" (0.05 to 16) or data-hf-speed-ramp='[{\"at\":0,\"speed\":1},{\"at\":1,\"speed\":0.25,\"easing\":\"ease-in-out\"}]' (speed 0 to 16, at strictly increasing); its AAC track plays unless muted; re-encode with `ffmpeg -i in.mp4 -c:v libx264 -bf 0 -x264-params open-gop=0 -c:a copy out.mp4` if needed (the error names the exact problem)"
     } else if message.contains("audio")
         || message.contains("data-volume")
         || message.contains("data-hf-trim-start")

@@ -8,7 +8,7 @@
 //! pictures that need more than the decoder's built-in conversion. `annexb` converts MP4 length-prefixed NAL units
 //! to the Annex B form the decoder reads.
 //!
-//! Scope: H.264 in a non-fragmented MP4 or MOV, closed GOPs (B-frames allowed), no rotation
+//! Scope: H.264 in a non-fragmented MP4 or MOV, closed GOPs without B-frames (rejected at index time: the bundled decoder cannot decode them), no rotation
 //! metadata. The video's audio track is not mixed; the element must be `muted` and sound comes from
 //! `<audio>`.
 mod annexb;

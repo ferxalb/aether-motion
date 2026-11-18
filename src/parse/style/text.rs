@@ -1,5 +1,5 @@
-//! Text properties: color, font size, family and weight, alignment, wrapping, shadow, fill color, and
-//! stroke.
+//! Text properties: color, font size, family, weight, style, and kerning, alignment, wrapping, shadow,
+//! fill color, and stroke.
 
 use crate::model::{Length, LineHeight, Style, WhiteSpace};
 use crate::parse::values::color::parse_color;
@@ -55,6 +55,20 @@ pub(super) fn apply(key: &str, value: &str, style: &mut Style) -> Result<bool> {
             });
         }
         "font-family" => style.font_family = Some(value.to_string()),
+        "font-style" => {
+            style.font_italic = Some(match value {
+                "normal" => false,
+                "italic" | "oblique" => true,
+                _ => bail!("unsupported font-style: {value}; use normal, italic, or oblique"),
+            });
+        }
+        "font-kerning" => {
+            style.font_kerning = Some(match value {
+                "normal" => true,
+                "auto" | "none" => false,
+                _ => bail!("unsupported font-kerning: {value}; use auto, normal, or none"),
+            });
+        }
         "text-align" => {
             if !matches!(value, "left" | "center" | "right") {
                 bail!("unsupported text-align: {value}");

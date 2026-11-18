@@ -1,5 +1,6 @@
-//! `data-hf-split`: kinetic text. A single line of text becomes a flex row of per-word (or per-letter)
-//! elements, each with a staggered entrance motion compiled into ordinary motion tracks.
+//! `data-hf-split`: kinetic text. Text becomes a flex row of per-word (or per-letter) elements, each
+//! with a staggered entrance motion compiled into ordinary motion tracks. Text with `<br>` breaks
+//! becomes a flex column of such rows, one per line, and the stagger continues across lines.
 //!
 //! Attributes on the text element:
 //! - `data-hf-split="words|chars"`; `data-hf-stagger` (seconds between pieces, default 0.06);
@@ -9,8 +10,12 @@
 //!   `data-hf-split-gap` (px between words; defaults to 0.28 of the font size).
 //!
 //! `mask` slides pieces up without fading; pair it with `overflow: hidden` on the element for a line
-//! reveal. Letters are placed without kerning, and spacing between words uses the gap above.
-use crate::model::{Content, Easing, Element, LayoutHints, Motion, Style, Track, TrackPoint};
+//! reveal. Lines break only at `<br>` (a line wider than its box overflows). Each letter of `chars`
+//! records the letter after it, so `font-kerning: normal` kerns across pieces; spacing between words
+//! uses the gap above.
+use crate::model::{
+    Content, Easing, Element, LayoutHints, Length, Motion, Style, Track, TrackPoint,
+};
 use crate::parse::animation::timing::parse_keyframe_easing;
 use crate::parse::html::{attr, number};
 use crate::parse::tree::Pending;
@@ -47,13 +52,17 @@ pub(in crate::parse) struct SplitSpec {
     distance: f32,
     easing: Easing,
     gap: f32,
+    /// The element's `text-align` (its own, else inherited), which its rows follow.
+    align: Option<String>,
 }
 
 /// Reads the split attributes of `node`; `None` when `data-hf-split` is absent.
+/// `inherited_align` is the nearest ancestor's `text-align`, used when the element sets none.
 pub(in crate::parse) fn parse_split(
     node: &NodeRef,
     tag: &str,
     style: &Style,
+    inherited_align: Option<&str>,
 ) -> Result<Option<SplitSpec>> {
     let Some(unit) = attr(node, "data-hf-split") else {
         return Ok(None);
@@ -122,13 +131,29 @@ pub(in crate::parse) fn parse_split(
         distance: distance as f32,
         easing,
         gap: gap as f32,
+        align: style
+            .text_align
+            .clone()
+            .or_else(|| inherited_align.map(str::to_string)),
     }))
 }
 
 impl SplitSpec {
-    /// Turns the original element into the flex row that holds the pieces.
-    pub(in crate::parse) fn apply_container_style(&self, style: &mut Style) {
-        row_container_style(style, self.gap);
+    /// Turns the original element into the flex row that holds the pieces of `text`, or, when it
+    /// has `<br>` breaks, into a flex column of line rows (stretched to its width).
+    pub(in crate::parse) fn apply_container_style(&self, style: &mut Style, text: &str) {
+        if lines(text).count() > 1 {
+            style.display = Some("flex".to_string());
+            style.column = true;
+            style.gap = 0.0;
+            style.align_items = None;
+            style.justify_content = None;
+        } else {
+            let own = style.text_align.clone();
+            style.text_align = self.align.clone();
+            row_container_style(style, self.gap);
+            style.text_align = own;
+        }
     }
 
     /// Entrance of piece `index`: starts at `index * stagger` after the clip start and holds before and after.
@@ -170,36 +195,66 @@ impl SplitSpec {
         motion
     }
 
-    /// Appends the pieces of `text` as children of `parent` (the already pushed container).
+    /// Appends the pieces of `text` as children of `parent` (the already pushed container): directly
+    /// for one line, or inside one row per line for text with `<br>` breaks.
     pub(in crate::parse) fn expand(
         &self,
         text: &str,
         parent: usize,
         out: &mut Vec<Pending>,
     ) -> Result<()> {
-        let words: Vec<&str> = text.split_whitespace().collect();
-        let pieces = match self.unit {
-            Unit::Words => words.len(),
-            Unit::Chars => words.iter().map(|w| w.chars().count()).sum(),
-        };
+        let pieces: usize = lines(text)
+            .flat_map(str::split_whitespace)
+            .map(|word| match self.unit {
+                Unit::Words => 1,
+                Unit::Chars => word.chars().count(),
+            })
+            .sum();
         if pieces == 0 {
             return Err(anyhow!("data-hf-split needs some text"));
         }
         if pieces > MAX_PIECES {
             bail!("data-hf-split would create {pieces} pieces; the limit is {MAX_PIECES}");
         }
+        let multiline = lines(text).count() > 1;
         let mut index = 0;
-        for word in words {
+        for line in lines(text) {
+            let row = if multiline {
+                // Rows span the element, so each line aligns by `text-align`.
+                let mut style = Style {
+                    text_align: self.align.clone(),
+                    width: Some(Length::Percent(100.0)),
+                    ..Style::default()
+                };
+                row_container_style(&mut style, self.gap);
+                let row = self.push(out, parent, Content::Container, style, Motion::default());
+                if line.split_whitespace().next().is_none() {
+                    // An empty line keeps its height.
+                    let text = Content::Text(String::new());
+                    self.push(out, row, text, Style::default(), Motion::default());
+                }
+                row
+            } else {
+                parent
+            };
+            self.expand_line(line, row, out, &mut index);
+        }
+        Ok(())
+    }
+
+    /// Appends the pieces of one line to `row`, numbering their entrances from `index`.
+    fn expand_line(&self, line: &str, row: usize, out: &mut Vec<Pending>, index: &mut usize) {
+        for word in line.split_whitespace() {
             match self.unit {
                 Unit::Words => {
                     self.push(
                         out,
-                        parent,
+                        row,
                         Content::Text(word.to_string()),
                         Style::default(),
-                        self.entrance(index),
+                        self.entrance(*index),
                     );
-                    index += 1;
+                    *index += 1;
                 }
                 Unit::Chars => {
                     let group = Style {
@@ -207,22 +262,22 @@ impl SplitSpec {
                         align_items: Some("flex-start".to_string()),
                         ..Style::default()
                     };
-                    let holder =
-                        self.push(out, parent, Content::Container, group, Motion::default());
-                    for ch in word.chars() {
-                        self.push(
+                    let holder = self.push(out, row, Content::Container, group, Motion::default());
+                    let mut letters = word.chars().peekable();
+                    while let Some(ch) = letters.next() {
+                        let piece = self.push(
                             out,
                             holder,
                             Content::Text(ch.to_string()),
                             Style::default(),
-                            self.entrance(index),
+                            self.entrance(*index),
                         );
-                        index += 1;
+                        out[piece].element.layout.kern_after = letters.peek().copied();
+                        *index += 1;
                     }
                 }
             }
         }
-        Ok(())
     }
 
     fn push(
@@ -235,6 +290,12 @@ impl SplitSpec {
     ) -> usize {
         push_piece(out, &self.tag, parent, content, style, motion)
     }
+}
+
+/// Lines of split text: its `<br>` breaks. `html::direct_text` already dropped the empty line of a
+/// single trailing `<br>`, so a remaining empty line (from consecutive breaks) is a blank row.
+fn lines(text: &str) -> impl Iterator<Item = &str> {
+    text.split('\n')
 }
 
 /// Appends a generated child of `parent` that reuses `tag` (so default font sizes still apply) and
@@ -308,6 +369,7 @@ mod tests {
             distance: 40.0,
             easing: Easing::Linear,
             gap: 8.0,
+            align: None,
         }
     }
 

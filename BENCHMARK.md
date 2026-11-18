@@ -44,7 +44,7 @@ A 12 s composition with fades (`examples/title-card.html` with `data-duration="1
 
 About a 2.7× improvement at both sizes. The tradeoff is memory: each thread holds its own frame and encoder. On machines with little RAM, use `--threads 1` or `2`.
 
-- Segments are fixed at 1 s, so the MP4 is **byte-for-byte identical with any thread count** (verified with SHA-256 using 1, 2, 4, 8, and 12 threads, and by a test). Correction: this holds for compositions without cached gradient tiles. `examples/premium-promo.html` gives different hashes for `--threads 1` and `--threads 4` (also before the distributed-rendering change), with differences of one level per channel; see "Encoding" in `docs/architecture.md`.
+- Segments are fixed at 1 s, so the MP4 is **byte-for-byte identical with any thread count** (verified with SHA-256 using 1, 2, 4, 8, and 12 threads, and by a test). Correction: this holds for compositions without cached gradient tiles. `examples/premium-promo.html` gives different hashes for `--threads 1` and `--threads 4` (also before the distributed-rendering change), with differences of one level per channel; see "Encoding" in `docs/architecture.md`. Fixed in 0.1.5: every thread count and split is byte-identical (see the 0.1.5 section).
 - Each segment starts with an IDR frame. The file is about 5% larger (843 KB vs. 800 KB at 1080p), and `--threads 1` takes about 10% longer than before.
 - Compositions of 1 s or less are not segmented and keep the previous pipeline.
 - By default, `--threads` uses the available cores, up to a maximum of 4.
@@ -779,3 +779,59 @@ on, the mix costs about 0.4% of real time on one core.
 | Assembly of the four parts (`--parts`) | 0.007 s |
 
 With four workers the export finishes when the slowest part does: about 1.48 s instead of 3.45 s (2.3×). The ranges are equal in seconds, not in work, so the busiest scenes bound the gain. This excludes worker start-up and file transfer, which the API amortizes by sharding only long renders. The assembled file differed from the single render by 12 bytes (gradient tiles, see the correction above); `examples/title-card.html` stretched to 9 s assembled byte-identically.
+
+## 0.1.5: exact tiles, branch-free kernels, and progress
+
+Release build, drawing only (`bench --size 1080p --frame START --count 20`), one thread, `nice 10`,
+three alternating runs of the 0.1.0 baseline and 0.1.5 on the same 4-core x86-64 virtual machine with
+AVX2 (seconds; the median is in bold). Measured after the final code change of this release.
+
+| Scene (start frame) | 0.1.0 runs | 0.1.5 runs | Median change |
+| --- | --- | --- | ---: |
+| [`premium-promo.html`](examples/premium-promo.html) (150) | **1.848** / 1.891 / 1.836 | 1.534 / **1.602** / 1.627 | −13% |
+| [`glass.html`](examples/glass.html) (40) | 1.462 / **1.367** / 1.360 | 1.155 / 1.293 / **1.156** | −15% |
+| [`grain.html`](benchmarks/grain.html) (30) | 0.218 / 0.198 / **0.203** | 0.093 / 0.086 / **0.101**¹ | −54% |
+| [`vignette.html`](benchmarks/vignette.html) (30) | **0.111** / 0.128 / 0.101 | **0.091** / 0.089 / 0.090 | −19% |
+| [`fractional-glows.html`](benchmarks/fractional-glows.html) (30) | 0.636 / 0.549 / **0.605** | 0.478 / 0.503 / **0.482** | −20% |
+| [`animated-glows.html`](benchmarks/animated-glows.html) (30) | **0.543** / 0.591 / 0.538 | **0.494** / 0.523 / 0.472 | −9% |
+| [`animated-shadow.html`](benchmarks/animated-shadow.html) (15) | 0.233 / **0.214** / 0.201 | 0.268 / **0.222** / 0.215 | +4% (noise) |
+| [`animated-text.html`](benchmarks/animated-text.html) (15) | 0.841 / 0.931 / **0.875** | 0.942 / **0.875** / 0.863 | 0% |
+| [`flex-cards.html`](examples/flex-cards.html) (30) | 0.252 / **0.259** / 0.300 | **0.256** / 0.254 / 0.294 | −1% (noise) |
+
+¹ Median 0.093 s.
+
+What changed, and how exactness was checked:
+
+- **Determinism.** An uncached draw of a whole-pixel gradient or soft shadow now computes, for its
+  visible pixels, the same fixed-point texels a cached tile holds and blends them with the same code,
+  so cache decisions no longer change pixels. `premium-promo.html` at `--scale 0.5` gave different
+  MP4 hashes for `--threads 1` and `--threads 4` with 0.1.0 and the same hash with 0.1.5 (also with
+  `AETHER_SIMD=off`). `tests/distributed.rs` covers 1, 2, and 4 threads and a two-part split. The
+  cost: first draws of those layers can differ from 0.1.0 by one level per channel (two in a few pixels
+  inside filtered layers); across 93 frames of every example at `--scale 0.5`, the largest difference
+  was 2 levels and the largest mean absolute difference 0.57/65535.
+- **Kernels.** `render/paint/kernels.rs` holds branch-free row loops (two-stop gradient blending,
+  radial gradient parameters, shadow masks) compiled for the baseline target and for AVX2 and chosen
+  at run time; `finish.rs` dispatches the vignette and grain rows the same way. No FMA and no
+  reassociation, so both builds give the same bits: unit tests compare each kernel with the loop it
+  replaced, and the 93 example frames were byte-identical between the AVX2 path, the scalar path
+  (`AETHER_SIMD=off`), and the build before the kernels. Directly drawn radial gradients also skip,
+  unevaluated, the pixels proven to sample a transparent last stop (with a one-pixel and 1e-4 margin).
+  Instruction counts (callgrind, 4 frames of `premium-promo.html` at 1080p) fell from 3.70 G to 3.06 G.
+- **Rejected.** Moving the cached-tile blend at full opacity into a dispatched kernel (it then wrote
+  the alpha of every pixel) lowered instruction counts but not wall time, and was reverted. Evaluating
+  tile texels pixel by pixel through `Mapper::t` made the first frame of `animated-glows.html` 80%
+  slower (0.19 s against 0.10 s); evaluating whole rows through `Mapper::row` brought it to 0.071 s.
+- **Shadows.** Uncached whole-pixel shadows skip the element's hidden interior and texels too faint to
+  pass the 0.002 blend threshold, as the direct path did. `animated-shadow.html` and `flex-cards.html`
+  still execute 2.4% and 2.0% more instructions than 0.1.0 (callgrind), within timing noise.
+
+`<video>` decoding (not measured before): a 4 s, 1920x1080, 30 fps High-profile H.264 source without
+B-frames, drawn full frame at 1080p, took 0.706 / 0.740 / 0.691 s for 30 frames starting at frame 15
+(about 23 ms per frame for decoding, color conversion, and the opaque blit; the first frames also decode
+from the GOP's keyframe). The same composition with a still PNG took 0.024 to 0.028 s, because its
+frames are reused. Sources with B-frames fail in the bundled OpenH264 decoder with an out-of-memory
+state and are now rejected when the composition is parsed.
+
+Progress reporting is throttled to one update per 250 ms and touches only an atomic counter per
+frame; it does not change the output (`--progress json` and `off` gave the same MP4 hash).

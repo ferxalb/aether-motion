@@ -103,3 +103,42 @@ fn incomplete_or_mismatched_parts_are_refused() {
     assert!(message.contains("one piece"), "{message}");
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+/// Drifting glows (cacheable gradients) and a card with a soft shadow that moves by whole and
+/// fractional pixels, so tiles are built at different times on each worker.
+fn tiled_composition(dir: &Path) -> PathBuf {
+    let html = dir.join("tiled.html");
+    std::fs::write(
+        &html,
+        "<div data-composition-id='t' data-width='96' data-height='54' data-duration='3.5' style='background:#142338'>\
+         <div class='clip' data-start='0' data-duration='3.5' data-track-index='0' style='left:-10px;top:-8px;width:120px;height:70px;background:radial-gradient(ellipse farthest-side,rgba(110,140,255,0.6),transparent)'\
+          data-hf-keyframes='[{\"at\":0,\"x\":-6},{\"at\":3.4,\"x\":12}]'></div>\
+         <div class='clip' data-start='0' data-duration='3.5' data-track-index='1' style='left:20px;top:12px;width:40px;height:24px;border-radius:6px;background:#fff;box-shadow:0 6px 16px rgba(0,0,0,0.5)'\
+          data-hf-keyframes='[{\"at\":0,\"x\":0,\"opacity\":0.5},{\"at\":1,\"x\":8,\"opacity\":1},{\"at\":3.4,\"x\":13}]'></div></div>",
+    )
+    .unwrap();
+    html
+}
+
+#[test]
+fn cached_tiles_give_identical_bytes_for_any_thread_count_or_split() {
+    let dir = scratch("distributed-tiles");
+    let html = tiled_composition(&dir);
+    let composition = parse_file(&html).unwrap();
+    let render = |threads: u32| {
+        let out = dir.join(format!("t{threads}.mp4"));
+        let mut renderer = Renderer::new(&composition, 1.0).unwrap();
+        encode_native(&mut renderer, &out, FPS, threads).unwrap();
+        std::fs::read(out).unwrap()
+    };
+    let single = render(1);
+    assert_eq!(single, render(2));
+    assert_eq!(single, render(4));
+    let parts = [dir.join("a.aseg"), dir.join("b.aseg")];
+    part(&html, &parts[0], 0..2, Quality::Standard);
+    part(&html, &parts[1], 2..4, Quality::Standard);
+    let assembled = dir.join("assembled.mp4");
+    assemble_parts(&composition, &parts, &assembled, 192_000).unwrap();
+    assert_eq!(single, std::fs::read(&assembled).unwrap());
+    std::fs::remove_dir_all(dir).unwrap();
+}

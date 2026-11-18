@@ -13,6 +13,7 @@
 //! `u32`-prefixed SPS and PPS; then, for each frame of the range, a `u32` length, a sync flag byte,
 //! and the MP4 sample (length-prefixed NAL units).
 
+use super::progress::{ProgressObserver, Tracker};
 use super::segments::{encode_segments, segment_count, segment_frames};
 use super::{check_audio_bitrate, check_video, partial_path, start_mp4, EncodeOptions};
 use crate::audio;
@@ -143,6 +144,17 @@ pub fn render_part(
     options: &EncodeOptions,
     segments: Range<usize>,
 ) -> Result<()> {
+    render_part_with_progress(renderer, output, options, segments, None)
+}
+
+/// [`render_part`] that reports the frames of the part to `observer` while it encodes.
+pub fn render_part_with_progress(
+    renderer: &mut Renderer<'_>,
+    output: &Path,
+    options: &EncodeOptions,
+    segments: Range<usize>,
+    observer: Option<&dyn ProgressObserver>,
+) -> Result<()> {
     let EncodeOptions {
         fps,
         threads,
@@ -173,6 +185,9 @@ pub fn render_part(
         end: segments.end,
     };
     let partial = partial_path(output)?;
+    let len = segment_frames(fps);
+    let part_frames = (segments.end * len).min(frames) - segments.start * len;
+    let tracker = Tracker::new(observer, part_frames);
     let result = (|| -> Result<()> {
         let mut out = BufWriter::new(File::create(&partial).context("could not create part")?);
         let mut written = 0;
@@ -183,6 +198,7 @@ pub fn render_part(
             (fps, quality),
             threads as usize,
             frames,
+            &tracker,
             |segment| {
                 if !started {
                     out.write_all(MAGIC)?;

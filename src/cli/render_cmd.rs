@@ -1,8 +1,9 @@
 //! `render`: project-aware export of an MP4 or PNG with sensible defaults and a one-line summary.
 
 use super::args::Args;
+use super::progress::{with_progress, ProgressMode};
 use super::project;
-use crate::encode::{encode_native_with_options, lower_priority, EncodeOptions};
+use crate::encode::{encode_native_with_progress, lower_priority, EncodeOptions};
 use crate::parse::parse_file_with;
 use crate::render::Renderer;
 use anyhow::{anyhow, bail, Context, Result};
@@ -20,7 +21,7 @@ pub fn write_png(renderer: &mut Renderer<'_>, output: &Path, frame: usize, fps: 
 }
 
 /// `render [file] [-o out.mp4|png] [--size 1080p|4k | --scale N] [--fps N] [--quality Q] [--frame N]
-/// [--variables JSON | --variables-file PATH] [--force]`.
+/// [--variables JSON | --variables-file PATH] [--progress auto|json|off] [--force]`.
 pub fn run(raw: &[String]) -> Result<()> {
     let args = Args::parse(
         raw,
@@ -35,6 +36,7 @@ pub fn run(raw: &[String]) -> Result<()> {
             "--quality",
             "--variables",
             "--variables-file",
+            "--progress",
         ],
         &["--force"],
     )?;
@@ -74,6 +76,7 @@ pub fn run(raw: &[String]) -> Result<()> {
         Some(q) => q.parse()?,
         None => project.quality,
     };
+    let progress: ProgressMode = args.value("--progress").unwrap_or("auto").parse()?;
     let explicit = args.value("--output");
     let stem = project
         .entry
@@ -124,7 +127,9 @@ pub fn run(raw: &[String]) -> Result<()> {
                 quality,
                 ..EncodeOptions::new(fps, threads)
             };
-            encode_native_with_options(&mut renderer, &output, &options)?;
+            with_progress(progress, |observer| {
+                encode_native_with_progress(&mut renderer, &output, &options, observer)
+            })?;
         }
         _ => return Err(anyhow!("output must end in .png or .mp4")),
     }

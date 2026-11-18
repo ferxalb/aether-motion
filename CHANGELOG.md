@@ -7,8 +7,24 @@ CLI/MCP output may still change between minor releases.
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-11-17
+
 ### Added
 
+- Typography: `font-kerning: normal` applies the font's pair kerning (GPOS `kern` pair adjustments or
+  the legacy `kern` table; on the embedded Roboto it matches Chromium's shaping on every tested pair),
+  including across the letters of `data-hf-split="chars"`. `font-style: italic|oblique` uses an
+  installed italic face or slants the upright one by 14 degrees around the baseline, as browsers do
+  (generic families always slant the embedded Roboto, so they match on every machine);
+  `<em>` and `<i>` are italic, as elements and as inline runs. The default `font-kerning: auto` does
+  not kern, so existing layouts are unchanged. See `examples/typography.html`.
+- Multi-line kinetic text: `data-hf-split` accepts `<br>`; each line becomes a row that follows the
+  element's `text-align`, and the stagger continues across lines.
+- Render progress: `render` redraws a progress line with throughput and ETA on an interactive stderr;
+  `--progress json` writes JSON lines (`done`, `total`, `fraction`, `fps`, `elapsedMs`, `etaMs`) and
+  `--progress off` disables it. `aether_render` sends MCP `notifications/progress` when the request
+  carries `_meta.progressToken`. The library exposes `ProgressObserver`, `ProgressUpdate`,
+  `encode_native_with_progress`, and `render_part_with_progress`. Progress never changes the output.
 - Distributed rendering: `render --output part.aseg --segments A..B` encodes a range of one-second
   segments into a part file, and `render --output video.mp4 --parts a.aseg,...` assembles parts (any
   order, checked for full coverage and matching settings) with the composition's audio, producing the MP4
@@ -67,11 +83,26 @@ CLI/MCP output may still change between minor releases.
 
 ### Changed
 
+- Determinism: MP4 output is now byte-identical for every `--threads` value and every distributed
+  split, including compositions with cached gradients and soft shadows (`premium-promo.html` used to
+  differ between `--threads 1` and `4`). An uncached draw of a whole-pixel gradient or soft shadow now
+  computes the same fixed-point texels a cached tile holds, so first draws and snapshots of those
+  layers can differ from 0.1.0 by one level per channel (two in a few pixels inside filtered layers).
+- Faster drawing with identical pixels: branch-free per-row kernels (`render/paint/kernels.rs`),
+  compiled for both the baseline target and AVX2 and selected at run time, for two-stop gradients,
+  radial gradient parameters, cached gradient tiles, shadow masks, and the vignette and grain pass;
+  directly drawn radial gradients skip the transparent area outside their last stop. At 1080p on one
+  thread: `premium-promo.html` −13%, `glass.html` −15%, drifting glows −9% to −20%, grain −54%,
+  vignette −19% (median of three runs; see `BENCHMARK.md`). `AETHER_SIMD=off` forces the baseline
+  kernels, for comparison.
+- `<video>` sources with B-frames are rejected when the composition is parsed, with a re-encode
+  command, instead of failing during rendering: the bundled OpenH264 decoder cannot decode them (the
+  contract used to say B-frames were supported).
 - The encoder no longer pretends to use a `24..32` quantizer range: with rate control off OpenH264 always
   encoded at quantizer 26, which is now the explicit `standard` default, so default exports are unchanged.
 - AAC encoding is about 12 times faster (60 s of stereo audio: 16.7 s down to 1.4 s on one core) with
   byte-identical output: the vendored `oxideav-aac` computes its forward MDCT with an FFT.
-- Gradient, glyph, and small translucent fills avoid soft-float `round` and libm `hypot` calls in their
+- Gradient, shadow-mask, glyph, and small translucent fills avoid soft-float `round` and libm `hypot` calls in their
   per-pixel loops, cutting drawing instructions by about 11% on the promo examples with identical pixels.
 
 ## [0.1.0] - 2026-11-15

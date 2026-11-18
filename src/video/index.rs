@@ -158,6 +158,11 @@ impl VideoIndex {
                 at += repeat;
             }
         }
+        // Frames shown in a different order than they are stored are B-frames, which the bundled
+        // OpenH264 decoder cannot decode (it fails with an out-of-memory state on every such stream).
+        if pts.windows(2).any(|pair| pair[1] < pair[0]) {
+            bail!("{name} uses B-frames (frames reordered for display), which the built-in decoder does not support; re-encode with `ffmpeg -i in.mp4 -c:v libx264 -bf 0 -x264-params open-gop=0 -c:a copy out.mp4`");
+        }
         let mut sync = vec![stbl.stss.is_none(); count];
         if let Some(stss) = &stbl.stss {
             for &id in &stss.entries {
