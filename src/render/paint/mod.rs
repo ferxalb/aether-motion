@@ -24,6 +24,7 @@ pub(crate) mod svg;
 mod tile_cache;
 mod video;
 
+pub(super) use effects::bloom::BloomScratch;
 pub(super) use effects::color::ColorChain;
 pub(super) use gradient::GradientPaint;
 pub(super) use images::{CachedImage, ImageKey, ImageSrc};

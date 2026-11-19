@@ -835,3 +835,92 @@ state and are now rejected when the composition is parsed.
 
 Progress reporting is throttled to one update per 250 ms and touches only an atomic counter per
 frame; it does not change the output (`--progress json` and `off` gave the same MP4 hash).
+
+## 0.1.6: faster finish pass, kinetic text, bloom, and per-element motion blur (2026-11-18)
+
+Machine: a 4-core x86-64 virtual machine with AVX2 and 15 GiB of memory, no GPU. Release builds
+(`lto = "thin"`, one codegen unit) of the starting revision (0.1.5, `a5dc90b`) and of this change,
+run one after the other, never in parallel with a build, at `nice 10`. Wall and CPU time and peak
+RSS come from `getrusage` of the child process.
+
+### Where 4K60 export time goes (shared scene)
+
+`AETHER_PROFILE=1` on [`aether-monochrome-promo.html`](examples/aether-monochrome-promo.html), segments
+5..8 (180 frames, 3 s) at `--size 4k --fps 60 --threads 1`, before the optimization:
+
+| Phase | Thread time | Per frame | Share |
+| --- | ---: | ---: | ---: |
+| Drawing (`raster`) | 57.84 s | 321.4 ms | 89.2% |
+| RGBA to YUV (`convert`) | 1.12 s | 6.2 ms | 1.7% |
+| H.264 (`encode`) | 5.91 s | 32.9 ms | 9.1% |
+
+Inside drawing, callgrind (3 frames from frame 360 at 4K, 11.98 G instructions) put the vignette and
+grain finish pass first among single passes: 1.49 G instructions (12.5%, about 60 per pixel),
+followed by rotated layers (13.4% including their content), text-shadow masks (10.7%), and two-stop
+gradient rows of the drifting glows (11.7%). Repeated text layout was not a cost: text blocks and runs
+are already cached per element, and layout lookups did not reach 1%. Temporary buffers were not
+either: the largest per-frame allocation is the frame-sized sum of the shutter, unused here.
+
+### The optimization: the finish pass
+
+The row loops of `render/paint/finish.rs` were meant to run in an AVX2 copy, but they were passed to
+`for_each` as closures, which the compiler emits as separate functions without the target feature.
+The rows now use plain loops, hash eight pixels side by side, shade each pixel as a `u32` lane, and
+divide the noise by 65535 with an exact 32-bit form; unit tests compare the rows with the per-pixel
+loop and the division with `/`. Glyph and shadow masks also compute each destination column's source
+position once per paint (same arithmetic).
+
+| Measure (callgrind, 3 frames at 4K) | 0.1.5 | 0.1.6 |
+| --- | ---: | ---: |
+| Finish rows | 1.493 G | 0.202 G |
+| Text-shadow painting | 1.286 G | 0.925 G |
+| Whole run | 11.977 G | 10.216 G |
+
+Drawing only (`bench --size 4k --fps 60 --frame START --count 20`, one thread), three alternating runs
+(seconds; median in bold):
+
+| Start frame | 0.1.5 runs | 0.1.6 runs | Median change |
+| --- | --- | --- | ---: |
+| 120 | **5.347** / 5.336 / 5.391 | 4.826 / 4.638 / **4.764** | −10.9% |
+| 900 | **4.463** / 4.400 / 4.512 | 4.000 / **4.015** / 4.039 | −10.0% |
+| 1500 | 5.035 / 5.203 / **5.023**¹ | 4.541 / **4.523** / 4.455 | −10.2% |
+
+¹ Median 5.035 s.
+
+Full export of the shared scene (`render --size 4k --fps 60 --threads 2`, 1800 frames, 30 s):
+
+| Build | Wall | CPU | Peak RSS | MP4 size |
+| --- | ---: | ---: | ---: | ---: |
+| 0.1.5 | 273.6 s | 531.1 s | 562 MiB | 33,107,987 B |
+| 0.1.6 | 246.4 s | 477.0 s | 552 MiB | 33,107,987 B |
+
+The two MP4s are byte-identical (`cmp`), as are 4K PNG stills at frames 30, 400, 700, 1000, 1300, and
+1700, also with `AETHER_SIMD=off`.
+
+### The 0.1.6 demo and the cost of the new effects
+
+[`aether-motion-016-demo.html`](examples/aether-motion-016-demo.html) (10 s, wrapped kinetic letters,
+four bloom elements, one element with its own motion blur), `render --size 4k --fps 60 --quality max
+--threads 2`: 600 frames in 78.0 s wall, 152.9 s CPU, 759 MiB peak RSS, 5,062,576 bytes. The file
+plays at a constant 60 fps (600 samples 1/60 s apart, 10.000 s); export throughput on this machine was
+7.7 frames per second. Thread time from `AETHER_PROFILE=1` on the same export:
+
+| Phase | Thread time | Calls | Per call |
+| --- | ---: | ---: | ---: |
+| Drawing (`raster`) | 135.1 s | 600 frames | 225.2 ms |
+| of which effect layers | 64.4 s | 2278 | 28.3 ms |
+| of which bloom halos | 41.7 s | 2278 | 18.3 ms |
+| of which per-element motion blur | 10.1 s | 251 blurred draws | 40.2 ms |
+| RGBA to YUV | 4.0 s | 600 | 6.7 ms |
+| H.264 | 15.1 s | 600 | 25.1 ms |
+
+Bloom is the most expensive new effect here: its halos are large (a 150 px title with a 70 px radius)
+and each glowing element is drawn twice into its effect layer. Wide halos already run on a 4x
+reduced grid; the full-resolution bright pass and the upsampling add stay proportional to the layer.
+
+`--quality standard` (QP 26) gave 2,848,324 bytes but visibly stepped the darkest halo falloffs: the
+encoder removes the renderer's ±1 ordered dither in near-black gradients. QP 18 (`max`) reduces the
+blocks; along a 360 px line through the ring's halo the decoded frame still descends in 31 steps of at
+most 2 luma levels, where the rendered frame dithers between levels 203 times. Adding
+`data-hf-grain="0.02"` did not help (the encoder flattens it too) and cost 3% more time, so the demo
+does not use grain.

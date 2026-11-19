@@ -188,9 +188,7 @@ fn options() -> Result<Option<Options>> {
     if opts.size.is_some() && opts.scale.is_some() {
         bail!("choose either --size or --scale");
     }
-    if opts.fps == 0 || opts.fps > 240 {
-        bail!("--fps must be between 1 and 240");
-    }
+    aether_motion::render::validate_fps(u64::from(opts.fps), "--fps")?;
     if opts.threads == 0 || opts.threads > 64 {
         bail!("--threads must be between 1 and 64");
     }
@@ -499,6 +497,7 @@ fn main() -> Result<()> {
         }
     }
     let elapsed = start.elapsed().as_secs_f64();
+    aether_motion::profile::report();
     let stats = renderer.stats();
     println!(
         "{}x{} | {frames} frames | {:.3} s | rasterized {} | reused {}",

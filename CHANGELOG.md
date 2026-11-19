@@ -7,6 +7,53 @@ CLI/MCP output may still change between minor releases.
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-11-18
+
+### Added
+
+- Kinetic text: `data-hf-split` takes start values that combine channel by channel
+  (`data-hf-split-x`, `-y`, `-scale`, `-rotate`, `-opacity`) over the `data-hf-split-from` preset,
+  stagger orders (`data-hf-split-order="forward|reverse|center|edges"`), and masked reveals per word
+  or per line (`data-hf-split-mask="words|lines"`). `data-hf-split-wrap` wraps lines automatically at
+  the element's width with the renderer's own fonts and layout (the composition is parsed twice), and
+  wrapping never changes the pieces or their timing. Lines animate with `data-hf-split-line-x`, `-y`,
+  `-scale`, `-opacity`, `-stagger`, `-delay`, `-duration`, and `-easing`, with or without wrapping.
+  Existing split compositions build the same elements as before. See `examples/kinetic-wrap.html`.
+- Spring easing: `spring`, `spring(overshoot)`, and `spring(overshoot, oscillations)` wherever
+  `data-hf-keyframes` easings are accepted (keyframes, camera, splits, reveals, draws, motion paths,
+  counters, speed and volume ramps). The highest value is exactly `1 + overshoot` (solved once at
+  parse time), and the curve comes to rest with zero velocity at its keyframe.
+- Localized bloom: `data-hf-bloom="<intensity>"` with `data-hf-bloom-threshold`, `-radius`, and `-tint`
+  adds a halo of the element's bright pixels over the frame, keeping the element itself exactly as
+  sharp. The halo is bounded by the element's effect layer, computed on a 2x or 4x reduced grid for
+  wide radii, dithered, and its planes are reused across frames. `bloom` in `data-hf-keyframes`
+  animates the intensity. See `examples/bloom.html`.
+- Per-element motion blur: `data-hf-motion-blur="on"` (with `-shutter` and `-samples`) averages one
+  subtree over a shutter window at the rendered frame rate while the rest of the frame is drawn once.
+  Samples are drawn over the real background, so `backdrop-filter` and blend modes inside the subtree
+  stay correct, and stills rendered with `--frame N --fps F` match the export at `F`. Combining it with
+  the root's `data-motion-blur`, nesting it, or putting it on the root are errors with a fix. With only
+  that element moving, it renders the same pixels as the root shutter with the same settings. See
+  `examples/layer-motion-blur.html`.
+- `aether_snapshot` takes an optional `fps` (1 to 240, validated like `--fps`; default 30, as before)
+  for motion-blur shutter windows. A snapshot at `t = N / fps` goes through the same still path as
+  `render --frame N --fps F` and returns the same pixels (`tests/mcp_snapshot.rs` decodes both PNGs).
+  The project-style `render` command now checks `--fps` with the same range.
+- `AETHER_PROFILE=1` prints the thread time of drawing, YUV conversion, encoding, effect layers,
+  bloom, and per-element motion blur on stderr after a render (see `src/profile.rs`).
+- `examples/aether-motion-016-demo.html`: a 10-second monochrome demo of the new kinetic text, bloom,
+  and motion blur, based on the monochrome promo.
+
+### Changed
+
+- The vignette and grain pass processes rows in blocks of eight pixels with plain loops that inline
+  into its AVX2 copy (the per-row closures had been compiled without AVX2), hashes the block side by
+  side, and divides the noise by 65535 with an exact 32-bit form. Output is byte-identical (also with
+  `AETHER_SIMD=off`); the pass executes 7.4 times fewer instructions, and drawing
+  `aether-monochrome-promo.html` at 4K60 is about 10% faster (see `BENCHMARK.md`).
+- Glyph and text-shadow masks compute each destination column's source position once per paint
+  instead of once per pixel, with the same arithmetic (byte-identical).
+
 ## [0.1.5] - 2026-11-17
 
 ### Added

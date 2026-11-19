@@ -9,6 +9,7 @@ mod allocation;
 mod draw;
 mod frame_state;
 mod geometry;
+mod layer_blur;
 mod layout;
 mod paint;
 pub mod probe;
@@ -21,12 +22,30 @@ use anyhow::{anyhow, Context, Result};
 use fontdb::Database;
 use frame_state::FrameState;
 use geometry::Rect;
+pub use layout::split_wrap::split_wrap_breaks;
 pub(crate) use paint::svg;
 use paint::{CachedImage, ImageKey, Surface};
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::sync::Arc;
 use text::{FontStore, TextBlock, TextRun};
+
+/// Highest frame rate accepted for stills and renders (`--fps`, the MCP `fps` of `aether_snapshot`).
+pub const MAX_FPS: u32 = 240;
+
+/// Frame rate that snapshots without an explicit `fps` assume for motion-blur shutter windows.
+pub const SNAPSHOT_FPS: u32 = shutter::SNAPSHOT_FPS;
+
+/// Checks a frame rate given as `name` (`--fps` on the CLI, `fps` in MCP): a whole number from 1 to
+/// [`MAX_FPS`]. Shared by the CLI and MCP so both accept and reject the same values.
+pub fn validate_fps(fps: u64, name: &str) -> Result<u32> {
+    match u32::try_from(fps) {
+        Ok(fps) if (1..=MAX_FPS).contains(&fps) => Ok(fps),
+        _ => Err(anyhow!(
+            "{name} must be a whole number from 1 to {MAX_FPS} (got {fps}); use the --fps of the export, such as 30 or 60"
+        )),
+    }
+}
 
 #[derive(Default, Debug)]
 pub struct RenderStats {
@@ -111,6 +130,12 @@ pub struct Renderer<'a> {
     time: f64,
     /// Element whose clip-path or mask layer is being drawn, so it is not masked twice.
     mask_guard: Option<usize>,
+    /// Reduced halo planes of `data-hf-bloom`, reused across frames.
+    bloom_scratch: paint::BloomScratch,
+    /// Frame rate of the frame being drawn; per-element shutter windows are fractions of it.
+    fps: u32,
+    /// Elements with `data-hf-motion-blur`, their subtrees, sample plans, and scratch buffers.
+    layer_blur: layer_blur::LayerBlur,
 }
 
 pub(crate) fn check_image(path: &Path) -> Result<()> {
@@ -224,6 +249,9 @@ impl<'a> Renderer<'a> {
             shutter_sums: Vec::new(),
             time: 0.0,
             mask_guard: None,
+            bloom_scratch: paint::BloomScratch::default(),
+            fps: shutter::SNAPSHOT_FPS,
+            layer_blur: layer_blur::LayerBlur::new(composition),
         })
     }
 
@@ -279,42 +307,63 @@ impl<'a> Renderer<'a> {
         if frame >= self.frame_count(fps) {
             return Err(anyhow!("frame is outside the composition duration"));
         }
-        self.render_shuttered(frame as f64 / fps as f64, fps)?;
+        let time = frame as f64 / fps as f64;
+        crate::profile::time(crate::profile::Phase::Raster, || {
+            self.render_shuttered(time, fps).map(|_| ())
+        })?;
         Ok((&self.surface.pixels, self.stats.rasterized))
+    }
+
+    /// A still at `time` seconds, the path behind `aether_snapshot`. Without `fps` it is
+    /// [`Self::render_at`] (shutter windows assume [`SNAPSHOT_FPS`]). With `fps`, a time on a frame
+    /// boundary (`time * fps` within 1e-6 of a whole frame `N`) is drawn exactly as
+    /// `render_frame(N, fps)`, the CLI's `render --frame N --fps F` path, and any other time uses
+    /// `fps` for the motion-blur shutter window.
+    pub fn render_still(&mut self, time: f64, fps: Option<u32>) -> Result<&[u8]> {
+        let Some(fps) = fps else {
+            return self.render_at(time);
+        };
+        let fps = validate_fps(u64::from(fps), "fps")?;
+        if !time.is_finite() || time < 0.0 || time >= self.composition.duration {
+            return Err(anyhow!("time is outside the composition duration"));
+        }
+        let frames = time * f64::from(fps);
+        let nearest = frames.round();
+        if (frames - nearest).abs() <= 1e-6 && (nearest as usize) < self.frame_count(fps) {
+            return self.render_frame(nearest as usize, fps);
+        }
+        crate::profile::time(crate::profile::Phase::Raster, || {
+            self.render_shuttered(time, fps).map(|_| ())
+        })?;
+        Ok(&self.surface.pixels)
     }
 
     pub fn render_at(&mut self, time: f64) -> Result<&[u8]> {
         if !time.is_finite() || time < 0.0 || time >= self.composition.duration {
             return Err(anyhow!("time is outside the composition duration"));
         }
-        self.render_shuttered(time, shutter::SNAPSHOT_FPS)
+        crate::profile::time(crate::profile::Phase::Raster, || {
+            self.render_shuttered(time, shutter::SNAPSHOT_FPS)
+                .map(|_| ())
+        })?;
+        Ok(&self.surface.pixels)
     }
 
     /// Fills `current` with every element's state at `time`.
     pub(in crate::render) fn sample_states(&mut self, time: f64) {
         self.time = time;
-        self.current.clear();
-        for element in &self.composition.elements {
-            let parent_alpha = element.parent.map_or(1.0, |idx| self.current[idx].alpha);
-            let alpha = if parent_alpha > 0.0 {
-                parent_alpha * Self::active_opacity(element, time)
-            } else {
-                0.0
-            };
-            let state = FrameState::at(element, time, alpha);
-            self.current.push(if state.alpha > 0.0 {
-                state
-            } else {
-                FrameState::default()
-            });
-        }
+        let mut states = std::mem::take(&mut self.current);
+        states_at(self.composition, time, &mut states);
+        self.current = states;
     }
 
-    /// Draws the frame at `time` without motion blur.
+    /// Draws the frame at `time` with no root shutter (per-element motion blur still applies).
     pub(in crate::render) fn render_time(&mut self, time: f64) -> Result<&[u8]> {
         self.sample_states(time);
+        let blurring = self.plan_layer_blur(time);
         // Grain is reseeded every frame, so identical element states no longer mean identical pixels.
-        if self.previous == self.current && self.composition.grain <= 0.0 {
+        // A blurred element moving inside its shutter window also changes pixels.
+        if !blurring && self.previous == self.current && self.composition.grain <= 0.0 {
             self.stats.reused += 1;
             return Ok(&self.surface.pixels);
         }
@@ -322,6 +371,10 @@ impl<'a> Renderer<'a> {
         self.draw_scene()?;
         self.finish_frame(time);
         std::mem::swap(&mut self.previous, &mut self.current);
+        if blurring {
+            // The pixels average several instants, so they match no single set of states.
+            self.previous.clear();
+        }
         self.stats.rasterized += 1;
         Ok(&self.surface.pixels)
     }
@@ -361,6 +414,29 @@ impl<'a> Renderer<'a> {
                 row.as_chunks_mut::<4>().0.fill(rgba);
             }
         }
+    }
+}
+
+/// Fills `states` with every element's state at `time` (parents come before their children).
+pub(in crate::render) fn states_at(
+    composition: &Composition,
+    time: f64,
+    states: &mut Vec<FrameState>,
+) {
+    states.clear();
+    for element in &composition.elements {
+        let parent_alpha = element.parent.map_or(1.0, |idx| states[idx].alpha);
+        let alpha = if parent_alpha > 0.0 {
+            parent_alpha * Renderer::active_opacity(element, time)
+        } else {
+            0.0
+        };
+        let state = FrameState::at(element, time, alpha);
+        states.push(if state.alpha > 0.0 {
+            state
+        } else {
+            FrameState::default()
+        });
     }
 }
 

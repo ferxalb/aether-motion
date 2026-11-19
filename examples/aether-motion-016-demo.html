@@ -1,0 +1,124 @@
+<!-- AETHER Motion 0.1.6 demo: a 10 s monochrome film in three beats (kinetic title; bloom and motion blur over a sharp static background; closing lockup), built on the monochrome promo's palette. Edit the text, timings, and effect attributes freely. -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>AETHER Motion 0.1.6</title>
+  <style>
+    :root {
+      --bg: #030303;
+      --text: #f5f5f5;
+      --muted: #9a9a9a;
+      --line: #ffffff26;
+      --glow-a: #ffffff1c;
+      --glow-fade: #ffffff00;
+    }
+    #root { background: var(--bg); }
+    .scene { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+    .kicker { position: absolute; left: 240px; width: 1440px; font-size: 22px; font-weight: 700; letter-spacing: 9px; color: #bdbdbd; text-align: center; }
+    .glow { position: absolute; background: radial-gradient(ellipse farthest-side at 50% 50%, var(--glow-a), var(--glow-fade)); }
+    @keyframes drift {
+      from { transform: translate(-50px, 24px); }
+      to { transform: translate(50px, -24px); }
+    }
+    .glow-a { left: -260px; top: -380px; width: 1400px; height: 1180px; animation: drift 10s linear 0s 1 both; }
+    .glow-b { left: 880px; top: 300px; width: 1300px; height: 1000px; animation: drift 10s linear 0s 1 reverse both; }
+
+    /* Beat 1: kinetic opening title. */
+    #title { position: absolute; left: 410px; top: 352px; width: 1100px; font-size: 118px; font-weight: 800; line-height: 1.14; color: var(--text); text-align: center; letter-spacing: -1px; }
+    #title-sub { position: absolute; left: 360px; top: 712px; width: 1200px; font-size: 30px; line-height: 1.3; color: var(--muted); text-align: center; }
+
+    /* Beat 2: a static instrument panel, drawn once per frame and left sharp. */
+    .rule { position: absolute; left: 200px; width: 1520px; height: 1px; background: var(--line); }
+    .tick { position: absolute; width: 1px; height: 22px; background: #ffffff40; }
+    .tick-label { position: absolute; width: 120px; font-size: 16px; font-weight: 700; letter-spacing: 3px; color: #6f6f6f; text-align: center; }
+    .card { position: absolute; top: 760px; width: 470px; height: 150px; padding: 30px 34px; display: flex; flex-direction: column; gap: 12px; border: 1px solid #ffffff2e; border-radius: 26px; background: #ffffff0a; box-shadow: 0 24px 60px 0 #000000a0; }
+    .card-index { font-size: 17px; font-weight: 700; letter-spacing: 4px; color: #7d7d7d; }
+    .card-title { font-size: 34px; font-weight: 800; color: #eeeeee; }
+    .card-copy { font-size: 21px; line-height: 1.3; color: #9d9d9d; }
+    #light-word { position: absolute; left: 200px; top: 200px; width: 1520px; font-size: 150px; font-weight: 800; letter-spacing: 34px; color: #ffffff; text-align: center; }
+    /* The streak: a bright capsule that whips along the rail with its own shutter and glow. */
+    #streak { position: absolute; left: 200px; top: 560px; width: 300px; height: 14px; border-radius: 7px; background: linear-gradient(to right, #ffffff00, #ffffff 70%, #ffffff); }
+    #streak-head { position: absolute; left: 262px; top: -15px; width: 44px; height: 44px; border-radius: 22px; background: #ffffff; }
+    #ring { position: absolute; left: 1558px; top: 372px; width: 154px; height: 154px; border: 5px solid #ffffff; border-radius: 77px; }
+
+    /* Beat 3: closing lockup. */
+    #lockup { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 34px; }
+    #wordmark { font-size: 132px; font-weight: 800; letter-spacing: 14px; color: #ffffff; }
+    #version { font-size: 24px; font-weight: 700; letter-spacing: 12px; color: #a9a9a9; }
+    #tagline { font-size: 34px; color: #cfcfcf; }
+    .divider { width: 120px; height: 2px; background: #ffffff70; }
+  </style>
+</head>
+<body>
+<div id="root" data-composition-id="aether-motion-016-demo" data-width="1920" data-height="1080" data-duration="10" data-hf-vignette="0.24">
+  <div class="glow glow-a"></div>
+  <div class="glow glow-b"></div>
+
+  <!-- Beat 1 (0 to 3.6 s): wrapped kinetic title. Letters rise and grow on a spring, and each wrapped line lifts in turn. -->
+  <div id="s1" class="scene" data-start="0" data-duration="3.6" data-track-index="1" data-hf-fade-out="0.45">
+    <div class="kicker" style="top: 276px" data-hf-keyframes='[{"at":0,"y":14,"opacity":0},{"at":0.7,"y":0,"opacity":1,"easing":"ease-out-expo"}]'>AETHER MOTION 0.1.6</div>
+    <div id="title" data-hf-split="chars" data-hf-split-wrap
+         data-hf-split-y="70" data-hf-split-scale="0.6" data-hf-split-opacity="0"
+         data-hf-stagger="0.022" data-hf-split-duration="0.85" data-hf-split-easing="spring(0.1, 2)"
+         data-hf-split-line-y="36" data-hf-split-line-stagger="0.22" data-hf-split-line-duration="1.1"
+         data-hf-split-line-easing="ease-out-expo">Kinetic type that keeps its rhythm.</div>
+    <div id="title-sub" data-hf-keyframes='[{"at":1.3,"y":22,"opacity":0},{"at":2.1,"y":0,"opacity":1,"easing":"ease-out-expo"}]'>Automatic wrapping, animated lines, and spring easing, rendered natively.</div>
+  </div>
+
+  <!-- Beat 2 (3.3 to 7.5 s): localized bloom and per-element motion blur over a sharp static panel. -->
+  <div id="s2" class="scene" data-start="3.3" data-duration="4.2" data-track-index="2" data-hf-fade-in="0.35" data-hf-fade-out="0.4">
+    <div class="kicker" style="top: 128px" data-hf-keyframes='[{"at":0,"y":14,"opacity":0},{"at":0.6,"y":0,"opacity":1,"easing":"ease-out-cubic"}]'>LIGHT, IN MOTION</div>
+    <div id="light-word" data-hf-bloom="0.9" data-hf-bloom-threshold="0.5" data-hf-bloom-radius="70"
+         data-hf-keyframes='[{"at":0,"opacity":0,"bloom":0},{"at":0.7,"opacity":1,"bloom":1.6,"easing":"ease-out-cubic"},{"at":2.4,"bloom":0.7,"easing":"ease-in-out"},{"at":3.6,"bloom":1.1,"easing":"ease-in-out"}]'>BLOOM</div>
+    <div class="rule" style="top: 567px"></div>
+    <div class="tick" style="left: 200px; top: 584px"></div>
+    <div class="tick" style="left: 580px; top: 584px"></div>
+    <div class="tick" style="left: 960px; top: 584px"></div>
+    <div class="tick" style="left: 1340px; top: 584px"></div>
+    <div class="tick" style="left: 1719px; top: 584px"></div>
+    <div class="tick-label" style="left: 200px; top: 620px; text-align: left">0.0</div>
+    <div class="tick-label" style="left: 520px; top: 620px">0.25</div>
+    <div class="tick-label" style="left: 900px; top: 620px">0.5</div>
+    <div class="tick-label" style="left: 1280px; top: 620px">0.75</div>
+    <div class="tick-label" style="left: 1600px; top: 620px; text-align: right">1.0</div>
+    <div class="card" style="left: 200px">
+      <div class="card-index">01 / BLOOM</div>
+      <div class="card-title">Localized glow</div>
+      <div class="card-copy">Threshold, radius, and tint per element.</div>
+    </div>
+    <div class="card" style="left: 725px">
+      <div class="card-index">02 / SHUTTER</div>
+      <div class="card-title">Per-layer blur</div>
+      <div class="card-copy">Only the moving layer is resampled.</div>
+    </div>
+    <div class="card" style="left: 1250px">
+      <div class="card-index">03 / STATIC</div>
+      <div class="card-title">Sharp backdrop</div>
+      <div class="card-copy">Everything else is drawn once.</div>
+    </div>
+    <!-- The streak whips right, overshoots on a spring, and returns; it glows and blurs on its own. -->
+    <div id="streak" data-hf-motion-blur="on" data-hf-motion-blur-shutter="240"
+         data-hf-bloom="1.6" data-hf-bloom-threshold="0.4" data-hf-bloom-radius="28"
+         data-hf-keyframes='[{"at":0,"x":0,"opacity":0},{"at":0.5,"x":0,"opacity":1},{"at":1.35,"x":1100,"easing":"ease-in-out-cubic"},{"at":2.1,"x":1100},{"at":2.75,"x":520,"easing":"spring(0.14, 2)"},{"at":3.8,"x":520}]'>
+      <div id="streak-head"></div>
+    </div>
+    <div id="ring" data-hf-bloom="1.2" data-hf-bloom-radius="40" data-hf-bloom-threshold="0.5"
+         data-hf-keyframes='[{"at":0,"opacity":0,"bloom":0},{"at":1.3,"opacity":0},{"at":1.5,"opacity":1,"bloom":2.6,"easing":"ease-out-cubic"},{"at":2.6,"bloom":0.8,"easing":"ease-in-out"}]'></div>
+  </div>
+
+  <!-- Beat 3 (7.2 to 10 s): clean closing lockup that settles and holds still. -->
+  <div id="s3" class="scene" data-start="7.2" data-duration="2.8" data-track-index="3" data-hf-fade-in="0.4">
+    <div id="lockup">
+      <div id="wordmark" data-hf-split="chars" data-hf-split-from="mask" data-hf-split-mask="words"
+           data-hf-split-order="center" data-hf-stagger="0.035" data-hf-split-duration="0.8"
+           data-hf-split-easing="ease-out-expo" data-hf-split-gap="44"
+           data-hf-bloom="0.35" data-hf-bloom-threshold="0.6" data-hf-bloom-radius="44">AETHER MOTION</div>
+      <div class="divider" data-hf-reveal="from-left" data-hf-reveal-at="0.5" data-hf-reveal-duration="0.6"></div>
+      <div id="version" data-hf-keyframes='[{"at":0.55,"opacity":0,"y":12},{"at":1.15,"opacity":1,"y":0,"easing":"ease-out-cubic"}]'>VERSION 0.1.6</div>
+      <div id="tagline" data-hf-keyframes='[{"at":0.75,"opacity":0,"y":16},{"at":1.35,"opacity":1,"y":0,"easing":"ease-out-cubic"}]'>Every frame, by design.</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

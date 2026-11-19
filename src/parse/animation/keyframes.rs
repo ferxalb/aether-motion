@@ -1,6 +1,7 @@
 //! `data-hf-keyframes` JSON attribute parsing: offsets, opacity, easing, and filter amounts
 //! (`blur`, `brightness`, `contrast`, `saturate`, `grayscale`, `sepia`, `hueRotate`, `invert`), and
-//! the `glitch` (0 to 1) and `rgbSplit` (px) pixel effects, and `clipPath` shapes.
+//! the `glitch` (0 to 1) and `rgbSplit` (px) pixel effects, the `data-hf-bloom` intensity
+//! (`bloom`, 0 to 8), and `clipPath` shapes.
 use crate::model::{Easing, FilterChannel, Keyframe};
 use crate::parse::animation::timing::parse_keyframe_easing;
 use crate::parse::values::clip::parse_clip_path;
@@ -20,7 +21,7 @@ pub(in crate::parse) fn parse_keyframes(raw: &str) -> Result<Vec<Keyframe>> {
         opacity: 1.0,
         easing: Easing::Linear,
         filters: [None; 8],
-        effects: [None; 2],
+        effects: [None; 3],
         clip: None,
     };
     let mut keyframes = Vec::with_capacity(frames.len());
@@ -30,7 +31,7 @@ pub(in crate::parse) fn parse_keyframes(raw: &str) -> Result<Vec<Keyframe>> {
                 let filter = FilterChannel::ALL.iter().any(|c| c.key() == key);
                 if !filter && !matches!(
                         key.as_str(),
-                        "at" | "x" | "y" | "opacity" | "easing" | "glitch" | "rgbSplit" | "clipPath"
+                        "at" | "x" | "y" | "opacity" | "easing" | "glitch" | "rgbSplit" | "bloom" | "clipPath"
                     ) {
                     bail!("unknown field: {key}");
                 }
@@ -88,17 +89,19 @@ pub(in crate::parse) fn parse_keyframes(raw: &str) -> Result<Vec<Keyframe>> {
                 }
                 filters[channel.index()] = Some(n as f32);
             }
-            let mut effects = [None; 2];
-            for (slot, (key, range)) in effects
-                .iter_mut()
-                .zip([("glitch", 0.0..=1.0), ("rgbSplit", -500.0..=500.0)])
+            let mut effects = [None; 3];
+            for (slot, (key, range)) in effects.iter_mut().zip([
+                ("glitch", 0.0..=1.0),
+                ("rgbSplit", -500.0..=500.0),
+                ("bloom", 0.0..=8.0),
+            ])
             {
                 if let Some(value) = frame.get(key) {
                     let n = value
                         .as_f64()
                         .ok_or_else(|| anyhow!("{key} must be a number"))?;
                     if !range.contains(&n) {
-                        bail!("{key} is out of range (glitch 0 to 1; rgbSplit -500 to 500 px)");
+                        bail!("{key} is out of range (glitch 0 to 1; rgbSplit -500 to 500 px; bloom 0 to 8)");
                     }
                     *slot = Some(n as f32);
                 }

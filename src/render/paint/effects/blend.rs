@@ -77,7 +77,7 @@ pub(in crate::render) enum Texels<'p> {
 impl Layer<'_> {
     /// Replaces `out` with the `count` texels starting at layer index `first`.
     #[inline(always)]
-    fn fill_row(&self, first: usize, count: usize, out: &mut Vec<[f32; 4]>) {
+    pub(in crate::render) fn fill_row(&self, first: usize, count: usize, out: &mut Vec<[f32; 4]>) {
         out.clear();
         let span = first..first + count;
         match self.texels {

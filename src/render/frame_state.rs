@@ -15,8 +15,8 @@ pub(in crate::render) struct FrameState {
     pub(in crate::render) media: u32,
     /// Animated `filter` amounts by `FilterChannel::index`; all zero when the filter is static.
     pub(in crate::render) filters: [f32; 8],
-    /// `[tint, glitch, rgb_split]` (see `model::FxMotion`); all zero when there are none.
-    pub(in crate::render) fx: [f32; 3],
+    /// `[tint, glitch, rgb_split, bloom]` (see `model::FxMotion`); all zero when there are none.
+    pub(in crate::render) fx: [f32; 4],
     /// Glitch pattern index (`GLITCH_RATE` steps since the clip start); 0 without a glitch.
     pub(in crate::render) fx_seed: u32,
     /// Bits of the animated `clip-path` values, so a moving clip is never mistaken for a still one.
@@ -39,7 +39,7 @@ impl FrameState {
                 .eval(elapsed, motion.hold_before, motion.hold_after)
         };
         let fx = if motion.fx.is_static() {
-            [0.0; 3]
+            [0.0; 4]
         } else {
             motion
                 .fx

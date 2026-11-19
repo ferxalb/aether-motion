@@ -1,0 +1,39 @@
+<!-- Per-element motion blur: one fast element is averaged over its shutter window while the static background is drawn once and stays sharp. -->
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Layer motion blur</title>
+<style>
+  #root { background: #060606; }
+  .clip { position: absolute; }
+  .backdrop { left: 0; top: 0; width: 1920px; height: 1080px; }
+  .label { position: absolute; left: 200px; width: 1520px; font-size: 28px; font-weight: 700; letter-spacing: 6px; color: #9c9c9c; }
+  .track { position: absolute; left: 200px; width: 1520px; height: 2px; background: #ffffff30; }
+  .tick { position: absolute; top: 0; width: 2px; height: 40px; background: #ffffff55; }
+  /* The blurred element: a bright card that whips across the frame. */
+  #comet { left: 200px; top: 430px; width: 360px; height: 220px; border-radius: 28px; background: #f4f4f4; display: flex; align-items: center; justify-content: center; }
+  #comet-label { font-size: 44px; font-weight: 800; color: #070707; letter-spacing: 4px; }
+  /* A glass panel drawn after the blurred card blurs the averaged result behind it. */
+  #glass { left: 1200px; top: 720px; width: 520px; height: 160px; border-radius: 24px; background: #ffffff14; border: 1px solid #ffffff40; backdrop-filter: blur(18px); }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="layer-motion-blur" data-width="1920" data-height="1080" data-duration="3">
+  <div class="clip backdrop" data-start="0" data-duration="3" data-track-index="0">
+    <div class="label" style="top: 300px">STATIC BACKGROUND, DRAWN ONCE PER FRAME</div>
+    <div class="track" style="top: 690px"></div>
+    <div class="tick" style="left: 200px; top: 670px"></div>
+    <div class="tick" style="left: 960px; top: 670px"></div>
+    <div class="tick" style="left: 1718px; top: 670px"></div>
+  </div>
+  <!-- A 270 degree shutter; samples follow the travel (8 to 64 per frame). -->
+  <div id="comet" class="clip" data-start="0" data-duration="3" data-track-index="1"
+       data-hf-motion-blur="on" data-hf-motion-blur-shutter="270"
+       data-hf-keyframes='[{"at":0.3,"x":0},{"at":1.4,"x":1160,"easing":"ease-in-out-cubic"},{"at":2.2,"x":1160},{"at":2.8,"x":580,"easing":"spring(0.12, 2)"}]'>
+    <div id="comet-label">FAST</div>
+  </div>
+  <div id="glass" class="clip" data-start="0" data-duration="3" data-track-index="2"></div>
+</div>
+</body>
+</html>

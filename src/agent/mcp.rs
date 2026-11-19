@@ -68,11 +68,28 @@ fn variables_arg(args: &Value) -> Result<VariableValues> {
     }
 }
 
+/// The optional `fps` argument of `aether_snapshot`: validated like the CLI's `--fps`.
+fn fps_arg(args: &Value) -> Result<Option<u32>> {
+    match args.get("fps") {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => match value.as_u64() {
+            Some(fps) => crate::render::validate_fps(fps, "fps").map(Some),
+            None => Err(anyhow!(
+                "fps must be a whole number from 1 to {} (got {value}); use the --fps of the export, such as 30 or 60",
+                crate::render::MAX_FPS
+            )),
+        },
+    }
+}
+
+/// `aether_snapshot`: the still at `t` seconds. With `fps`, motion blur uses that frame rate and a
+/// time on a frame boundary is the CLI's `render --frame N --fps F` (see `Renderer::render_still`).
 fn snapshot(path: &Path, time: f64, args: &Value) -> Result<Value> {
+    let fps = fps_arg(args)?;
     let composition = parse_file_with(path, &variables_arg(args)?)?;
     let mut renderer = renderer_for(&composition, args)?;
     let (width, height) = renderer.dimensions();
-    let pixels = renderer.render_at(time)?;
+    let pixels = renderer.render_still(time, fps)?;
     let mut png = Cursor::new(Vec::new());
     image::write_buffer_with_format(
         &mut png,
@@ -99,7 +116,7 @@ fn tools() -> Value {
         {"name": "aether_write", "description": "Write an HTML composition and validate it; the response is the same report as aether_check, including layout.findings. Do not overwrite unless overwrite=true.", "inputSchema": {"type": "object", "properties": {"path": path, "html": {"type": "string"}, "overwrite": {"type": "boolean"}, "variables": variables, "safeZone": {"type": "string"}, "captionZone": {"type": "string"}, "samples": {"type": "integer", "minimum": 1, "maximum": 200}, "at": {"type": "array", "items": {"type": "number"}}}, "required": ["path", "html"]}},
         {"name": "aether_block", "description": "List ready-made blocks and themes, or render one as HTML to paste into a composition. Without name it returns the catalog with parameters and defaults.", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "params": {"type": "object", "additionalProperties": {"type": "string"}}}}},
         {"name": "aether_check", "description": "Validate the composition; return JSON with an error and fix on failure. On success it also probes text and returns layout.findings: outside_safe_zone warnings (TikTok, Reels, Shorts on 9:16 frames; 10% margins on other frames) and, with captionZone, caption_zone_collision. Opt out with data-layout-allow-safe-zone or data-layout-allow-caption-zone. Media reports: videos[] (speed, mediaStart, mediaEnd: source seconds at the clip end) and audio.clips[] (start, end, speed, mediaSeconds, effects: volumeRamp, eq with responseDb, duck with regions, duckedSeconds, and deepestDb) plus audio.peak and clippedSamples, so data-hf-speed, data-hf-speed-ramp, data-hf-volume-ramp, data-hf-eq, and data-hf-duck can be verified without rendering.", "inputSchema": {"type": "object", "properties": {"path": path, "variables": variables, "safeZone": {"type": "string", "description": "tiktok, reels, shorts, standard (comma list), or off. Default: all platform zones on 9:16, standard otherwise."}, "captionZone": {"type": "string", "description": "Fractional band, for example x0=0;y0=0.7;x1=1;y1=1 (optional ;severity=error)"}, "samples": {"type": "integer", "minimum": 1, "maximum": 200, "description": "Midpoint sample count (default 9)"}, "at": {"type": "array", "items": {"type": "number"}, "description": "Exact sample times in seconds, instead of samples"}}, "required": ["path"]}},
-        {"name": "aether_snapshot", "description": "Render the exact second t (0 <= t < duration) and return a PNG. For data-hf-speed-ramp clips, snapshot before, inside, and after each ramp segment.", "inputSchema": {"type": "object", "properties": {"path": path, "t": {"type": "number"}, "variables": variables, "scale": {"type": "number"}, "size": {"type": "string", "enum": ["1080p", "4k"]}}, "required": ["path"]}},
+        {"name": "aether_snapshot", "description": "Render the exact second t (0 <= t < duration) and return a PNG. For data-hf-speed-ramp clips, snapshot before, inside, and after each ramp segment. Pass fps to match an export: motion blur (data-motion-blur, data-hf-motion-blur) then uses that frame rate, and t = N / fps gives the same pixels as `render --frame N --fps F` with the same size or scale.", "inputSchema": {"type": "object", "properties": {"path": path, "t": {"type": "number", "description": "Composition time in seconds (default 0)"}, "fps": {"type": "integer", "minimum": 1, "maximum": 240, "description": "Frame rate for motion-blur shutter windows, validated like the CLI --fps (1 to 240); default 30"}, "variables": variables, "scale": {"type": "number"}, "size": {"type": "string", "enum": ["1080p", "4k"]}}, "required": ["path"]}},
         {"name": "aether_render", "description": "Render to MP4 (native H.264). Does not overwrite existing outputs.", "inputSchema": {"type": "object", "properties": {"path": path, "output": {"type": "string"}, "variables": variables, "fps": {"type": "integer", "minimum": 1, "maximum": 60}, "threads": {"type": "integer", "minimum": 1, "maximum": 64}, "scale": {"type": "number"}, "size": {"type": "string", "enum": ["1080p", "4k"]}, "audioBitrate": {"type": "integer", "minimum": 64, "maximum": 320, "description": "AAC bitrate in kbit/s for compositions with <audio> (default 192)"}, "quality": {"type": "string", "enum": ["draft", "standard", "high", "max"], "description": "H.264 quality preset: fixed quantizer 30, 26, 22, or 18 (default standard); lower quantizers give larger files at about the same CPU cost"}}, "required": ["path", "output"]}}
     ])
 }

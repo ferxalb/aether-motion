@@ -104,10 +104,14 @@ fn preset_easing(name: &str) -> Option<Easing> {
 
 /// Easing for `data-hf-keyframes` and `data-hf-camera`.
 ///
-/// `linear`, `ease-in`, `ease-out`, and `ease-in-out` keep their quadratic meaning; named presets
-/// and any CSS timing function (`cubic-bezier(...)`, `steps(...)`, `ease`) are also accepted.
+/// `linear`, `ease-in`, `ease-out`, and `ease-in-out` keep their quadratic meaning; named presets,
+/// `spring(overshoot, oscillations)`, and any CSS timing function (`cubic-bezier(...)`,
+/// `steps(...)`, `ease`) are also accepted.
 pub(in crate::parse) fn parse_keyframe_easing(raw: &str) -> Result<Easing> {
     let raw = raw.trim();
+    if let Some(spring) = parse_spring(raw)? {
+        return Ok(spring);
+    }
     Ok(match raw {
         "linear" => Easing::Linear,
         "ease-in" => Easing::EaseIn,
@@ -116,10 +120,47 @@ pub(in crate::parse) fn parse_keyframe_easing(raw: &str) -> Result<Easing> {
         _ => match preset_easing(raw) {
             Some(easing) => easing,
             None => parse_timing(raw).map_err(|e| {
-                anyhow!("unsupported easing '{raw}' ({e}); use linear, ease-in/out, a named preset such as ease-out-expo or ease-out-back, or cubic-bezier(x1, y1, x2, y2)")
+                anyhow!("unsupported easing '{raw}' ({e}); use linear, ease-in/out, a named preset such as ease-out-expo or ease-out-back, spring(overshoot, oscillations), or cubic-bezier(x1, y1, x2, y2)")
             })?,
         },
     })
+}
+
+/// `spring`, `spring(overshoot)`, or `spring(overshoot, oscillations)` (defaults 0.12 and 2): a
+/// damped spring whose highest value is exactly `1 + overshoot` (0 to 0.6) and that comes to rest at
+/// the keyframe; `None` for other names.
+fn parse_spring(raw: &str) -> Result<Option<Easing>> {
+    use crate::model::Spring;
+    let args = if raw == "spring" {
+        Vec::new()
+    } else if let Some(inner) = raw
+        .strip_prefix("spring(")
+        .and_then(|s| s.strip_suffix(')'))
+    {
+        inner.split(',').map(str::trim).collect()
+    } else {
+        return Ok(None);
+    };
+    let usage = || {
+        anyhow!(
+            "spring takes an overshoot from 0 to {} and a whole number of oscillations from 1 to 6, for example spring(0.15, 2): {raw}",
+            Spring::MAX_OVERSHOOT
+        )
+    };
+    if args.len() > 2 {
+        return Err(usage());
+    }
+    let overshoot = match args.first() {
+        Some(a) => a.parse::<f32>().map_err(|_| usage())?,
+        None => 0.12,
+    };
+    let oscillations = match args.get(1) {
+        Some(a) => a.parse::<u32>().map_err(|_| usage())?,
+        None => 2,
+    };
+    Spring::new(overshoot, oscillations)
+        .map(|s| Some(Easing::Spring(s)))
+        .ok_or_else(usage)
 }
 
 pub(in crate::parse) fn parse_iterations(raw: &str) -> Result<Iterations> {

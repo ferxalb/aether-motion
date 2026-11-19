@@ -47,7 +47,10 @@ pub fn run(raw: &[String]) -> Result<()> {
         &project.variables,
     )?;
     let composition = parse_file_with(&project.entry, &values)?;
-    let fps = args.number("--fps")?.unwrap_or(project.fps);
+    let fps = match args.number::<u64>("--fps")? {
+        Some(fps) => aether_fps(fps)?,
+        None => project.fps,
+    };
     if args.value("--size").is_some() && args.value("--scale").is_some() {
         bail!("choose either --size or --scale");
     }
@@ -141,4 +144,9 @@ pub fn run(raw: &[String]) -> Result<()> {
         start.elapsed().as_secs_f64()
     );
     Ok(())
+}
+
+/// `--fps`, validated like every other entry point (`render::validate_fps`).
+fn aether_fps(fps: u64) -> Result<u32> {
+    crate::render::validate_fps(fps, "--fps")
 }

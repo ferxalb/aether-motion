@@ -2,7 +2,7 @@
 //!
 //! `parse_file` (and `parse_file_with`, which takes variable values) is the facade. Submodules: `html` (node helpers), `css` (stylesheet, selectors, cascade,
 //! variables), `values` (value parsers), `style` (property groups into `Style`), `animation`
-//! (CSS animation, `data-hf-keyframes`, and `data-hf-camera` into motion tracks), `split` (`data-hf-split` kinetic text), `audio` (`<audio>` clips for the mixer), `speed` (`data-hf-speed` and `data-hf-speed-ramp` on `<video>` and `<audio>`), `captions` (`data-hf-captions` timed captions from a transcript), `counter` (`data-hf-counter` animated numbers; `data-hf-reveal` lives in `animation/reveal.rs`), `transition` (`data-hf-transition` scene transitions), `variables` (`data-composition-variables` declarations and their `data-var-*` bindings, applied to the DOM first), `tree` (DOM walk), `timeline` (`data-start`).
+//! (CSS animation, `data-hf-keyframes`, and `data-hf-camera` into motion tracks), `split/` (`data-hf-split` kinetic text: pieces, entrance motion, line rows, and the wrap plan of the two-pass parse), `effects` (`data-hf-bloom` and per-element `data-hf-motion-blur`), `audio` (`<audio>` clips for the mixer), `speed` (`data-hf-speed` and `data-hf-speed-ramp` on `<video>` and `<audio>`), `captions` (`data-hf-captions` timed captions from a transcript), `counter` (`data-hf-counter` animated numbers; `data-hf-reveal` lives in `animation/reveal.rs`), `transition` (`data-hf-transition` scene transitions), `variables` (`data-composition-variables` declarations and their `data-var-*` bindings, applied to the DOM first), `tree` (DOM walk), `timeline` (`data-start`).
 
 mod animation;
 mod audio;
@@ -10,6 +10,7 @@ mod audio_effects;
 mod captions;
 mod counter;
 mod css;
+mod effects;
 mod html;
 mod rich_text;
 mod speed;
@@ -36,12 +37,13 @@ use css::vars::inherit_vars;
 use css::{Stylesheet, Vars};
 use html::{attr, number};
 use kuchiki::traits::*;
+use split::SplitPlan;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use timeline::{resolve_audio_start, resolve_start};
 use transition::apply_transitions;
-use tree::walk;
+use tree::{walk, WalkContext};
 
 /// Parses a composition with every variable at its declared default.
 pub fn parse_file(path: &Path) -> Result<Composition> {
@@ -49,7 +51,22 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
 }
 
 /// Parses a composition with `values` for its declared variables (`data-composition-variables`).
+///
+/// A composition with `data-hf-split-wrap` text is parsed twice: the first parse lays its pieces
+/// out on one row per explicit line, the renderer measures where those rows must wrap (with the
+/// same fonts and layout it draws with), and the second parse builds the wrapped rows. Parsing is
+/// deterministic, so both parses see the same document.
 pub fn parse_file_with(path: &Path, values: &VariableValues) -> Result<Composition> {
+    let first = parse_pass(path, values, &SplitPlan::default())?;
+    if !first.elements.iter().any(|e| e.layout.split_wrap.is_some()) {
+        return Ok(first);
+    }
+    let breaks = crate::render::split_wrap_breaks(&first).context("data-hf-split-wrap")?;
+    parse_pass(path, values, &SplitPlan::resolved(breaks))
+}
+
+/// One parse of the composition, with the wrap breaks of `splits` (empty on the first parse).
+fn parse_pass(path: &Path, values: &VariableValues, splits: &SplitPlan) -> Result<Composition> {
     let html =
         fs::read_to_string(path).with_context(|| format!("could not read {}", path.display()))?;
     let document = kuchiki::parse_html().one(html);
@@ -111,11 +128,15 @@ pub fn parse_file_with(path: &Path, values: &VariableValues) -> Result<Compositi
     let base = path.parent().unwrap_or_else(|| Path::new("."));
     let mut pending = Vec::new();
     let mut pending_audio = Vec::new();
+    let context = WalkContext {
+        base,
+        sheet: &sheet,
+        splits,
+    };
     walk(
         &root,
         None,
-        base,
-        &sheet,
+        &context,
         &root_vars,
         &mut pending,
         &mut pending_audio,
@@ -283,6 +304,8 @@ pub fn parse_file_with(path: &Path, values: &VariableValues) -> Result<Compositi
         }
         order_animated_filters(&mut p.element, idx == 0)
             .with_context(|| format!("animated filter on {label}"))?;
+        effects::finish_effects(&mut p.element, &p.keyframes, idx == 0)
+            .with_context(|| format!("effects on {label}"))?;
         if idx == 0 {
             let style = &mut p.element.style;
             if style.filter_blur > 0.0 {
@@ -340,6 +363,7 @@ pub fn parse_file_with(path: &Path, values: &VariableValues) -> Result<Compositi
             .with_context(|| format!("animated filter on {label}"))?;
     }
     check_blend_isolation(&elements)?;
+    effects::check_layer_blur(&elements, motion_blur)?;
     let background = match elements[0].style.background {
         Some(Background::Solid(color)) => color,
         _ => Color::BLACK,

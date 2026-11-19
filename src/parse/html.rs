@@ -17,6 +17,18 @@ pub(in crate::parse) fn number(value: &str, name: &str) -> Result<f64> {
     Ok(n)
 }
 
+/// Like [`number`], but negative values are allowed (offsets and angles).
+pub(in crate::parse) fn signed_number(value: &str, name: &str) -> Result<f64> {
+    let n: f64 = value
+        .trim()
+        .parse()
+        .with_context(|| format!("{name}: invalid number: {value}"))?;
+    if !n.is_finite() {
+        bail!("{name}: must be a finite number: {value}");
+    }
+    Ok(n)
+}
+
 /// Whitespace-normalized direct text of `node`; each `<br>` becomes a `\n` line break.
 ///
 /// A single trailing `<br>` adds no line, as in CSS.

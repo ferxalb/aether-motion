@@ -1,0 +1,36 @@
+<!-- Kinetic text in 0.1.6: automatic wrapping with animated lines, combined start values, spring easing, stagger order, and masked reveals. -->
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Kinetic wrap</title>
+<style>
+  #root { background: #070707; }
+  .clip { position: absolute; }
+  .copy { color: #f2f2f2; font-weight: 800; }
+  /* Wrapped automatically at the 1100 px content width; each line rises in turn. */
+  #wrapped { left: 200px; top: 120px; width: 1100px; font-size: 76px; line-height: 1.12; }
+  /* Letters grow from 40% with a spring that overshoots by 18%, starting from the middle. */
+  #spring { left: 200px; top: 560px; width: 1520px; font-size: 64px; color: #bdbdbd; text-align: center; }
+  /* Each word slides up from under its own clip box. */
+  #masked { left: 200px; top: 760px; width: 1520px; font-size: 54px; line-height: 1.2; color: #8c8c8c; text-align: center; font-weight: 600; }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="kinetic-wrap" data-width="1920" data-height="1080" data-duration="6">
+  <div id="wrapped" class="clip copy" data-start="0" data-duration="6" data-track-index="0"
+       data-hf-split="words" data-hf-split-wrap
+       data-hf-split-y="48" data-hf-split-scale="0.92" data-hf-split-opacity="0"
+       data-hf-stagger="0.05" data-hf-split-duration="0.9" data-hf-split-easing="spring(0.08, 2)"
+       data-hf-split-line-y="24" data-hf-split-line-opacity="0.2" data-hf-split-line-stagger="0.18"
+       data-hf-split-line-duration="1.0" data-hf-split-line-easing="ease-out-expo">Every frame is a pure function of time, so wrapped kinetic type stays exactly where the layout puts it.</div>
+  <div id="spring" class="clip copy" data-start="1.4" data-duration="4.6" data-track-index="1"
+       data-hf-split="chars" data-hf-split-from="scale" data-hf-split-scale="0.4"
+       data-hf-split-order="center" data-hf-stagger="0.025" data-hf-split-duration="0.8"
+       data-hf-split-easing="spring(0.18, 2)">DETERMINISTIC MOTION</div>
+  <div id="masked" class="clip copy" data-start="2.4" data-duration="3.6" data-track-index="2"
+       data-hf-split="words" data-hf-split-from="mask" data-hf-split-mask="words"
+       data-hf-stagger="0.07" data-hf-split-duration="0.7">Native. Sharp. Repeatable.</div>
+</div>
+</body>
+</html>

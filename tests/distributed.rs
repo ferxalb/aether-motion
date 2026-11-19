@@ -142,3 +142,57 @@ fn cached_tiles_give_identical_bytes_for_any_thread_count_or_split() {
     assert_eq!(single, std::fs::read(&assembled).unwrap());
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+/// The 0.1.6 features together: wrapped kinetic letters on a spring with animated lines, a bloom
+/// whose intensity animates, and an element with its own motion blur over a static background.
+fn kinetic_effects_composition(dir: &Path) -> PathBuf {
+    let html = dir.join("kinetic.html");
+    std::fs::write(
+        &html,
+        "<div data-composition-id='k' data-width='160' data-height='90' data-duration='3.5' style='background:#050505'>\
+         <div class='clip' data-start='0' data-duration='3.5' data-track-index='0' style='left:0;top:0;width:160px;height:90px;background:linear-gradient(to bottom,#151515,#050505)'></div>\
+         <div id='t' class='clip' data-start='0' data-duration='3.5' data-track-index='1' style='left:8px;top:6px;width:90px;font-size:12px;color:#fff;font-weight:700'\
+          data-hf-split='chars' data-hf-split-wrap data-hf-split-y='10' data-hf-split-scale='0.5' data-hf-split-opacity='0'\
+          data-hf-stagger='0.03' data-hf-split-easing='spring(0.15, 2)' data-hf-split-line-y='6' data-hf-split-line-stagger='0.3'>kinetic type keeps time</div>\
+         <div id='glow' class='clip' data-start='0' data-duration='3.5' data-track-index='2' style='left:110px;top:10px;width:30px;height:30px;border-radius:15px;background:#fff'\
+          data-hf-bloom='1.5' data-hf-bloom-radius='10' data-hf-keyframes='[{\"at\":0,\"bloom\":0.2},{\"at\":2,\"bloom\":2.5}]'></div>\
+         <div id='fast' class='clip' data-start='0' data-duration='3.5' data-track-index='3' style='left:4px;top:60px;width:24px;height:12px;background:#eee'\
+          data-hf-motion-blur='on' data-hf-motion-blur-shutter='270' data-hf-bloom='1' data-hf-bloom-radius='6'\
+          data-hf-keyframes='[{\"at\":0.2,\"x\":0},{\"at\":1.6,\"x\":120,\"easing\":\"ease-in-out-cubic\"},{\"at\":3.0,\"x\":40,\"easing\":\"spring(0.2, 2)\"}]'></div></div>",
+    )
+    .unwrap();
+    html
+}
+
+#[test]
+fn new_effects_give_identical_bytes_for_any_thread_count_or_split() {
+    let dir = scratch("distributed-kinetic");
+    let html = kinetic_effects_composition(&dir);
+    let composition = parse_file(&html).unwrap();
+    let render = |threads: u32| {
+        let out = dir.join(format!("k{threads}.mp4"));
+        let mut renderer = Renderer::new(&composition, 1.0).unwrap();
+        encode_native(&mut renderer, &out, FPS, threads).unwrap();
+        std::fs::read(out).unwrap()
+    };
+    let single = render(1);
+    assert_eq!(single, render(2));
+    assert_eq!(single, render(4));
+    let parts = [dir.join("a.aseg"), dir.join("b.aseg"), dir.join("c.aseg")];
+    part(&html, &parts[0], 0..1, Quality::Standard);
+    part(&html, &parts[1], 1..3, Quality::Standard);
+    part(&html, &parts[2], 3..4, Quality::Standard);
+    let assembled = dir.join("assembled.mp4");
+    assemble_parts(&composition, &parts, &assembled, 192_000).unwrap();
+    assert_eq!(single, std::fs::read(&assembled).unwrap());
+    // A still rendered by frame number equals the same frame drawn in sequence.
+    let mut sequential = Renderer::new(&composition, 1.0).unwrap();
+    let frames: Vec<Vec<u8>> = (0..35)
+        .map(|i| sequential.render_frame(i, FPS).unwrap().to_vec())
+        .collect();
+    for frame in [3, 12, 21, 30] {
+        let mut still = Renderer::new(&composition, 1.0).unwrap();
+        assert_eq!(still.render_frame(frame, FPS).unwrap(), &frames[frame][..]);
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}

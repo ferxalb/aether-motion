@@ -48,6 +48,10 @@ fn fix_hint(message: &str) -> &'static str {
         "use mix-blend-mode: normal|multiply|screen|overlay|darken|lighten|color-dodge|color-burn|hard-light|soft-light|difference|exclusion|plus-lighter on a non-root element that is not inside overflow: hidden, rotation, a reveal, a wipe, or another filter"
     } else if message.contains("filter") || message.contains("drop-shadow") {
         "write filter as [blur(<px>)] [brightness|contrast|saturate|grayscale|sepia|invert|opacity(<n or %>)] [hue-rotate(<angle>)] [drop-shadow(x y [blur] color)], in that order; on the root only color functions (except opacity) are allowed"
+    } else if message.contains("data-hf-motion-blur") {
+        "use data-hf-motion-blur=\"on\" on one non-root element (not nested in another blurred element, and not together with data-motion-blur on the root), with optional data-hf-motion-blur-shutter (degrees, above 0 to 720) and data-hf-motion-blur-samples (2 to 64)"
+    } else if message.contains("data-hf-bloom") || message.contains("keyframe bloom") {
+        "use data-hf-bloom=\"<intensity 0 to 8>\" on a non-root element, with optional data-hf-bloom-threshold (0 to below 1), data-hf-bloom-radius (1 to 200 px), and data-hf-bloom-tint; keyframe bloom animates the intensity and needs data-hf-bloom"
     } else if message.contains("data-motion-blur") {
         "set data-motion-blur=\"on\" on the composition root, with optional data-motion-blur-shutter (degrees, above 0 to 720, default 180) and data-motion-blur-samples (2 to 64; automatic when omitted)"
     } else if message.contains("data-hf-vignette") || message.contains("data-hf-grain") {
@@ -55,7 +59,7 @@ fn fix_hint(message: &str) -> &'static str {
     } else if message.contains("data-hf-transition") || message.contains("transition ") {
         "on the incoming clip use data-hf-transition=crossfade|push-<dir>|cover-<dir>|wipe-<dir>|whip-<dir>|zoom-in|zoom-out|dip-to-black|dip-to-white|flash|blur|glitch|rgb-split (dir: left, right, up, down) and data-hf-transition-from=<outgoing id>; start it inside the outgoing clip (data-start=\"a-0.6\"), give the outgoing clip a data-duration, and draw it above on a higher data-track-index"
     } else if message.contains("data-hf-split") || message.contains("data-hf-stagger") {
-        "use data-hf-split=words|chars on an element with plain text (lines break only at <br>; no child elements); see AGENTS.md for data-hf-stagger, data-hf-split-from, and the other options"
+        "use data-hf-split=words|chars on an element with plain text (no child elements other than <br>); add data-hf-split-wrap to wrap at the element's width; see AGENTS.md for data-hf-stagger, data-hf-split-from, the -x/-y/-scale/-rotate/-opacity start values, -order, -mask, and the -line-* options"
     } else if message.contains("data-hf-camera") || message.contains("camera keyframe") {
         "use a JSON array of {at, zoom, x, y, easing} on a non-root container; at in local seconds, strictly increasing; zoom between 0.05 and 50"
     } else if message.contains("data-hf-keyframes") {
