@@ -108,6 +108,8 @@ pub struct Renderer<'a> {
     text_cache_bytes: usize,
     images: HashMap<ImageKey<'a>, CachedImage>,
     image_order: VecDeque<ImageKey<'a>>,
+    /// Resampled zoom-ladder fits, evicted before any exact raster (see `paint/images.rs`).
+    resampled_order: VecDeque<ImageKey<'a>>,
     image_cache_bytes: usize,
     pack_svg_images: bool,
     image_band: Vec<u8>,
@@ -236,6 +238,7 @@ impl<'a> Renderer<'a> {
             text_cache_bytes: 0,
             images: HashMap::new(),
             image_order: VecDeque::new(),
+            resampled_order: VecDeque::new(),
             image_cache_bytes: 0,
             pack_svg_images: false,
             image_band: Vec::new(),
@@ -450,7 +453,8 @@ pub(in crate::render) fn states_at(
         } else {
             0.0
         };
-        let state = FrameState::at(element, time, alpha);
+        let mut state = FrameState::at(element, time, alpha);
+        state.zooming |= element.parent.is_some_and(|idx| states[idx].zooming);
         states.push(if state.alpha > 0.0 {
             state
         } else {

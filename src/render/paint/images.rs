@@ -1,11 +1,15 @@
 //! Decoded and fitted image cache, with exact transparent-row skipping and opaque-span copies.
+//!
+//! One budget (`CACHE_LIMIT` per renderer) holds exact fits and, while vector artwork zooms, the
+//! ladder levels and resampled fits of `svg_levels.rs` (keyed by [`Fitting`], so cached and uncached
+//! draws give the same pixels). Vector entries are LZ4-packed under pressure (`packed_image.rs`).
 
 use super::packed_image::{PackedImage, BAND_BYTES};
 use crate::model::Color;
 use crate::profile::{self, ImageMetric, Phase};
 use crate::render::check_image;
 use crate::render::geometry::{clip_pixels, Rect};
-use crate::render::paint::svg;
+use crate::render::paint::{svg, svg_levels};
 use crate::render::paint::Surface;
 use crate::render::Renderer;
 use anyhow::{anyhow, Context, Result};
@@ -57,7 +61,25 @@ pub(in crate::render) enum ImageSrc<'a> {
     Inline(&'a str),
 }
 
-pub(in crate::render) type ImageKey<'a> = (ImageSrc<'a>, u32, u32, &'a str);
+/// How a cached bitmap was made. It is part of the key, so the pixels drawn never depend on which
+/// entries happen to be cached.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(in crate::render) enum Fitting {
+    /// Rasterized, or fitted from the decoded source, directly at the key's size.
+    Exact,
+    /// Resampled down from the exact raster of the same source at this ladder-level size
+    /// (`svg_levels.rs`), for vector artwork whose scale is animating.
+    Level(u32, u32),
+}
+
+pub(in crate::render) type ImageKey<'a> = (ImageSrc<'a>, u32, u32, &'a str, Fitting);
+
+/// What `cache_image` produced: an entry now in the cache, or a resampled bitmap that is drawn
+/// once because keeping it would have evicted an exact raster.
+enum Cached {
+    Stored,
+    Transient(CachedImage),
+}
 
 fn is_svg(path: &Path) -> bool {
     path.extension()
@@ -79,18 +101,22 @@ fn pack_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("AETHER_IMAGE_PACK").as_deref() != Ok("off"))
 }
 
+fn raster_bytes(w: u32, h: u32) -> Result<usize> {
+    (w as usize)
+        .checked_mul(h as usize)
+        .and_then(|n| n.checked_mul(4))
+        .ok_or_else(|| anyhow!("rasterized image is too large"))
+}
+
 impl<'a> Renderer<'a> {
-    fn cache_image(&mut self, key: &ImageKey<'a>) -> Result<()> {
+    fn cache_image(&mut self, key: &ImageKey<'a>) -> Result<Cached> {
         if self.images.contains_key(key) {
             profile::image(ImageMetric::Hit, 1);
-            return Ok(());
+            return Ok(Cached::Stored);
         }
         profile::image(ImageMetric::Miss, 1);
-        let (src, w, h, fit) = *key;
-        let pixel_bytes = (w as usize)
-            .checked_mul(h as usize)
-            .and_then(|n| n.checked_mul(4))
-            .ok_or_else(|| anyhow!("rasterized image is too large"))?;
+        let (src, w, h, fit, fitting) = *key;
+        let pixel_bytes = raster_bytes(w, h)?;
         if pixel_bytes > CACHE_LIMIT {
             return Err(anyhow!("rasterized image exceeds 64 MiB; use --scale"));
         }
@@ -115,28 +141,200 @@ impl<'a> Renderer<'a> {
                 }
             }
         }
-        profile::image(ImageMetric::LargestRasterBytes, pixel_bytes);
-        profile::image(ImageMetric::RasterBytes, pixel_bytes);
-        let fitted = match src {
-            ImageSrc::Inline(markup) => {
-                svg::rasterize(&svg::parse_svg(markup.as_bytes())?, w, h, fit)?
+        let fitted = match fitting {
+            Fitting::Level(lw, lh) => {
+                let level = (src, lw, lh, fit, Fitting::Exact);
+                match self.cache_image(&level)? {
+                    Cached::Stored => {
+                        let level = &self.images[&level];
+                        resample_cached(level, [lw, lh], [w, h], &mut self.image_band)
+                    }
+                    Cached::Transient(level) => {
+                        resample_cached(&level, [lw, lh], [w, h], &mut self.image_band)
+                    }
+                }
             }
-            ImageSrc::File(path) if is_svg(path) => {
-                let tree = svg::parse_svg(&svg::read_limited(path)?)
-                    .with_context(|| format!("in {}", path.display()))?;
-                svg::rasterize(&tree, w, h, fit)?
-            }
-            ImageSrc::File(path) => fit_pixels(&decode(path)?, w, h, fit)?,
-            ImageSrc::Sequence(path) => {
-                let source = self.sequence_sources.get(path)?;
-                fit_with(source, w, h, fit, resize_sequence)?
+            Fitting::Exact => {
+                profile::image(ImageMetric::LargestRasterBytes, pixel_bytes);
+                profile::image(ImageMetric::RasterBytes, pixel_bytes);
+                match src {
+                    ImageSrc::Inline(markup) => {
+                        svg::rasterize(&svg::parse_svg(markup.as_bytes())?, w, h, fit)?
+                    }
+                    ImageSrc::File(path) if is_svg(path) => {
+                        let tree = svg::parse_svg(&svg::read_limited(path)?)
+                            .with_context(|| format!("in {}", path.display()))?;
+                        svg::rasterize(&tree, w, h, fit)?
+                    }
+                    ImageSrc::File(path) => fit_pixels(&decode(path)?, w, h, fit)?,
+                    ImageSrc::Sequence(path) => {
+                        let source = self.sequence_sources.get(path)?;
+                        fit_with(source, w, h, fit, resize_sequence)?
+                    }
+                }
             }
         };
+        let resampled = matches!(fitting, Fitting::Level(..));
+        let mut image = CachedImage::new(fitted, cache_rows);
+        // Resampled fits only live in spare budget for a frame or two: packing them costs more
+        // than it saves.
+        if self.pack_svg_images && src.is_vector() && !resampled {
+            image.pack();
+        }
+        let bytes = image.bytes();
+        // Resampled bitmaps are cheap to remake and go first; they never push out an exact raster
+        // (a ladder level is worth several frames of resampling), so they are drawn once instead.
+        while bytes > CACHE_LIMIT - self.image_cache_bytes || self.images.len() >= 4096 {
+            let oldest = match self.resampled_order.pop_front() {
+                Some(oldest) => oldest,
+                None if resampled => return Ok(Cached::Transient(image)),
+                None => self.image_order.pop_front().expect("new image fits alone"),
+            };
+            self.image_cache_bytes -= self
+                .images
+                .remove(&oldest)
+                .expect("cache order tracks entries")
+                .bytes();
+            profile::image(ImageMetric::Eviction, 1);
+        }
+        self.image_cache_bytes += bytes;
+        profile::image(ImageMetric::PeakCacheBytes, self.image_cache_bytes);
+        if resampled {
+            self.resampled_order.push_back(*key);
+        } else {
+            self.image_order.push_back(*key);
+        }
+        self.images.insert(*key, image);
+        Ok(Cached::Stored)
+    }
+
+    /// Draws a fitted image. `zoom` is the element's combined CSS scale while it (or an ancestor) is
+    /// changing scale: vector artwork then reuses a ladder-level raster resampled to this frame's
+    /// size instead of being rasterized again at every passing size. At rest, or with `None`, the
+    /// image is fitted exactly, as before. Vector fits too large to cache are rasterized for their
+    /// visible part only.
+    pub(in crate::render) fn draw_image(
+        &mut self,
+        src: ImageSrc<'a>,
+        rect: Rect,
+        fit: &'a str,
+        alpha: f32,
+        zoom: Option<f32>,
+    ) -> Result<()> {
+        let w = (rect.w * self.scale).round().max(1.0) as u32;
+        let h = (rect.h * self.scale).round().max(1.0) as u32;
+        let x0 = (rect.x * self.scale).round() as i32;
+        let y0 = (rect.y * self.scale).round() as i32;
+        if src.is_vector() && raster_bytes(w, h)? > CACHE_LIMIT {
+            return self.draw_visible_svg(src, [x0, y0], [w, h], fit, alpha);
+        }
+        let fitting = match zoom.filter(|_| src.is_vector()) {
+            Some(scale) => {
+                let size = [rect.w * self.scale, rect.h * self.scale];
+                let [lw, lh] = svg_levels::level_size(size, scale, [w, h]);
+                if [lw, lh] != [w, h] && raster_bytes(lw, lh)? <= CACHE_LIMIT {
+                    Fitting::Level(lw, lh)
+                } else {
+                    Fitting::Exact
+                }
+            }
+            None => Fitting::Exact,
+        };
+        let key = (src, w, h, fit, fitting);
+        let transient = match self.cache_image(&key)? {
+            Cached::Stored => None,
+            Cached::Transient(image) => Some(image),
+        };
+        let image = transient.as_ref().unwrap_or_else(|| &self.images[&key]);
+        blit(
+            &mut self.surface,
+            image,
+            [x0, y0],
+            [w, h],
+            alpha,
+            &mut self.image_band,
+        );
+        Ok(())
+    }
+
+    /// Rasterizes and draws only the part of a `w` x `h` vector fit at `origin` that falls on the
+    /// surface, for fits beyond the cache's per-image limit (deep zooms at 4K). The part is drawn
+    /// at the exact fit, so it matches the whole raster; it is not cached.
+    fn draw_visible_svg(
+        &mut self,
+        src: ImageSrc<'a>,
+        [x0, y0]: [i32; 2],
+        [w, h]: [u32; 2],
+        fit: &'a str,
+        alpha: f32,
+    ) -> Result<()> {
+        let Some(bounds) = clip_pixels(
+            (self.surface.width, self.surface.height),
+            x0,
+            y0,
+            x0.saturating_add(w as i32),
+            y0.saturating_add(h as i32),
+        ) else {
+            return Ok(());
+        };
+        let region = [
+            (bounds.x0 as i64 - i64::from(x0)) as u32,
+            (bounds.y0 as i64 - i64::from(y0)) as u32,
+            (bounds.x1 - bounds.x0) as u32,
+            (bounds.y1 - bounds.y0) as u32,
+        ];
+        let bytes = raster_bytes(region[2], region[3])?;
+        if bytes > CACHE_LIMIT {
+            return Err(anyhow!(
+                "visible part of a rasterized image exceeds 64 MiB; use --scale"
+            ));
+        }
+        profile::image(ImageMetric::Miss, 1);
+        profile::image(ImageMetric::Visible, 1);
+        profile::image(ImageMetric::RasterBytes, bytes);
+        let tree = match src {
+            ImageSrc::Inline(markup) => svg::parse_svg(markup.as_bytes())?,
+            ImageSrc::File(path) => svg::parse_svg(&svg::read_limited(path)?)
+                .with_context(|| format!("in {}", path.display()))?,
+            ImageSrc::Sequence(_) => unreachable!("image sequences are raster images"),
+        };
+        let pixels = svg::rasterize_region(&tree, w, h, fit, region)?;
+        let image = CachedImage::new(pixels, true);
+        blit(
+            &mut self.surface,
+            &image,
+            [bounds.x0 as i32, bounds.y0 as i32],
+            [region[2], region[3]],
+            alpha,
+            &mut self.image_band,
+        );
+        Ok(())
+    }
+}
+
+/// Resamples a cached ladder level (raw or packed) to `target`, reading its rows in order.
+fn resample_cached(
+    level: &CachedImage,
+    [lw, lh]: [u32; 2],
+    target: [u32; 2],
+    scratch: &mut Vec<u8>,
+) -> RgbaImage {
+    profile::time(Phase::ImageResample, || {
+        svg_levels::resample_from_level([lw, lh], target, |row| {
+            level.for_each_row([lw, lh], scratch, row)
+        })
+    })
+}
+
+impl CachedImage {
+    /// Wraps fitted pixels, with per-row coverage spans when `cache_rows` is set.
+    fn new(fitted: RgbaImage, cache_rows: bool) -> Self {
+        let w = fitted.width() as usize;
         let opaque = fitted.pixels().all(|pixel| pixel[3] == 255);
         let rows = if cache_rows {
             fitted
                 .as_raw()
-                .chunks_exact(w as usize * 4)
+                .chunks_exact(w * 4)
                 .map(|row| {
                     let row = row.as_chunks::<4>().0;
                     let first = row.iter().position(|p| p[3] != 0).unwrap_or(0);
@@ -151,60 +349,56 @@ impl<'a> Renderer<'a> {
         } else {
             Vec::new()
         };
-        let mut image = CachedImage {
+        Self {
             pixels: ImagePixels::Raw(fitted),
             opaque,
             rows,
-        };
-        if self.pack_svg_images && src.is_vector() {
-            image.pack();
         }
-        let bytes = image.bytes();
-        while bytes > CACHE_LIMIT - self.image_cache_bytes || self.images.len() >= 4096 {
-            let oldest = self.image_order.pop_front().expect("new image fits alone");
-            self.image_cache_bytes -= self
-                .images
-                .remove(&oldest)
-                .expect("cache order tracks entries")
-                .bytes();
-            profile::image(ImageMetric::Eviction, 1);
-        }
-        self.image_cache_bytes += bytes;
-        profile::image(ImageMetric::PeakCacheBytes, self.image_cache_bytes);
-        self.image_order.push_back(*key);
-        self.images.insert(*key, image);
-        Ok(())
     }
 
-    pub(in crate::render) fn draw_image(
-        &mut self,
-        src: ImageSrc<'a>,
-        rect: Rect,
-        fit: &'a str,
-        alpha: f32,
-    ) -> Result<()> {
-        let w = (rect.w * self.scale).round().max(1.0) as u32;
-        let h = (rect.h * self.scale).round().max(1.0) as u32;
-        let key = (src, w, h, fit);
-        self.cache_image(&key)?;
-        let x0 = (rect.x * self.scale).round() as i32;
-        let y0 = (rect.y * self.scale).round() as i32;
-        blit(
-            &mut self.surface,
-            &self.images[&key],
-            [x0, y0],
-            [w, h],
-            alpha,
-            &mut self.image_band,
-        );
-        Ok(())
+    /// Calls `f` with every row of a `w` x `h` image, top to bottom, and the span of pixels that
+    /// may be visible in it (packed bands are unpacked into `scratch` one at a time).
+    fn for_each_row(
+        &self,
+        [w, h]: [u32; 2],
+        scratch: &mut Vec<u8>,
+        f: &mut dyn FnMut(usize, &[u8], (usize, usize)),
+    ) {
+        let stride = w as usize * 4;
+        let span = |y: usize| {
+            self.rows
+                .get(y)
+                .map_or((0, w as usize), |&(first, last, _)| (first as usize, last as usize))
+        };
+        match &self.pixels {
+            ImagePixels::Raw(raw) => {
+                for (y, row) in raw.as_raw().chunks_exact(stride).enumerate() {
+                    f(y, row, span(y));
+                }
+            }
+            ImagePixels::Packed(packed) => {
+                if scratch.len() < BAND_BYTES {
+                    scratch.resize(BAND_BYTES, 0);
+                }
+                let per_band = packed.rows_per_band;
+                for band in 0..(h as usize).div_ceil(per_band) {
+                    let first = band * per_band;
+                    let count = (h as usize - first).min(per_band);
+                    let pixels = &mut scratch[..count * stride];
+                    packed.unpack(band, pixels);
+                    for (i, row) in pixels.chunks_exact(stride).enumerate() {
+                        f(first + i, row, span(first + i));
+                    }
+                }
+            }
+        }
     }
 }
 
 impl<'a> Renderer<'a> {
     /// Draws an inline `<svg>` with `data-hf-draw`: while strokes are still drawing, the markup for
     /// this instant is rasterized directly (it changes every frame); afterwards the finished
-    /// drawing goes through the image cache.
+    /// drawing goes through the image cache (and its zoom ladder while `zoom` is set).
     pub(in crate::render) fn draw_drawn_svg(
         &mut self,
         idx: usize,
@@ -212,27 +406,19 @@ impl<'a> Renderer<'a> {
         rect: Rect,
         fit: &'a str,
         alpha: f32,
+        zoom: Option<f32>,
     ) -> Result<()> {
         let elapsed = self.time - self.composition.elements[idx].start;
         let Some(markup) = drawing.markup_at(elapsed) else {
-            return self.draw_image(ImageSrc::Inline(&drawing.markup), rect, fit, alpha);
+            return self.draw_image(ImageSrc::Inline(&drawing.markup), rect, fit, alpha, zoom);
         };
         let w = (rect.w * self.scale).round().max(1.0) as u32;
         let h = (rect.h * self.scale).round().max(1.0) as u32;
-        let bytes = (w as usize)
-            .checked_mul(h as usize)
-            .and_then(|n| n.checked_mul(4))
-            .ok_or_else(|| anyhow!("rasterized image is too large"))?;
-        if bytes > CACHE_LIMIT {
+        if raster_bytes(w, h)? > CACHE_LIMIT {
             return Err(anyhow!("rasterized image exceeds 64 MiB; use --scale"));
         }
         let tree = svg::parse_svg(markup.as_bytes()).context("data-hf-draw")?;
-        let pixels = svg::rasterize(&tree, w, h, fit)?;
-        let image = CachedImage {
-            opaque: pixels.pixels().all(|pixel| pixel[3] == 255),
-            pixels: ImagePixels::Raw(pixels),
-            rows: Vec::new(),
-        };
+        let image = CachedImage::new(svg::rasterize(&tree, w, h, fit)?, false);
         let x0 = (rect.x * self.scale).round() as i32;
         let y0 = (rect.y * self.scale).round() as i32;
         blit(

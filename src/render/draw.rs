@@ -213,6 +213,7 @@ impl<'a> Renderer<'a> {
         cumulative: f32,
     ) -> Result<()> {
         let alpha = self.current[idx].alpha;
+        let zoom = self.current[idx].zooming.then_some(cumulative);
         let element = &self.composition.elements[idx];
         match &element.content {
             Content::Image(path) => self.draw_image(
@@ -220,18 +221,21 @@ impl<'a> Renderer<'a> {
                 rect,
                 element.style.object_fit.as_deref().unwrap_or("fill"),
                 alpha,
+                zoom,
             )?,
             Content::Sequence(sequence) => self.draw_image(
                 ImageSrc::Sequence(&sequence.files[self.current[idx].media as usize]),
                 rect,
                 element.style.object_fit.as_deref().unwrap_or("fill"),
                 alpha,
+                zoom,
             )?,
             Content::InlineSvg(markup) => self.draw_image(
                 ImageSrc::Inline(markup),
                 rect,
                 element.style.object_fit.as_deref().unwrap_or("fill"),
                 alpha,
+                zoom,
             )?,
             Content::DrawnSvg(drawing) => self.draw_drawn_svg(
                 idx,
@@ -239,6 +243,7 @@ impl<'a> Renderer<'a> {
                 rect,
                 element.style.object_fit.as_deref().unwrap_or("fill"),
                 alpha,
+                zoom,
             )?,
             Content::Video(source) => self.draw_video(
                 idx,

@@ -179,6 +179,105 @@ macro_rules! dispatched {
     };
 }
 
+/// Fractional bits of the horizontally filtered rows of the ladder resampler (`svg_levels.rs`),
+/// whose weights have 14 fractional bits.
+pub(in crate::render) const RESAMPLE_MIDDLE_BITS: u32 = 6;
+const RESAMPLE_H_SHIFT: u32 = 14 - RESAMPLE_MIDDLE_BITS;
+
+dispatched!(
+    /// Premultiplies straight RGBA `src` into `out` (`c * a / 255`, rounded to nearest).
+    premultiply_row => premultiply_row_impl(out: &mut [u8], src: &[u8])
+);
+
+#[inline(always)]
+fn premultiply_row_impl(out: &mut [u8], src: &[u8]) {
+    for (p, s) in out
+        .as_chunks_mut::<4>()
+        .0
+        .iter_mut()
+        .zip(src.as_chunks::<4>().0)
+    {
+        let a = u32::from(s[3]);
+        for c in 0..3 {
+            p[c] = ((u32::from(s[c]) * a + 127) / 255) as u8;
+        }
+        p[3] = s[3];
+    }
+}
+
+dispatched!(
+    /// One horizontal resampling pass: output pixel `x` of `out` (4 channels) is the sum over
+    /// `taps` premultiplied pixels of `row` from `starts[x]`, weighted by `weights[x * taps..]`
+    /// (14 fractional bits), rounded to `RESAMPLE_MIDDLE_BITS` fractional bits.
+    filter_columns => filter_columns_impl(
+        out: &mut [i32],
+        row: &[u8],
+        starts: &[usize],
+        weights: &[i32],
+        taps: usize,
+    )
+);
+
+#[inline(always)]
+fn filter_columns_impl(out: &mut [i32], row: &[u8], starts: &[usize], weights: &[i32], taps: usize) {
+    for ((o, &start), w) in out
+        .as_chunks_mut::<4>()
+        .0
+        .iter_mut()
+        .zip(starts)
+        .zip(weights.chunks_exact(taps))
+    {
+        let pixels = &row[start * 4..(start + taps) * 4];
+        let mut acc = [1_i32 << (RESAMPLE_H_SHIFT - 1); 4];
+        for (pixel, &weight) in pixels.as_chunks::<4>().0.iter().zip(w) {
+            for c in 0..4 {
+                acc[c] += weight * i32::from(pixel[c]);
+            }
+        }
+        for c in 0..4 {
+            o[c] = acc[c] >> RESAMPLE_H_SHIFT;
+        }
+    }
+}
+
+dispatched!(
+    /// Adds `weight * line` to `acc`, element by element (the vertical resampling pass).
+    accumulate_row => accumulate_row_impl(acc: &mut [i32], line: &[i32], weight: i32)
+);
+
+#[inline(always)]
+fn accumulate_row_impl(acc: &mut [i32], line: &[i32], weight: i32) {
+    for (a, &v) in acc.iter_mut().zip(line) {
+        *a += weight * v;
+    }
+}
+
+/// Converts premultiplied sums with `shift` fractional bits to straight RGBA in `dest`: alpha is
+/// clamped to 0..=255, each color to 0..=alpha (filter ringing cannot make an invalid pixel), and
+/// colors are divided by alpha rounding to nearest. Transparent results leave `dest` unchanged.
+pub(in crate::render) fn unpremultiply_row(dest: &mut [u8], acc: &[i32], shift: u32) {
+    for (pixel, acc) in dest
+        .as_chunks_mut::<4>()
+        .0
+        .iter_mut()
+        .zip(acc.as_chunks::<4>().0)
+    {
+        let a = (acc[3] >> shift).clamp(0, 255) as u32;
+        if a == 0 {
+            continue;
+        }
+        let straight = |v: i32| {
+            let c = (v >> shift).clamp(0, a as i32) as u32;
+            if a == 255 {
+                c as u8
+            } else {
+                ((c * 255 + a / 2) / a).min(255) as u8
+            }
+        };
+        *pixel = [straight(acc[0]), straight(acc[1]), straight(acc[2]), a as u8];
+    }
+}
+
 dispatched!(
     /// Blends shadow color `rgb` through coverage `mask` (x65535) at `k` opacity per mask unit;
     /// coverage below 0.002 leaves a pixel unchanged (see `shadow.rs`).

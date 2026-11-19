@@ -52,10 +52,31 @@ pub(crate) fn read_limited(path: &std::path::Path) -> Result<Vec<u8>> {
 /// Rasterizes `tree` into a `w` x `h` bitmap using `fit` (`fill`, `contain`, or `cover`).
 /// Vectors are drawn at the target resolution, so output stays sharp at any `--scale`.
 pub(crate) fn rasterize(tree: &usvg::Tree, w: u32, h: u32, fit: &str) -> Result<RgbaImage> {
-    profile::time(Phase::SvgRaster, || rasterize_pixels(tree, w, h, fit))
+    profile::time(Phase::SvgRaster, || {
+        rasterize_pixels(tree, w, h, fit, [0, 0, w, h])
+    })
 }
 
-fn rasterize_pixels(tree: &usvg::Tree, w: u32, h: u32, fit: &str) -> Result<RgbaImage> {
+/// Rasterizes only the `[x, y, width, height]` part (in pixels of the full `w` x `h` fit) of the
+/// image [`rasterize`] would produce, for fits too large to hold whole. Content outside the region
+/// still contributes to it (filters and layers are bounded by the artwork, not the region).
+pub(crate) fn rasterize_region(
+    tree: &usvg::Tree,
+    w: u32,
+    h: u32,
+    fit: &str,
+    region: [u32; 4],
+) -> Result<RgbaImage> {
+    profile::time(Phase::SvgRaster, || rasterize_pixels(tree, w, h, fit, region))
+}
+
+fn rasterize_pixels(
+    tree: &usvg::Tree,
+    w: u32,
+    h: u32,
+    fit: &str,
+    [x, y, pw, ph]: [u32; 4],
+) -> Result<RgbaImage> {
     let size = tree.size();
     let (sx, sy) = (w as f32 / size.width(), h as f32 / size.height());
     let (sx, sy) = match fit {
@@ -64,10 +85,10 @@ fn rasterize_pixels(tree: &usvg::Tree, w: u32, h: u32, fit: &str) -> Result<Rgba
         "cover" => (sx.max(sy), sx.max(sy)),
         _ => return Err(anyhow!("unsupported object-fit: {fit}")),
     };
-    let tx = (w as f32 - size.width() * sx) / 2.0;
-    let ty = (h as f32 - size.height() * sy) / 2.0;
+    let tx = (w as f32 - size.width() * sx) / 2.0 - x as f32;
+    let ty = (h as f32 - size.height() * sy) / 2.0 - y as f32;
     let mut pixmap =
-        tiny_skia::Pixmap::new(w, h).ok_or_else(|| anyhow!("SVG raster size is invalid"))?;
+        tiny_skia::Pixmap::new(pw, ph).ok_or_else(|| anyhow!("SVG raster size is invalid"))?;
     resvg::render(
         tree,
         tiny_skia::Transform::from_row(sx, 0.0, 0.0, sy, tx, ty),
@@ -83,7 +104,7 @@ fn rasterize_pixels(tree: &usvg::Tree, w: u32, h: u32, fit: &str) -> Result<Rgba
             }
         }
     }
-    RgbaImage::from_raw(w, h, data).ok_or_else(|| anyhow!("SVG raster buffer mismatch"))
+    RgbaImage::from_raw(pw, ph, data).ok_or_else(|| anyhow!("SVG raster buffer mismatch"))
 }
 
 #[cfg(test)]
@@ -101,6 +122,42 @@ mod tests {
         let c = rasterize(&tree, 20, 10, "contain").unwrap();
         assert_eq!(c.get_pixel(0, 5).0[3], 0);
         assert_eq!(c.get_pixel(10, 5).0, [255, 0, 0, 255]);
+    }
+
+    #[test]
+    fn a_region_matches_the_same_part_of_the_whole_raster() {
+        let art = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60">
+            <defs><filter id="f"><feGaussianBlur stdDeviation="2"/></filter></defs>
+            <path d="M3 50 L97 7" stroke="#123" stroke-width="0.6" fill="none"/>
+            <circle cx="51" cy="29" r="17" fill="#e84" opacity=".6" filter="url(#f)"/></svg>"##;
+        let tree = parse_svg(art.as_bytes()).unwrap();
+        for fit in ["fill", "contain", "cover"] {
+            let whole = rasterize(&tree, 333, 201, fit).unwrap();
+            let [x, y, w, h] = [101, 37, 150, 90];
+            let part = rasterize_region(&tree, 333, 201, fit, [x, y, w, h]).unwrap();
+            let crop = image::imageops::crop_imm(&whole, x, y, w, h).to_image();
+            // Compare premultiplied: a low-alpha pixel's straight color is coarse.
+            let worst = part
+                .pixels()
+                .zip(crop.pixels())
+                .flat_map(|(p, q)| {
+                    let pm = |px: &image::Rgba<u8>, c: usize| {
+                        i32::from(px[c]) * i32::from(px[3]) / 255
+                    };
+                    (0..4).map(move |c| {
+                        let (a, b) = if c == 3 {
+                            (i32::from(p[3]), i32::from(q[3]))
+                        } else {
+                            (pm(p, c), pm(q, c))
+                        };
+                        (a - b).abs()
+                    })
+                })
+                .max()
+                .unwrap();
+            eprintln!("{fit}: worst premultiplied difference {worst}");
+            assert!(worst <= 1, "{fit}: worst premultiplied difference {worst}");
+        }
     }
 
     #[test]

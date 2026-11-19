@@ -22,7 +22,14 @@ pub(in crate::render) struct FrameState {
     pub(in crate::render) fx_seed: u32,
     /// Bits of the animated `clip-path` values, so a moving clip is never mistaken for a still one.
     pub(in crate::render) clip_key: u64,
+    /// Whether the scale of this element or an ancestor is changing at this instant (set by
+    /// `states_at`), so vector artwork drawn at a passing size can reuse a zoom-ladder raster.
+    pub(in crate::render) zooming: bool,
 }
+
+/// How far ahead (seconds) a scale is compared to decide that it is changing. Comparing values at
+/// two instants keeps the decision a pure function of time, independent of the frame rate.
+const ZOOM_PROBE: f64 = 1e-3;
 
 impl FrameState {
     pub(in crate::render) fn at(element: &Element, time: f64, alpha: f32) -> Self {
@@ -78,6 +85,15 @@ impl FrameState {
             fx,
             fx_seed,
             clip_key,
+            zooming: scale_changes(element, elapsed, pose.scale),
         }
     }
+}
+
+/// Whether the element's own scale (keyframes, CSS animation, or camera zoom) differs between
+/// `elapsed` and a moment later.
+fn scale_changes(element: &Element, elapsed: f64, scale: f32) -> bool {
+    let motion = &element.motion;
+    (!motion.scale.0.is_empty() || motion.rig.is_some())
+        && motion.pose(elapsed + ZOOM_PROBE).scale != scale
 }

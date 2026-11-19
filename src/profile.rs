@@ -31,10 +31,12 @@ pub enum Phase {
     ImageFit,
     ImageBlit,
     ImagePack,
+    /// Resampling zoom-ladder levels of vector artwork to a frame's fitted size (`svg_levels.rs`).
+    ImageResample,
     Finish,
 }
 
-const PHASES: [Phase; 12] = [
+const PHASES: [Phase; 13] = [
     Phase::Raster,
     Phase::Convert,
     Phase::Encode,
@@ -46,6 +48,7 @@ const PHASES: [Phase; 12] = [
     Phase::ImageFit,
     Phase::ImageBlit,
     Phase::ImagePack,
+    Phase::ImageResample,
     Phase::Finish,
 ];
 
@@ -70,6 +73,7 @@ impl Phase {
             Self::ImageFit => "image-fit",
             Self::ImageBlit => "image-blit",
             Self::ImagePack => "image-pack",
+            Self::ImageResample => "image-resample",
             Self::Finish => "finish",
         }
     }
@@ -107,9 +111,11 @@ pub(crate) enum ImageMetric {
     PeakCacheBytes,
     LargestRasterBytes,
     RasterBytes,
+    /// Vector fits too large to cache, rasterized for their visible part only.
+    Visible,
 }
 
-const IMAGE_METRICS: [(&str, bool); 7] = [
+const IMAGE_METRICS: [(&str, bool); 8] = [
     ("hits", false),
     ("misses", false),
     ("evictions", false),
@@ -117,6 +123,7 @@ const IMAGE_METRICS: [(&str, bool); 7] = [
     ("peak worker fitted bytes", true),
     ("largest fitted raster bytes", true),
     ("total fitted raster bytes", false),
+    ("visible-region rasters", false),
 ];
 static IMAGE_VALUES: [AtomicU64; IMAGE_METRICS.len()] =
     [const { AtomicU64::new(0) }; IMAGE_METRICS.len()];

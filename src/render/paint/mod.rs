@@ -23,6 +23,7 @@ mod shadow;
 mod shape;
 mod surface;
 pub(crate) mod svg;
+mod svg_levels;
 mod tile_cache;
 mod video;
 
