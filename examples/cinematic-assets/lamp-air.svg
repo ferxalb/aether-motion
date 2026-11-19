@@ -1,0 +1,35 @@
+<!-- Original artwork for the AETHER Motion cinematic composition. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="448" height="427" viewBox="228 441 448 427">
+<defs><linearGradient id="cone" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0" stop-color="#f8f8f8" stop-opacity="0.56"/><stop offset="0.13" stop-color="#efefef" stop-opacity="0.3"/><stop offset="0.57" stop-color="#eeeeee" stop-opacity="0.113"/><stop offset="1" stop-color="#e6e6e6" stop-opacity="0"/></linearGradient><linearGradient id="width" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0" stop-color="white" stop-opacity="0"/><stop offset="0.24" stop-color="white" stop-opacity="0.54"/><stop offset="0.52" stop-color="white" stop-opacity="1"/><stop offset="0.79" stop-color="white" stop-opacity="0.61"/><stop offset="1" stop-color="white" stop-opacity="0"/></linearGradient><mask id="fall"><rect x="245.0" y="449.0" width="408.0" height="405.0" fill="url(#width)" opacity="1"/></mask><filter id="scatter" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="14"/></filter><radialGradient id="air"><stop offset="0" stop-color="#fdfdfd" stop-opacity="0.42"/><stop offset="0.43" stop-color="#fdfdfd" stop-opacity="0.24"/><stop offset="0.76" stop-color="#fdfdfd" stop-opacity="0.064"/><stop offset="1" stop-color="#fdfdfd" stop-opacity="0"/></radialGradient></defs>
+<g mask="url(#fall)">
+<g filter="url(#scatter)">
+<path d="M431 465Q447 457 478 464Q501 562 601 825H292Q393 580 431 465Z" fill="url(#cone)" stroke="none" stroke-width="1" opacity="1"/>
+</g>
+<ellipse cx="456" cy="490" rx="115" ry="132" fill="url(#air)" opacity="0.47"/>
+<ellipse cx="475.02" cy="808.3" rx="9.29" ry="17.14" fill="url(#air)" opacity="0.07"/>
+<ellipse cx="521.04" cy="784.2" rx="20.53" ry="31.61" fill="url(#air)" opacity="0.12"/>
+<ellipse cx="419.79" cy="666.68" rx="5.26" ry="26.1" fill="url(#air)" opacity="0.17"/>
+<ellipse cx="389.01" cy="747.34" rx="8.66" ry="16.15" fill="url(#air)" opacity="0.05"/>
+<ellipse cx="445.66" cy="688.61" rx="12.46" ry="28.07" fill="url(#air)" opacity="0.25"/>
+<ellipse cx="470.5" cy="687.24" rx="5.13" ry="9.06" fill="url(#air)" opacity="0.2"/>
+<ellipse cx="438.12" cy="561.83" rx="6.9" ry="9.85" fill="url(#air)" opacity="0.2"/>
+<ellipse cx="441.8" cy="495.78" rx="5.7" ry="22.7" fill="url(#air)" opacity="0.09"/>
+<ellipse cx="461.69" cy="802.39" rx="18.39" ry="4.15" fill="url(#air)" opacity="0.26"/>
+<ellipse cx="478.65" cy="727.56" rx="8.13" ry="19.2" fill="url(#air)" opacity="0.14"/>
+<ellipse cx="510.38" cy="809.64" rx="23.9" ry="24.54" fill="url(#air)" opacity="0.19"/>
+<ellipse cx="454.43" cy="595.64" rx="11.01" ry="28.68" fill="url(#air)" opacity="0.27"/>
+<ellipse cx="445.04" cy="660.2" rx="11.37" ry="21.34" fill="url(#air)" opacity="0.16"/>
+<ellipse cx="408.28" cy="720.08" rx="7.63" ry="25.7" fill="url(#air)" opacity="0.15"/>
+<ellipse cx="440.32" cy="677.63" rx="15.37" ry="32.37" fill="url(#air)" opacity="0.11"/>
+<ellipse cx="480.07" cy="764.96" rx="10.79" ry="28.73" fill="url(#air)" opacity="0.1"/>
+<ellipse cx="465.12" cy="724.27" rx="15.88" ry="9.33" fill="url(#air)" opacity="0.21"/>
+<ellipse cx="443.39" cy="699.37" rx="16.76" ry="10.17" fill="url(#air)" opacity="0.27"/>
+<ellipse cx="501.82" cy="742.6" rx="4.38" ry="23.05" fill="url(#air)" opacity="0.14"/>
+<ellipse cx="430.9" cy="569.64" rx="18.41" ry="32.77" fill="url(#air)" opacity="0.13"/>
+<ellipse cx="389.92" cy="789.49" rx="17.32" ry="21.52" fill="url(#air)" opacity="0.07"/>
+<ellipse cx="411.96" cy="796.77" rx="4.78" ry="13.01" fill="url(#air)" opacity="0.18"/>
+<ellipse cx="465.7" cy="818.64" rx="23.38" ry="7.22" fill="url(#air)" opacity="0.26"/>
+<ellipse cx="459.21" cy="561.11" rx="11.37" ry="13.02" fill="url(#air)" opacity="0.21"/>
+<ellipse cx="420.11" cy="643.77" rx="22.38" ry="20.71" fill="url(#air)" opacity="0.25"/>
+</g>
+</svg>

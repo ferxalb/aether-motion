@@ -7,6 +7,10 @@ CLI/MCP output may still change between minor releases.
 
 ## [Unreleased]
 
+- Native PNG and WebP cel playback with clip-local timing, hold, loop, pingpong, and bounded image caching.
+- Camera-relative pan per depth plane and optional filmic root exposure, highlight roll-off, and shadow toe.
+- The Morning Shift, an original layered industrial dawn example with illustrated assets, animated rain and fog, and a 12 FPS character sequence.
+
 ## [0.1.6] - 2026-11-18
 
 ### Added

@@ -924,3 +924,19 @@ blocks; along a 360 px line through the ring's halo the decoded frame still desc
 most 2 luma levels, where the rendered frame dithers between levels 203 times. Adding
 `data-hf-grain="0.02"` did not help (the encoder flattens it too) and cost 3% more time, so the demo
 does not use grain.
+
+## Cinematic still and plate reuse
+
+Measured on macOS x86-64, Intel Core i5-10400F, using the modified release binary. Frame 72
+at 24 fps from [The Morning Shift](examples/cinematic-dystopia.html) was written as a native
+3840×2160 PNG in 5.41 s wall time, including encoding and I/O. The process used 5.14 s user CPU
+plus 0.21 s system CPU (99% of one logical core on average) and peaked at 257,564,672 bytes
+of RSS. A direct snapshot and a snapshot after frame 70 produced identical PNG bytes.
+
+At 1920×1080, 15 drawing-only frames starting at frame 64 took 22.301 s with the original
+oversized near rain plate and 2.652 s once the near field used four placements of one
+cached tile. This measures the two versions of this example on the same engine. The engine's
+64 MiB fitted-image budget was held fixed. A one-off legacy workload check on
+`examples/premium-promo.html` used the same frame range and measured 0.797 s on the
+pre-existing 0.1.5 executable and 0.649 s on this build. The executable versions differ by
+unrelated changes, so the latter comparison does not isolate the cinematic changes.

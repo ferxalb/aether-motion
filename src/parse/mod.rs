@@ -2,7 +2,7 @@
 //!
 //! `parse_file` (and `parse_file_with`, which takes variable values) is the facade. Submodules: `html` (node helpers), `css` (stylesheet, selectors, cascade,
 //! variables), `values` (value parsers), `style` (property groups into `Style`), `animation`
-//! (CSS animation, `data-hf-keyframes`, and `data-hf-camera` into motion tracks), `split/` (`data-hf-split` kinetic text: pieces, entrance motion, line rows, and the wrap plan of the two-pass parse), `effects` (`data-hf-bloom` and per-element `data-hf-motion-blur`), `audio` (`<audio>` clips for the mixer), `speed` (`data-hf-speed` and `data-hf-speed-ramp` on `<video>` and `<audio>`), `captions` (`data-hf-captions` timed captions from a transcript), `counter` (`data-hf-counter` animated numbers; `data-hf-reveal` lives in `animation/reveal.rs`), `transition` (`data-hf-transition` scene transitions), `variables` (`data-composition-variables` declarations and their `data-var-*` bindings, applied to the DOM first), `tree` (DOM walk), `timeline` (`data-start`).
+//! (CSS animation, `data-hf-keyframes`, and `data-hf-camera` into motion tracks), `split/` (`data-hf-split` kinetic text: pieces, entrance motion, line rows, and the wrap plan of the two-pass parse), `effects` (`data-hf-bloom` and per-element `data-hf-motion-blur`), `audio` (`<audio>` clips for the mixer), `speed` (`data-hf-speed` and `data-hf-speed-ramp` on `<video>` and `<audio>`), `captions` (`data-hf-captions` timed captions from a transcript), `counter` (`data-hf-counter` animated numbers; `data-hf-reveal` lives in `animation/reveal.rs`), `transition` (`data-hf-transition` scene transitions), `variables` (`data-composition-variables` declarations and their `data-var-*` bindings, applied to the DOM first), `sequence` (image-sequence indexing), `filmic` (root tone controls), `tree` (DOM walk), `timeline` (`data-start`).
 
 mod animation;
 mod audio;
@@ -11,8 +11,10 @@ mod captions;
 mod counter;
 mod css;
 mod effects;
+mod filmic;
 mod html;
 mod rich_text;
+mod sequence;
 mod speed;
 mod split;
 mod style;
@@ -186,6 +188,7 @@ fn parse_pass(path: &Path, values: &VariableValues, splits: &SplitPlan) -> Resul
     };
     let vignette = effect("data-hf-vignette")?;
     let grain = effect("data-hf-grain")?;
+    let filmic = filmic::parse(metadata.as_node())?;
     let motion_blur = parse_motion_blur(metadata.as_node())?;
     let mut grade = Vec::new();
     let inferred_duration = pending
@@ -197,7 +200,10 @@ fn parse_pass(path: &Path, values: &VariableValues, splits: &SplitPlan) -> Resul
                     if p.start_expr.is_some()
                         && matches!(
                             p.element.content,
-                            Content::Image(_) | Content::InlineSvg(_) | Content::DrawnSvg(_)
+                            Content::Image(_)
+                                | Content::Sequence(_)
+                                | Content::InlineSvg(_)
+                                | Content::DrawnSvg(_)
                         )
                     {
                         Some(3.0)
@@ -238,7 +244,10 @@ fn parse_pass(path: &Path, values: &VariableValues, splits: &SplitPlan) -> Resul
         } else if p.start_expr.is_some()
             && matches!(
                 p.element.content,
-                Content::Image(_) | Content::InlineSvg(_) | Content::DrawnSvg(_)
+                Content::Image(_)
+                    | Content::Sequence(_)
+                    | Content::InlineSvg(_)
+                    | Content::DrawnSvg(_)
             )
         {
             p.element.start + 3.0
@@ -376,6 +385,7 @@ fn parse_pass(path: &Path, values: &VariableValues, splits: &SplitPlan) -> Resul
         vignette,
         grain,
         grade,
+        filmic,
         motion_blur,
         elements,
         ids,

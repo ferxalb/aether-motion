@@ -221,6 +221,12 @@ impl<'a> Renderer<'a> {
                 element.style.object_fit.as_deref().unwrap_or("fill"),
                 alpha,
             )?,
+            Content::Sequence(sequence) => self.draw_image(
+                ImageSrc::Sequence(&sequence.files[self.current[idx].media as usize]),
+                rect,
+                element.style.object_fit.as_deref().unwrap_or("fill"),
+                alpha,
+            )?,
             Content::InlineSvg(markup) => self.draw_image(
                 ImageSrc::Inline(markup),
                 rect,
@@ -262,7 +268,26 @@ impl<'a> Renderer<'a> {
         for i in 0..self.children[idx].len() {
             let child = self.children[idx][i];
             let slot = layout.iter().find(|(c, _)| *c == child).map(|(_, r)| *r);
-            self.draw_node(child, rect, cumulative, slot)?;
+            let factor = self.composition.elements[child]
+                .layout
+                .parallax
+                .unwrap_or(1.0);
+            let mut parent = rect;
+            let mut slot = slot;
+            if factor != 1.0 {
+                let camera = self.current[idx];
+                let parent_scale = cumulative / camera.scale;
+                let [dx, dy] = camera
+                    .camera_pan
+                    .map(|pan| pan * parent_scale * (factor - 1.0));
+                parent.x += dx;
+                parent.y += dy;
+                if let Some(slot) = &mut slot {
+                    slot.x += dx;
+                    slot.y += dy;
+                }
+            }
+            self.draw_node(child, parent, cumulative, slot)?;
         }
         Ok(())
     }

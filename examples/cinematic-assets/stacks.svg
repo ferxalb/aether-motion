@@ -1,0 +1,28 @@
+<!-- Original artwork for the AETHER Motion cinematic composition. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="948" height="370" viewBox="560 110 948 370">
+<defs><linearGradient id="iron" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0" stop-color="#323232" stop-opacity="1"/><stop offset="0.52" stop-color="#515151" stop-opacity="1"/><stop offset="1" stop-color="#828282" stop-opacity="1"/></linearGradient></defs>
+<path d="M586.86 459L591.00 191h18L613.14 459Z" fill="url(#iron)" stroke="none" stroke-width="1" opacity="1"/>
+<ellipse cx="600" cy="191" rx="11.16" ry="3" fill="#424242" opacity="1"/>
+<path d="M591.2 203.0L608.8 203.0" fill="none" stroke="#838383" stroke-width="1" opacity="0.65"/>
+<path d="M649.67 450L654.50 168h21L680.33 450Z" fill="url(#iron)" stroke="none" stroke-width="1" opacity="1"/>
+<ellipse cx="665" cy="168" rx="13.02" ry="3" fill="#424242" opacity="1"/>
+<path d="M654.7 180.0L675.3 180.0" fill="none" stroke="#838383" stroke-width="1" opacity="0.65"/>
+<path d="M813.51 423L816.50 253h13L832.49 423Z" fill="url(#iron)" stroke="none" stroke-width="1" opacity="1"/>
+<ellipse cx="823" cy="253" rx="8.06" ry="3" fill="#424242" opacity="1"/>
+<path d="M816.6 265.0L829.4 265.0" fill="none" stroke="#838383" stroke-width="1" opacity="0.65"/>
+<path d="M861.86 435L866.00 207h18L888.14 435Z" fill="url(#iron)" stroke="none" stroke-width="1" opacity="1"/>
+<ellipse cx="875" cy="207" rx="11.16" ry="3" fill="#424242" opacity="1"/>
+<path d="M866.2 219.0L883.8 219.0" fill="none" stroke="#838383" stroke-width="1" opacity="0.65"/>
+<path d="M987.75 365L993.50 143h25L1024.25 365Z" fill="url(#iron)" stroke="none" stroke-width="1" opacity="1"/>
+<ellipse cx="1006" cy="143" rx="15.5" ry="3" fill="#424242" opacity="1"/>
+<path d="M993.8 155.0L1018.2 155.0" fill="none" stroke="#838383" stroke-width="1" opacity="0.65"/>
+<path d="M1049.4 369L1054.00 128h20L1078.6 369Z" fill="url(#iron)" stroke="none" stroke-width="1" opacity="1"/>
+<ellipse cx="1064" cy="128" rx="12.4" ry="3" fill="#424242" opacity="1"/>
+<path d="M1054.2 140.0L1073.8 140.0" fill="none" stroke="#838383" stroke-width="1" opacity="0.65"/>
+<path d="M1194.51 349L1197.50 231h13L1213.49 349Z" fill="url(#iron)" stroke="none" stroke-width="1" opacity="1"/>
+<ellipse cx="1204" cy="231" rx="8.06" ry="3" fill="#424242" opacity="1"/>
+<path d="M1197.6 243.0L1210.4 243.0" fill="none" stroke="#838383" stroke-width="1" opacity="0.65"/>
+<path d="M1447.4 395L1452.00 110h20L1476.6 395Z" fill="url(#iron)" stroke="none" stroke-width="1" opacity="1"/>
+<ellipse cx="1462" cy="110" rx="12.4" ry="3" fill="#424242" opacity="1"/>
+<path d="M1452.2 122.0L1471.8 122.0" fill="none" stroke="#838383" stroke-width="1" opacity="0.65"/>
+</svg>

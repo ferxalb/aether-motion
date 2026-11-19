@@ -59,6 +59,15 @@ Try a prompt like:
 
 The agent reads the contract with `aether_guide`, writes the file, validates it with `aether_check` (which returns the exact error and a fix), looks at any moment with `aether_snapshot`, and exports with `aether_render`.
 
+### Cinematic compositing
+
+[The Morning Shift](examples/cinematic-dystopia.html) layers original SVG architecture, animated fog and rain, and a 12 FPS transparent character sequence. The native camera pans across independently weighted depth planes, and localized bloom and root filmic controls finish the shot.
+
+```bash
+aether-motion check examples/cinematic-dystopia.html
+aether-motion render examples/cinematic-dystopia.html --output out/cinematic-4k.png --size 4k --fps 24 --frame 72
+```
+
 ### Manually with the CLI
 
 ```bash

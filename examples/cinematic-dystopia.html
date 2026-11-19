@@ -1,0 +1,85 @@
+<!-- Original layered industrial dawn, with native sequence playback, rain and camera pan. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Morning Shift</title>
+<style>
+  #world { width: 1600px; height: 900px; }
+  .plate { position: absolute; left: -32px; top: -18px; width: 1664px; height: 936px; }
+  #horizon { left: 420px; top: 449px; width: 968px; height: 235px; }
+  #mills { left: 245px; top: 72px; width: 1387px; height: 607px; }
+  #stacks { left: 528px; top: 92px; width: 948px; height: 370px; }
+  #smoke { left: 528px; top: -18px; width: 1104px; height: 291px; }
+  #wet-street { top: 632px; height: 286px; }
+  #bridges { left: 224px; top: -18px; width: 1408px; height: 667px; }
+  #horizon-glow { position: absolute; left: 642px; top: 558px; width: 700px; height: 174px;
+                  background: radial-gradient(ellipse farthest-side, #dddddd69, #afafaf29 54%, transparent); }
+  #lamp-puddle { position: absolute; left: 241px; top: 739px; width: 357px; height: 91px;
+                 background: radial-gradient(ellipse farthest-side, #bcbcbc42, #77777717 63%, transparent); }
+  #lamp-drizzle { position: absolute; left: 330px; top: 450px; width: 232px; height: 309px; }
+  #left-foundry { top: -18px; width: 555px; height: 936px; }
+  #right-foundry { left: 1150px; top: 46px; width: 482px; height: 824px; }
+  #upper-mist { left: 388px; top: 239px; width: 1244px; height: 363px; opacity: 0.74; }
+  #street-mist { left: 329px; top: 522px; width: 1303px; height: 215px; opacity: 0.92; }
+  #sidewalk { top: 627px; width: 956px; height: 291px; }
+  #lampworks { left: 275px; top: 376px; width: 1213px; height: 421px; }
+  #lamp-air { left: 196px; top: 423px; width: 448px; height: 427px; }
+  #figure { position: absolute; left: 365px; top: 556px; width: 162px; height: 245px; }
+  #bulb { position: absolute; left: 386px; top: 447px; width: 80px; height: 10px;
+          border-radius: 5px; background: #fafafa; }
+  #rain-near { position: absolute; left: -50px; top: -175px; width: 1696px; height: 1250px;
+               opacity: 0.75; animation: fall-near 0.38s linear infinite; }
+  .rain-tile { position: absolute; width: 848px; height: 625px; }
+</style>
+</head>
+<body>
+<div data-composition-id="the-morning-shift" data-width="1600" data-height="900" data-duration="8"
+     data-hf-exposure="0.10" data-hf-highlight-rolloff="0.54" data-hf-shadow-toe="0.30"
+     data-hf-vignette="0.42" data-hf-grain="0.13"
+     style="background: #282828; filter: grayscale(1) contrast(1.13);">
+  <div id="world" data-hf-camera='[{"at":0,"zoom":1.026,"x":-10,"y":2},{"at":8,"x":19,"y":-2,"easing":"ease-in-out-cubic"}]'>
+    <img id="dawn" class="plate" data-hf-parallax="0" src="cinematic-assets/dawn.svg" alt="">
+    <img id="smoke" class="plate" data-hf-parallax="0.32" src="cinematic-assets/smoke.svg" alt=""
+         data-hf-keyframes='[{"at":0,"x":-11,"y":4,"opacity":0.7},{"at":8,"x":19,"y":-8,"opacity":1}]'>
+    <img id="stacks" class="plate" data-hf-parallax="0.36" src="cinematic-assets/stacks.svg" alt="">
+    <img id="horizon" class="plate" data-hf-parallax="0.25" src="cinematic-assets/horizon.svg" alt="">
+    <img id="mills" class="plate" data-hf-parallax="0.46" src="cinematic-assets/mills.svg" alt="">
+    <img id="upper-mist" class="plate" data-hf-parallax="0.48" src="cinematic-assets/upper-mist.svg" alt=""
+         data-hf-keyframes='[{"at":0,"x":-38},{"at":8,"x":49,"y":-14,"easing":"ease-in-out"}]'>
+    <img id="wet-street" class="plate" data-hf-parallax="0.86" src="cinematic-assets/wet-street.svg" alt="">
+    <img id="bridges" class="plate" data-hf-parallax="0.77" src="cinematic-assets/viaducts.svg" alt="">
+    <img id="right-foundry" class="plate" data-hf-parallax="1.06" src="cinematic-assets/foundry-right.svg" alt="">
+    <img id="street-mist" class="plate" data-hf-parallax="0.83" src="cinematic-assets/street-mist.svg" alt=""
+         data-hf-keyframes='[{"at":0,"x":18,"opacity":0.66},{"at":4,"x":-16,"opacity":1,"easing":"ease-in-out"},{"at":8,"x":-59,"opacity":0.74,"easing":"ease-in-out"}]'>
+    <div id="horizon-glow" data-hf-parallax="0.83"></div>
+    <img id="left-foundry" class="plate" data-hf-parallax="1.18" src="cinematic-assets/foundry-left.svg" alt="">
+    <img id="sidewalk" class="plate" data-hf-parallax="1.14" src="cinematic-assets/sidewalk.svg" alt="">
+    <div id="lamp-puddle" data-hf-parallax="1.14"></div>
+    <img id="lamp-air" class="plate" data-hf-parallax="1.14" src="cinematic-assets/lamp-air.svg" alt=""
+         data-hf-keyframes='[{"at":0,"opacity":0.89},{"at":3,"opacity":1,"easing":"ease-in-out"},{"at":8,"opacity":0.91,"easing":"ease-in-out"}]'>
+    <img id="lamp-drizzle" data-hf-parallax="1.14" src="cinematic-assets/lamp-drizzle.svg" alt=""
+         data-hf-keyframes='[{"at":0,"opacity":0.84},{"at":2.5,"opacity":1,"easing":"ease-in-out"},{"at":5.5,"opacity":0.75,"easing":"ease-in-out"},{"at":8,"opacity":0.94}]'>
+    <img id="lampworks" class="plate" data-hf-parallax="1.14" src="cinematic-assets/lampworks.svg" alt="">
+    <div id="bulb" data-hf-parallax="1.14" data-hf-bloom="2.6" data-hf-bloom-threshold="0.57" data-hf-bloom-radius="68"></div>
+    <img id="rain-far" class="plate" data-hf-parallax="0.6" src="cinematic-assets/rain-1.svg" alt=""
+         style="left:-67px;top:-178px;width:1734px;height:1256px; animation: fall-far 0.54s linear infinite;">
+    <img id="figure" class="clip" data-start="0" data-duration="8" data-track-index="1"
+         data-hf-parallax="1.14" data-hf-sequence="cinematic-assets/character/frame_{frame:04}.png"
+         data-hf-sequence-first="1" data-hf-sequence-fps="12" data-hf-sequence-playback="loop"
+         alt="A worker sheltering under the streetlamp">
+    <!-- All four placements share one small raster at the camera's current scale. -->
+    <div id="rain-near" class="clip" data-start="0" data-duration="8" data-track-index="2" data-hf-parallax="1.45">
+      <img class="rain-tile" src="cinematic-assets/rain-2.svg" alt="">
+      <img class="rain-tile" src="cinematic-assets/rain-2.svg" style="left: 848px;" alt="">
+      <img class="rain-tile" src="cinematic-assets/rain-2.svg" style="top: 625px;" alt="">
+      <img class="rain-tile" src="cinematic-assets/rain-2.svg" style="left: 848px; top: 625px;" alt="">
+    </div>
+  </div>
+</div>
+<style>
+  @keyframes fall-far { from { transform: translate(21px, -70px); } to { transform: translate(-21px, 96px); } }
+  @keyframes fall-near { from { transform: translate(34px, -100px); } to { transform: translate(-34px, 165px); } }
+</style>
+</body>
+</html>

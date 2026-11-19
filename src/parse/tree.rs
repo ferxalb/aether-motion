@@ -167,7 +167,22 @@ pub(in crate::parse) fn walk(
         )
     })?;
     let draw = prepare_draw(node, &tag)?;
-    let content = if tag == "svg" {
+    let sequence = super::sequence::parse(node, &tag, base)?;
+    let parallax = attr(node, "data-hf-parallax")
+        .map(|raw| super::html::number(&raw, "data-hf-parallax"))
+        .transpose()?;
+    if let Some(factor) = parallax {
+        let Some(camera) = parent.filter(|&idx| !out[idx].camera.is_empty()) else {
+            bail!("data-hf-parallax requires a direct child of a camera");
+        };
+        if !(0.0..=8.0).contains(&factor) {
+            bail!("data-hf-parallax must be between 0 and 8");
+        }
+        out[camera].element.layout.has_parallax |= factor != 1.0;
+    }
+    let content = if let Some(sequence) = sequence {
+        Content::Sequence(sequence)
+    } else if tag == "svg" {
         let markup = inline_svg_markup(node)?;
         match draw {
             Some((ids, timing)) => Content::DrawnSvg(std::sync::Arc::new(
@@ -322,6 +337,7 @@ pub(in crate::parse) fn walk(
             },
             spans,
             layout: LayoutHints {
+                parallax: parallax.map(|value| value as f32),
                 allow_safe_zone: flag(node, "data-layout-allow-safe-zone")?,
                 allow_caption_zone: flag(node, "data-layout-allow-caption-zone")?,
                 split_wrap: split.as_ref().and_then(|spec| spec.unresolved_wrap()),

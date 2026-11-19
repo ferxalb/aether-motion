@@ -3,7 +3,7 @@
 //! Submodules: `draw` (scene traversal), `layout` (flex sizing and placement), `paint` (the `Surface`, fills, gradients, rotation and `overflow` layers,
 //! filters and blend modes), `text` (fonts, measurement, glyph painting), `shutter` (motion blur), `allocation` (checked buffer sizes),
 //! `geometry` and `frame_state` (shared small types). `paint/video.rs` draws `<video>` frames.
-//! A frame is drawn by `draw_scene` and finished by `finish_frame` (root color grade, vignette, grain).
+//! A frame is drawn by `draw_scene` and finished by `finish_frame` (root color grade, filmic tone curve, vignette, grain).
 
 mod allocation;
 mod draw;
@@ -24,7 +24,7 @@ use frame_state::FrameState;
 use geometry::Rect;
 pub use layout::split_wrap::split_wrap_breaks;
 pub(crate) use paint::svg;
-use paint::{CachedImage, ImageKey, Surface};
+use paint::{CachedImage, ImageKey, SequenceSources, Surface};
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::sync::Arc;
@@ -108,6 +108,7 @@ pub struct Renderer<'a> {
     images: HashMap<ImageKey<'a>, CachedImage>,
     image_order: VecDeque<ImageKey<'a>>,
     image_cache_bytes: usize,
+    sequence_sources: SequenceSources<'a>,
     /// One decoder per `<video>` element (by element index), created when its first frame is drawn.
     videos: HashMap<usize, VideoPlayer>,
     fonts: FontStore,
@@ -124,6 +125,7 @@ pub struct Renderer<'a> {
     isolated: u32,
     /// The root's `filter` color functions, graded onto every finished frame.
     grade: paint::ColorChain,
+    filmic: Option<paint::filmic::FilmicLut>,
     /// Per-channel sums of the sub-frame samples while a motion-blurred frame is accumulated.
     shutter_sums: Vec<u16>,
     /// Composition time of the states in `current` (animated clip paths are evaluated at it).
@@ -232,6 +234,7 @@ impl<'a> Renderer<'a> {
             images: HashMap::new(),
             image_order: VecDeque::new(),
             image_cache_bytes: 0,
+            sequence_sources: SequenceSources::default(),
             videos: HashMap::new(),
             fonts,
             stats: RenderStats::default(),
@@ -246,6 +249,7 @@ impl<'a> Renderer<'a> {
             ],
             isolated: 0,
             grade: paint::ColorChain::new(&composition.grade),
+            filmic: composition.filmic.map(paint::filmic::FilmicLut::new),
             shutter_sums: Vec::new(),
             time: 0.0,
             mask_guard: None,
@@ -391,10 +395,14 @@ impl<'a> Renderer<'a> {
         self.draw_node(0, root, 1.0, None)
     }
 
-    /// Frame-wide passes after drawing: the root's color grade, then vignette and grain.
+    /// Frame-wide passes after drawing: root CSS grade, filmic tone curve, vignette, then grain.
     pub(in crate::render) fn finish_frame(&mut self, time: f64) {
         if !self.grade.is_identity() {
             self.grade.grade_frame(&mut self.surface.pixels);
+            self.surface.mark_all_painted();
+        }
+        if let Some(filmic) = &self.filmic {
+            filmic.apply(&mut self.surface.pixels);
             self.surface.mark_all_painted();
         }
         let seed = (time * 1000.0).round() as u32;

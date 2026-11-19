@@ -43,3 +43,9 @@ For a mix with voice and music, put the effects on the clips: `data-hf-eq="voice
 ## Source of truth
 
 For the exact supported gradients, shadows, text layout, clipping, CSS properties, motion options, and errors, consult the repository's `AGENTS.md` and `limits.md`.
+
+## Cinematic layers
+
+- Number transparent PNG or WebP cels consecutively in a local directory. Use `<img data-hf-sequence="assets/frame_{frame:04}.png" data-hf-sequence-first="1" data-hf-sequence-fps="12" data-hf-sequence-playback="loop">` with an explicit box and without `src`. Defaults are first 0, 12 fps, and hold. `pingpong` reverses without repeated endpoint cels. Frame numbers are sampled from clip-local time.
+- Put `data-hf-parallax` (0–8, default 1) on a direct camera child. Zero cancels camera pan on that plane while preserving zoom. Values above 1 amplify pan. Keep moving artwork large enough to cover the edges.
+- Root `data-hf-exposure` (-4 to +4 stops), `data-hf-highlight-rolloff` (0–1), and `data-hf-shadow-toe` (0–1) are optional. They apply after the root CSS grade and before vignette and grain. Use `data-hf-bloom` on the individual light source and pass the export FPS when reviewing frame-based stills.

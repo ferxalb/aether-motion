@@ -36,7 +36,9 @@ impl<'a> Renderer<'a> {
         let fitted = if exact {
             frame.clone()
         } else {
-            fit_with(frame, w, h, fit, resize_triangle)?
+            fit_with(frame, w, h, fit, |source, w, h| {
+                Ok(resize_triangle(source, w, h))
+            })?
         };
         // `fill` and `cover` cover the whole box; `contain` may leave transparent bars.
         let opaque = exact || fit != "contain";

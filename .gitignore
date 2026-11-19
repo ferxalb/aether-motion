@@ -12,3 +12,6 @@ target
 
 .DS_Store
 aether-motion-api
+
+# Source cels for the cinematic composition.
+!examples/cinematic-assets/character/*.png

@@ -8,6 +8,7 @@ use crate::render::paint::Surface;
 use crate::render::Renderer;
 use anyhow::{anyhow, Context, Result};
 use image::{imageops, Rgba, RgbaImage};
+use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 
 const CACHE_LIMIT: usize = 64 * 1024 * 1024;
@@ -22,6 +23,7 @@ pub(in crate::render) struct CachedImage {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(in crate::render) enum ImageSrc<'a> {
     File(&'a Path),
+    Sequence(&'a Path),
     Inline(&'a str),
 }
 
@@ -54,22 +56,16 @@ impl<'a> Renderer<'a> {
                     svg::parse_svg(&svg::read_limited(path)?)
                         .with_context(|| format!("in {}", path.display()))?,
                 ),
-                ImageSrc::File(_) => None,
+                ImageSrc::File(_) | ImageSrc::Sequence(_) => None,
             };
-            let image = match (&vector, src) {
-                (Some(_), _) => RgbaImage::new(1, 1),
-                (None, ImageSrc::File(path)) => {
-                    check_image(path)?;
-                    image::open(path)
-                        .with_context(|| format!("could not open image {}", path.display()))?
-                        .to_rgba8()
+            let fitted = match (vector, src) {
+                (Some(tree), _) => svg::rasterize(&tree, w, h, fit)?,
+                (None, ImageSrc::File(path)) => fit_pixels(&decode(path)?, w, h, fit)?,
+                (None, ImageSrc::Sequence(path)) => {
+                    let source = self.sequence_sources.get(path)?;
+                    fit_with(source, w, h, fit, resize_sequence)?
                 }
                 (None, ImageSrc::Inline(_)) => unreachable!("inline sources are always vector"),
-            };
-            let fitted = if let Some(tree) = &vector {
-                svg::rasterize(tree, w, h, fit)?
-            } else {
-                fit_pixels(&image, w, h, fit)?
             };
             while bytes > CACHE_LIMIT.saturating_sub(self.image_cache_bytes)
                 || self.images.len() >= 4096
@@ -173,6 +169,79 @@ impl<'a> Renderer<'a> {
     }
 }
 
+/// Decoded cels share a separate FIFO budget so zoom-driven fits can reuse their sources.
+#[derive(Default)]
+pub(in crate::render) struct SequenceSources<'a> {
+    images: HashMap<&'a Path, RgbaImage>,
+    order: VecDeque<&'a Path>,
+    bytes: usize,
+}
+
+impl<'a> SequenceSources<'a> {
+    fn get(&mut self, path: &'a Path) -> Result<&RgbaImage> {
+        if !self.images.contains_key(path) {
+            let decoded = decode(path)?;
+            let bytes = decoded.as_raw().len();
+            while self.bytes + bytes > CACHE_LIMIT || self.images.len() >= 4096 {
+                let oldest = self
+                    .order
+                    .pop_front()
+                    .expect("decoded cel fits in empty cache");
+                self.bytes -= self
+                    .images
+                    .remove(oldest)
+                    .expect("cached source")
+                    .as_raw()
+                    .len();
+            }
+            self.bytes += bytes;
+            self.images.insert(path, decoded);
+            self.order.push_back(path);
+        }
+        Ok(&self.images[path])
+    }
+}
+
+fn decode(path: &Path) -> Result<RgbaImage> {
+    check_image(path)?;
+    Ok(image::open(path)
+        .with_context(|| format!("could not open image {}", path.display()))?
+        .to_rgba8())
+}
+
+/// Filter premultiplied samples at 16-bit precision so transparent RGB cannot tint the edges.
+fn resize_sequence(source: &RgbaImage, w: u32, h: u32) -> Result<RgbaImage> {
+    if source.dimensions() == (w, h) {
+        return Ok(source.clone());
+    }
+    const WORK_LIMIT: u64 = 128 * 1024 * 1024;
+    if u64::from(source.width()) * u64::from(h) > WORK_LIMIT / 16 {
+        return Err(anyhow!(
+            "sequence resize scratch exceeds 128 MiB; use --scale or resize the source"
+        ));
+    }
+    let premultiplied = image::ImageBuffer::from_fn(source.width(), source.height(), |x, y| {
+        let [r, g, b, a] = source.get_pixel(x, y).0;
+        let alpha = u16::from(a);
+        Rgba([
+            u16::from(r) * alpha,
+            u16::from(g) * alpha,
+            u16::from(b) * alpha,
+            alpha * 255,
+        ])
+    });
+    let resized = imageops::resize(&premultiplied, w, h, imageops::FilterType::Triangle);
+    Ok(RgbaImage::from_fn(w, h, |x, y| {
+        let [r, g, b, a] = resized.get_pixel(x, y).0.map(u32::from);
+        let alpha = ((a + 127) / 255) as u8;
+        if alpha == 0 {
+            return Rgba([0; 4]);
+        }
+        let straight = |value: u32| ((value * 255 + a / 2) / a).min(255) as u8;
+        Rgba([straight(r), straight(g), straight(b), alpha])
+    }))
+}
+
 /// Resizes `image` to a `w` x `h` canvas following `object-fit` (`fill`, `contain`, or `cover`).
 pub(in crate::render) fn fit_pixels(
     image: &RgbaImage,
@@ -181,7 +250,12 @@ pub(in crate::render) fn fit_pixels(
     fit: &str,
 ) -> Result<RgbaImage> {
     fit_with(image, w, h, fit, |source, w, h| {
-        imageops::resize(source, w, h, imageops::FilterType::Triangle)
+        Ok(imageops::resize(
+            source,
+            w,
+            h,
+            imageops::FilterType::Triangle,
+        ))
     })
 }
 
@@ -191,13 +265,13 @@ pub(in crate::render) fn fit_with(
     w: u32,
     h: u32,
     fit: &str,
-    resize: impl Fn(&RgbaImage, u32, u32) -> RgbaImage,
+    resize: impl Fn(&RgbaImage, u32, u32) -> Result<RgbaImage>,
 ) -> Result<RgbaImage> {
     if !matches!(fit, "fill" | "contain" | "cover") {
         return Err(anyhow!("unsupported object-fit: {fit}"));
     }
     Ok(match fit {
-        "fill" => resize(image, w, h),
+        "fill" => resize(image, w, h)?,
         _ => {
             let sx = w as f32 / image.width() as f32;
             let sy = h as f32 / image.height() as f32;
@@ -213,7 +287,7 @@ pub(in crate::render) fn fit_with(
                     "intermediate image exceeds 64 MiB; adjust object-fit or --scale"
                 ));
             }
-            let resized = resize(image, nw, nh);
+            let resized = resize(image, nw, nh)?;
             let mut canvas = RgbaImage::from_pixel(w, h, Rgba([0, 0, 0, 0]));
             imageops::overlay(
                 &mut canvas,

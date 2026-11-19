@@ -1,4 +1,4 @@
-//! Per-element visual state (alpha, pose, video frame, animated filter, pixel-effect, and clip-path values) sampled at one
+//! Per-element visual state (alpha, pose, image-sequence or video frame, animated filter, pixel-effect, and clip-path values) sampled at one
 //! instant; compared across frames to reuse pixels.
 
 use crate::model::{Content, Element};
@@ -11,7 +11,8 @@ pub(in crate::render) struct FrameState {
     pub(in crate::render) scale: f32,
     pub(in crate::render) rotate: f32,
     pub(in crate::render) reveal: f32,
-    /// Source frame of a `<video>`, so a new frame is never mistaken for an unchanged one.
+    pub(in crate::render) camera_pan: [f32; 2],
+    /// Source frame of a video or image sequence, so a new frame is never mistaken for an unchanged one.
     pub(in crate::render) media: u32,
     /// Animated `filter` amounts by `FilterChannel::index`; all zero when the filter is static.
     pub(in crate::render) filters: [f32; 8],
@@ -62,7 +63,16 @@ impl FrameState {
             scale: pose.scale,
             rotate: pose.rotate,
             reveal: pose.reveal,
+            camera_pan: if element.layout.has_parallax {
+                [
+                    motion.x.eval(elapsed, motion.base.x, true, true) - motion.base.x,
+                    motion.y.eval(elapsed, motion.base.y, true, true) - motion.base.y,
+                ]
+            } else {
+                [0.0; 2]
+            },
             media: match &element.content {
+                Content::Sequence(sequence) => sequence.frame_at(elapsed) as u32,
                 Content::Video(video) => video.frame_at(time - element.start) as u32,
                 Content::DrawnSvg(drawing) => drawing.key(time - element.start),
                 _ => 0,

@@ -4,7 +4,7 @@
 //! `shutter` degrees of one frame interval, centered on the frame time, and averages them per
 //! channel with rounding. Without `data-motion-blur-samples`, the count follows the largest travel
 //! of any element across the window: about one sample per 2 output px, from 8 to 64. Sample times depend only on the frame time and fps, so output stays
-//! deterministic. The root's color grade, vignette, and grain run once on the averaged frame.
+//! deterministic. The root's color grade, filmic curve, vignette, and grain run once on the averaged frame.
 //! When nothing moves inside the window (no visible element changes position, scale, rotation, or
 //! reveal; fades, filters, and video frames do not count as movement) the frame is drawn once at the
 //! frame time, and the identical-frame shortcut still applies.
@@ -36,13 +36,14 @@ pub(in crate::render) fn moves(samples: &[Vec<FrameState>], center: &[FrameState
             return false;
         };
         visible.any(|s| {
-            (s.x, s.y, s.scale, s.rotate, s.reveal)
+            (s.x, s.y, s.scale, s.rotate, s.reveal, s.camera_pan)
                 != (
                     reference.x,
                     reference.y,
                     reference.scale,
                     reference.rotate,
                     reference.reveal,
+                    reference.camera_pan,
                 )
         })
     })
@@ -59,7 +60,8 @@ pub(in crate::render) fn travel(from: &[FrameState], to: &[FrameState], short_si
             let shift = (a.x - b.x).hypot(a.y - b.y);
             let turn = (a.rotate - b.rotate).to_radians().abs() * reach;
             let zoom = (a.scale - b.scale).abs() * reach;
-            shift + turn + zoom
+            let pan = (a.camera_pan[0] - b.camera_pan[0]).hypot(a.camera_pan[1] - b.camera_pan[1]);
+            shift.max(pan) + turn + zoom
         })
         .fold(0.0, f32::max)
 }
