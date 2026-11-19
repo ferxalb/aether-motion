@@ -7,6 +7,8 @@ CLI/MCP output may still change between minor releases.
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-11-19
+
 ### Added
 
 - Native PNG and WebP cel playback with clip-local timing, hold, loop, pingpong, and bounded image caching.
@@ -25,6 +27,12 @@ CLI/MCP output may still change between minor releases.
 - Recut Into the Shadows with independently drawn side-elevation and lamp-yard plates,
   constant-scale tracking, heel and toe pivots, and synchronized sole shadows. Refined
   the street-space lighting masks, reflections, haze, and rain for the 1080p revision.
+- Into the Shadows hides both shot changes: a motion-blurred foreground column carries a
+  linear `wipe-left` at 5 s and a lamp-lit fog veil covers a 0.14 s crossfade at 10 s.
+  A regression test renders both windows of the example and checks that the wipe edge
+  stays under the column, that the crossfade happens under the fog, and that cold,
+  forked, and reverse-order renders match byte for byte. The 4K master was validated
+  frame by frame (see `BENCHMARK.md`).
 - Extended the cinematic validation with a 15-frame 4K benchmark, an animated-zoom probe,
   native MP4 cadence checks, and byte-identical comparisons with the original continuity PNGs.
 - Under byte pressure, the fitted-image cache stores compressible SVG rasters in lossless LZ4

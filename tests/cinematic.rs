@@ -1,4 +1,5 @@
-//! Regression coverage for frame sequences, camera-relative pan and optional filmic finishing.
+//! Regression coverage for frame sequences, camera-relative pan, optional filmic finishing, and the
+//! concealed shot changes of `examples/cinematic-walk-15s.html`.
 
 mod common;
 
@@ -142,4 +143,89 @@ fn cinematic_filmic_identity_and_threaded_encoding() {
         assert_eq!(fs::read(candidate).unwrap(), reference, "threads {threads}");
     }
     fs::remove_dir_all(dir).unwrap();
+}
+
+/// Luma of an RGBA pixel, in 0..255.
+fn luma(frame: &[u8], width: usize, x: usize, y: usize) -> f64 {
+    let p = &frame[(y * width + x) * 4..][..3];
+    0.2126 * p[0] as f64 + 0.7152 * p[1] as f64 + 0.0722 * p[2] as f64
+}
+
+/// Both concealed shot changes of `examples/cinematic-walk-15s.html`, at quarter scale: the 5 s wipe edge
+/// stays inside the dark core of the crossing column, the 10 s crossfade happens under the fog veil, and
+/// every frame of both windows is identical when rendered cold, in reverse order, or on a forked renderer.
+#[test]
+fn cinematic_walk_short_transitions_stay_concealed_and_deterministic() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/cinematic-walk-15s.html");
+    let composition = parse_file(&path).unwrap();
+    let scale = 0.25;
+    let mut renderer = Renderer::new(&composition, scale).unwrap();
+    let (width, height) = renderer.dimensions();
+    let (width, height) = (width as usize, height as usize);
+    let fps = 24;
+    let wipe: Vec<usize> = (119..=130).collect();
+    let fade: Vec<usize> = (236..=247).collect();
+    let frames: Vec<usize> = wipe.iter().chain(&fade).copied().collect();
+    let forward: Vec<Vec<u8>> = frames
+        .iter()
+        .map(|&frame| renderer.render_frame(frame, fps).unwrap().to_vec())
+        .collect();
+
+    let mut cold = Renderer::new(&composition, scale).unwrap();
+    let mut forked = renderer.fork().unwrap();
+    for (index, &frame) in frames.iter().enumerate().rev() {
+        assert_eq!(
+            cold.render_frame(frame, fps).unwrap(),
+            &forward[index][..],
+            "cold frame {frame}"
+        );
+        assert_eq!(
+            forked.render_frame(frame, fps).unwrap(),
+            &forward[index][..],
+            "forked frame {frame}"
+        );
+    }
+
+    // Cut 1: a linear wipe-left over 5.0..5.4 s puts the edge at 1600 * (1 - p); the column's dark core
+    // spans 186 composition px either side of that line. Within 60 px of the edge every row stays black.
+    for (index, &frame) in frames.iter().enumerate().take(wipe.len()) {
+        let t = frame as f64 / fps as f64;
+        if !(5.0..=5.4).contains(&t) {
+            continue;
+        }
+        let edge = 1600.0 * (1.0 - (t - 5.0) / 0.4) * scale as f64;
+        let band = 60.0 * scale as f64;
+        let x0 = (edge - band).max(0.0) as usize;
+        let x1 = ((edge + band) as usize).min(width - 1);
+        let brightest = (x0..=x1)
+            .flat_map(|x| (0..height).map(move |y| (x, y)))
+            .map(|(x, y)| luma(&forward[index], width, x, y))
+            .fold(0.0, f64::max);
+        assert!(
+            brightest < 40.0,
+            "frame {frame}: wipe edge exposed, luma {brightest:.1} near x {edge:.1}"
+        );
+    }
+
+    // Cut 2: the crossfade (10.0..10.14 s) runs while the fog flattens the frame. Its frames keep under 60% of
+    // the edge detail (mean luma step between pixels two apart) of the open frames around the fog
+    // (about 51% at quarter scale; film grain sets the floor).
+    let detail = |frame: &[u8]| {
+        let mut sum = 0.0;
+        for y in 0..height {
+            for x in 2..width {
+                sum += (luma(frame, width, x, y) - luma(frame, width, x - 2, y)).abs();
+            }
+        }
+        sum / (height * (width - 2)) as f64
+    };
+    let at = |frame: usize| &forward[frames.iter().position(|&f| f == frame).unwrap()];
+    let open = detail(at(236)).min(detail(at(247)));
+    for frame in 240..=243 {
+        let veiled = detail(at(frame));
+        assert!(
+            veiled < 0.6 * open,
+            "frame {frame}: crossfade not veiled ({veiled:.2} vs {open:.2})"
+        );
+    }
 }

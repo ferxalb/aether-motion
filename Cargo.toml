@@ -1,6 +1,6 @@
 [package]
 name = "aether-motion"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 description = "AETHER Motion, a native video renderer for a documented subset of HyperFrames HTML"
 license = "Apache-2.0"

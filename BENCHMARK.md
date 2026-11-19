@@ -927,7 +927,7 @@ does not use grain.
 
 ## Cinematic still and plate reuse
 
-Measured on macOS x86-64, Intel Core i5-10400F, using the modified release binary. Frame 72
+Measured on macOS x86-64 on a desktop CPU, using the modified release binary. Frame 72
 at 24 fps from [The Morning Shift](examples/cinematic-dystopia.html) was written as a native
 3840×2160 PNG in 5.41 s wall time, including encoding and I/O. The process used 5.14 s user CPU
 plus 0.21 s system CPU (99% of one logical core on average) and peaked at 257,564,672 bytes
@@ -943,7 +943,7 @@ unrelated changes, so the latter comparison does not isolate the cinematic chang
 
 ## Fitted SVG cache pressure at 4K
 
-Native macOS x86-64 on an Intel Core i5-10400F. The previous release binary was preserved
+Native macOS x86-64 on a desktop CPU. The previous release binary was preserved
 and measured before changing the cache. Both release builds used the same scene and a
 single render thread. The 1080p case is drawing-only at 24 fps over 15 frames starting at
 64. The 4K batch renders and writes frames 72, 84, and 96 at 24 fps from
@@ -985,7 +985,7 @@ segmented MP4s at 1, 2, 4 and 64 configured threads and with packing disabled.
 
 ## Cinematic short production validation
 
-Native macOS x86-64, Intel Core i5-10400F. The existing release build rendered the original
+Native macOS x86-64 on a desktop CPU. The existing release build rendered the original
 `examples/cinematic-dystopia.html` before production changes. CPU totals combine user
 and system time. The original 4K reference frames 72, 84, and 96 matched byte-for-byte.
 
@@ -1031,3 +1031,43 @@ The measurements compare the two compositions on the same engine.
 The revised export had 8,466 fitted-image hits and zero evictions, with 54 SVG
 rasterizations across both workers. AVFoundation decoded all 360 frames at 1920×1080
 with the expected 24 FPS timestamps and an exact 15-second duration.
+
+### Into the Shadows 4K master validation
+
+Same native macOS setup and release binary that wrote `out/cinematic-walk-4k-v3.mp4`
+(`render examples/cinematic-walk-15s.html --size 4k --fps 24 --quality max --threads 4`).
+The master itself was not re-exported.
+
+| Check | Result |
+| --- | --- |
+| Container | H.264 (`avc1`), 3840×2160, 24 fps, timescale 24, 15.000 s, 395,392,612 bytes |
+| Samples | 360 coded, 15 sync (one per second), decode order equals presentation order |
+| Timestamps | 0 to 14.958 s, every step exactly 1/24 s, no duplicates |
+| AVFoundation decode | 360 of 360 frames, reader completed without error (26.5 s wall) |
+| Reproducibility | 1-second 4K segments 0–1, 5–6, and 10–11 rendered with the command above: 96 of 96 sampled 4 KiB slices found verbatim in the master |
+| Master vs. lossless render | PSNR 38.5–42.8 dB on frames 0, 119, 121, 125, 129, 241, 242, 300, 359 |
+| Thread determinism | 15 4K PNGs (both transitions, frames 0, 300, 359) identical at 1 and 4 threads; cold single-frame renders identical to batch |
+| Segmented render | half-scale parts split at 5 s and 10 s assembled byte-identical to a single render |
+
+Per-frame luma statistics over a 160×90 grid show the largest frame-to-frame changes
+only inside the two concealed shot changes (mean absolute change 13.6 of 255 at frame 123
+under the column, 13.3 at frame 238 as the fog rises); elsewhere it stays at or below 2.4
+until the final fade, which falls smoothly to black by frame 353. Frames 113–132 and
+233–252 were inspected as stills; playback in real time was not reviewed.
+
+Drawing-only 4K benchmark, one thread, `AETHER_PROFILE=1`, 20 frames each:
+
+| Window | Wall | CPU | Peak RSS | Layer blur | SVG rasters | Fitted hits / misses / evictions |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Frames 112–131 (wipe and column) | 32.86 s | 32.37 s | 729,153,536 bytes | 13.477 s | 22 (5.491 s) | 853 / 67 / 0 |
+| Frames 232–251 (fog crossfade) | 14.77 s | 14.59 s | 243,351,552 bytes | 0 s | 10 (2.633 s) | 450 / 52 / 0 |
+
+The column's per-element motion blur (12 samples) accounts for 41% of the first window's
+raster time. Peak RSS does not grow with frame count: frames 122–123 alone peaked at
+837,656,576 bytes and frames 112–151 at 615,669,760 bytes, so the peak is the transient
+working set of the blurred column at 4K. Fitted-image peaks stayed under the 64 MiB budget
+(56,655,136 and 56,950,556 bytes) with zero evictions.
+
+Known limitation: the native encoder converts with limited-range BT.601 and tags the
+stream accordingly (SMPTE C primaries, BT.709 transfer), which is consistent but not the
+BT.709 convention usual for UHD.

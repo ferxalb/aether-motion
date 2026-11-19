@@ -83,6 +83,8 @@ regenerates the SVG plates.
 ```bash
 aether-motion check examples/cinematic-walk-15s.html
 aether-motion render examples/cinematic-walk-15s.html --output out/cinematic-walk-1080p-v3.mp4 --size 1080p --fps 24 --quality high --threads 2
+# The validated 3840x2160 master (360 frames; --threads changes speed, not output)
+aether-motion render examples/cinematic-walk-15s.html --output out/cinematic-walk-4k-v3.mp4 --size 4k --fps 24 --quality max --threads 4
 ```
 
 ### Manually with the CLI
