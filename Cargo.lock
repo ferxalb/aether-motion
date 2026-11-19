@@ -18,6 +18,7 @@ dependencies = [
  "image",
  "kuchiki",
  "libc",
+ "lz4_flex",
  "mp4",
  "openh264",
  "oxideav-aac",
@@ -468,6 +469,12 @@ name = "log"
 version = "0.4.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
+
+[[package]]
+name = "lz4_flex"
+version = "0.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a027efd2ad3c4dbb4123b5c018e3efbe7f6236da7c7612f122dad030f5d2de5"
 
 [[package]]
 name = "mac"

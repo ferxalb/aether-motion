@@ -47,11 +47,10 @@ impl<'a> Renderer<'a> {
         blit(
             &mut self.surface,
             &CachedImage::frame(fitted, opaque),
-            x0,
-            y0,
-            w,
-            h,
+            [x0, y0],
+            [w, h],
             alpha,
+            &mut self.image_band,
         );
         Ok(())
     }

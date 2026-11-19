@@ -15,6 +15,7 @@ mod images;
 mod inset;
 mod kernels;
 mod masked;
+mod packed_image;
 mod resample;
 mod reveal;
 mod rotate;

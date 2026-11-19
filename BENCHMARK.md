@@ -940,3 +940,45 @@ cached tile. This measures the two versions of this example on the same engine. 
 `examples/premium-promo.html` used the same frame range and measured 0.797 s on the
 pre-existing 0.1.5 executable and 0.649 s on this build. The executable versions differ by
 unrelated changes, so the latter comparison does not isolate the cinematic changes.
+
+## Fitted SVG cache pressure at 4K
+
+Native macOS x86-64 on an Intel Core i5-10400F. The previous release binary was preserved
+and measured before changing the cache. Both release builds used the same scene and a
+single render thread. The 1080p case is drawing-only at 24 fps over 15 frames starting at
+64. The 4K batch renders and writes frames 72, 84, and 96 at 24 fps from
+`examples/cinematic-dystopia.html`. CPU is user plus system time and RSS is the process
+maximum reported by `/usr/bin/time -lp`.
+
+| Workload | Wall before → after | CPU before → after | Peak RSS before → after |
+| --- | ---: | ---: | ---: |
+| 1080p, 15 frames | 2.65 → 2.66 s | 2.62 → 2.62 s | 103,350,272 → 102,887,424 bytes |
+| 4K, three PNGs | 15.30 → 6.21 s | 15.15 → 6.10 s | 293,466,112 → 202,305,536 bytes |
+| 4K, isolated frame 72 | 5.19 → 5.31 s | 5.16 → 5.26 s | 269,172,736 → 178,405,376 bytes |
+
+The 4K batch reduced wall time by 59.4%, CPU time by 59.7%, and peak RSS by 31.1%.
+The 1080p cache had zero evictions and stayed raw. An isolated snapshot still pays for the
+first SVG rasterization and packing, which traded 0.12 s wall time for 33.7% lower peak RSS
+in this run.
+
+A controlled run of the modified binary compared `AETHER_PROFILE=1 AETHER_IMAGE_PACK=off`
+with packing enabled. All three PNGs from both modes matched the original continuity
+references byte-for-byte.
+
+| Three 4K frames, same binary | Raw cache | Packed on pressure |
+| --- | ---: | ---: |
+| Fitted-image hits / misses / evictions | 9 / 54 / 51 | 44 / 19 / 0 |
+| SVG raster calls / total time | 51 / 13.752 s | 17 / 4.447 s |
+| SVG parse time | 0.164 s | 0.059 s |
+| Image fitting time | 0.019 s | 0.013 s |
+| Image blit time, including unpacking | 0.538 s | 0.702 s |
+| Image packing time | — | 0.086 s |
+| Finishing time | 0.305 s | 0.315 s |
+| Largest requested fitted raster | 52,828,440 bytes | 52,828,440 bytes |
+| Total requested fitted raster bytes | 739,404,348 | 247,430,504 |
+| Peak worker fitted-cache bytes | 67,015,332 | 59,650,148 |
+
+The raw cache spent 91% of its measured raster phase on SVG rasterization. The optimized
+cache retained those exact pixels within the existing 64 MiB budget, shifting a small
+amount of work into blitting. A small, cache-pressure fixture produced byte-identical
+segmented MP4s at 1, 2, 4 and 64 configured threads and with packing disabled.

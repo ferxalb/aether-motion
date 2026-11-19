@@ -1,6 +1,8 @@
 //! Decoded and fitted image cache, with exact transparent-row skipping and opaque-span copies.
 
+use super::packed_image::{PackedImage, BAND_BYTES};
 use crate::model::Color;
+use crate::profile::{self, ImageMetric, Phase};
 use crate::render::check_image;
 use crate::render::geometry::{clip_pixels, Rect};
 use crate::render::paint::svg;
@@ -14,9 +16,37 @@ use std::path::Path;
 const CACHE_LIMIT: usize = 64 * 1024 * 1024;
 
 pub(in crate::render) struct CachedImage {
-    pixels: RgbaImage,
+    pixels: ImagePixels,
     opaque: bool,
     rows: Vec<(u32, u32, bool)>,
+}
+
+enum ImagePixels {
+    Raw(RgbaImage),
+    Packed(PackedImage),
+}
+
+impl CachedImage {
+    fn bytes(&self) -> usize {
+        let bytes = match &self.pixels {
+            ImagePixels::Raw(pixels) => pixels.as_raw().len(),
+            ImagePixels::Packed(pixels) => pixels.bytes,
+        };
+        bytes + self.rows.capacity() * size_of::<(u32, u32, bool)>()
+    }
+
+    fn pack(&mut self) {
+        if let ImagePixels::Raw(raw) = &self.pixels {
+            if raw.as_raw().len() >= 512 * 1024 {
+                if let Some(packed) = profile::time(Phase::ImagePack, || {
+                    PackedImage::pack(raw.as_raw(), raw.width() as usize * 4)
+                }) {
+                    profile::image(ImageMetric::Packed, 1);
+                    self.pixels = ImagePixels::Packed(packed);
+                }
+            }
+        }
+    }
 }
 
 /// Where a bitmap comes from: a file on disk or inline `<svg>` markup.
@@ -34,81 +64,115 @@ fn is_svg(path: &Path) -> bool {
         .is_some_and(|e| e.eq_ignore_ascii_case("svg"))
 }
 
-impl<'a> Renderer<'a> {
-    pub(in crate::render) fn cache_image(&mut self, key: &ImageKey<'a>) -> Result<()> {
-        let (src, w, h, fit) = *key;
-        if !self.images.contains_key(key) {
-            let pixel_bytes = (w as usize)
-                .checked_mul(h as usize)
-                .and_then(|n| n.checked_mul(4))
-                .ok_or_else(|| anyhow!("rasterized image is too large"))?;
-            if pixel_bytes > CACHE_LIMIT {
-                return Err(anyhow!("rasterized image exceeds 64 MiB; use --scale"));
-            }
-            // Metadata is optional: a legal image must not become too large merely
-            // because row acceleration was added.
-            let row_bytes = h as usize * std::mem::size_of::<(u32, u32, bool)>();
-            let cache_rows = row_bytes <= CACHE_LIMIT - pixel_bytes;
-            let bytes = pixel_bytes + if cache_rows { row_bytes } else { 0 };
-            let vector = match src {
-                ImageSrc::Inline(markup) => Some(svg::parse_svg(markup.as_bytes())?),
-                ImageSrc::File(path) if is_svg(path) => Some(
-                    svg::parse_svg(&svg::read_limited(path)?)
-                        .with_context(|| format!("in {}", path.display()))?,
-                ),
-                ImageSrc::File(_) | ImageSrc::Sequence(_) => None,
-            };
-            let fitted = match (vector, src) {
-                (Some(tree), _) => svg::rasterize(&tree, w, h, fit)?,
-                (None, ImageSrc::File(path)) => fit_pixels(&decode(path)?, w, h, fit)?,
-                (None, ImageSrc::Sequence(path)) => {
-                    let source = self.sequence_sources.get(path)?;
-                    fit_with(source, w, h, fit, resize_sequence)?
-                }
-                (None, ImageSrc::Inline(_)) => unreachable!("inline sources are always vector"),
-            };
-            while bytes > CACHE_LIMIT.saturating_sub(self.image_cache_bytes)
-                || self.images.len() >= 4096
-            {
-                if let Some(oldest) = self.image_order.pop_front() {
-                    if let Some(old) = self.images.remove(&oldest) {
-                        self.image_cache_bytes -= old.pixels.as_raw().len()
-                            + old.rows.len() * std::mem::size_of::<(u32, u32, bool)>();
-                    }
-                } else {
-                    break;
-                }
-            }
-            self.image_cache_bytes += bytes;
-            self.image_order.push_back(*key);
-            let opaque = fitted.pixels().all(|pixel| pixel[3] == 255);
-            let rows = if cache_rows {
-                fitted
-                    .as_raw()
-                    .chunks_exact(w as usize * 4)
-                    .map(|row| {
-                        let row = row.as_chunks::<4>().0;
-                        let first = row.iter().position(|p| p[3] != 0).unwrap_or(0);
-                        let last = row.iter().rposition(|p| p[3] != 0).map_or(0, |i| i + 1);
-                        (
-                            first as u32,
-                            last as u32,
-                            row[first..last].iter().all(|p| p[3] == 255),
-                        )
-                    })
-                    .collect()
-            } else {
-                Vec::new()
-            };
-            self.images.insert(
-                *key,
-                CachedImage {
-                    pixels: fitted,
-                    opaque,
-                    rows,
-                },
-            );
+impl ImageSrc<'_> {
+    fn is_vector(self) -> bool {
+        match self {
+            Self::Inline(_) => true,
+            Self::File(path) => is_svg(path),
+            Self::Sequence(_) => false,
         }
+    }
+}
+
+fn pack_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("AETHER_IMAGE_PACK").as_deref() != Ok("off"))
+}
+
+impl<'a> Renderer<'a> {
+    fn cache_image(&mut self, key: &ImageKey<'a>) -> Result<()> {
+        if self.images.contains_key(key) {
+            profile::image(ImageMetric::Hit, 1);
+            return Ok(());
+        }
+        profile::image(ImageMetric::Miss, 1);
+        let (src, w, h, fit) = *key;
+        let pixel_bytes = (w as usize)
+            .checked_mul(h as usize)
+            .and_then(|n| n.checked_mul(4))
+            .ok_or_else(|| anyhow!("rasterized image is too large"))?;
+        if pixel_bytes > CACHE_LIMIT {
+            return Err(anyhow!("rasterized image exceeds 64 MiB; use --scale"));
+        }
+        let row_bytes = h as usize * size_of::<(u32, u32, bool)>();
+        let cache_rows = row_bytes <= CACHE_LIMIT - pixel_bytes;
+        let requested = pixel_bytes + if cache_rows { row_bytes } else { 0 };
+        if requested > CACHE_LIMIT - self.image_cache_bytes
+            && !self.pack_svg_images
+            && pack_enabled()
+        {
+            self.pack_svg_images = true;
+            // Compact surviving vectors before allocating the next potentially large raster.
+            for key in &self.image_order {
+                if key.0.is_vector() {
+                    let image = self
+                        .images
+                        .get_mut(key)
+                        .expect("cache order tracks entries");
+                    let old_bytes = image.bytes();
+                    image.pack();
+                    self.image_cache_bytes -= old_bytes - image.bytes();
+                }
+            }
+        }
+        profile::image(ImageMetric::LargestRasterBytes, pixel_bytes);
+        profile::image(ImageMetric::RasterBytes, pixel_bytes);
+        let fitted = match src {
+            ImageSrc::Inline(markup) => {
+                svg::rasterize(&svg::parse_svg(markup.as_bytes())?, w, h, fit)?
+            }
+            ImageSrc::File(path) if is_svg(path) => {
+                let tree = svg::parse_svg(&svg::read_limited(path)?)
+                    .with_context(|| format!("in {}", path.display()))?;
+                svg::rasterize(&tree, w, h, fit)?
+            }
+            ImageSrc::File(path) => fit_pixels(&decode(path)?, w, h, fit)?,
+            ImageSrc::Sequence(path) => {
+                let source = self.sequence_sources.get(path)?;
+                fit_with(source, w, h, fit, resize_sequence)?
+            }
+        };
+        let opaque = fitted.pixels().all(|pixel| pixel[3] == 255);
+        let rows = if cache_rows {
+            fitted
+                .as_raw()
+                .chunks_exact(w as usize * 4)
+                .map(|row| {
+                    let row = row.as_chunks::<4>().0;
+                    let first = row.iter().position(|p| p[3] != 0).unwrap_or(0);
+                    let last = row.iter().rposition(|p| p[3] != 0).map_or(0, |i| i + 1);
+                    (
+                        first as u32,
+                        last as u32,
+                        row[first..last].iter().all(|p| p[3] == 255),
+                    )
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let mut image = CachedImage {
+            pixels: ImagePixels::Raw(fitted),
+            opaque,
+            rows,
+        };
+        if self.pack_svg_images && src.is_vector() {
+            image.pack();
+        }
+        let bytes = image.bytes();
+        while bytes > CACHE_LIMIT - self.image_cache_bytes || self.images.len() >= 4096 {
+            let oldest = self.image_order.pop_front().expect("new image fits alone");
+            self.image_cache_bytes -= self
+                .images
+                .remove(&oldest)
+                .expect("cache order tracks entries")
+                .bytes();
+            profile::image(ImageMetric::Eviction, 1);
+        }
+        self.image_cache_bytes += bytes;
+        profile::image(ImageMetric::PeakCacheBytes, self.image_cache_bytes);
+        self.image_order.push_back(*key);
+        self.images.insert(*key, image);
         Ok(())
     }
 
@@ -125,7 +189,14 @@ impl<'a> Renderer<'a> {
         self.cache_image(&key)?;
         let x0 = (rect.x * self.scale).round() as i32;
         let y0 = (rect.y * self.scale).round() as i32;
-        blit(&mut self.surface, &self.images[&key], x0, y0, w, h, alpha);
+        blit(
+            &mut self.surface,
+            &self.images[&key],
+            [x0, y0],
+            [w, h],
+            alpha,
+            &mut self.image_band,
+        );
         Ok(())
     }
 }
@@ -159,12 +230,19 @@ impl<'a> Renderer<'a> {
         let pixels = svg::rasterize(&tree, w, h, fit)?;
         let image = CachedImage {
             opaque: pixels.pixels().all(|pixel| pixel[3] == 255),
-            pixels,
+            pixels: ImagePixels::Raw(pixels),
             rows: Vec::new(),
         };
         let x0 = (rect.x * self.scale).round() as i32;
         let y0 = (rect.y * self.scale).round() as i32;
-        blit(&mut self.surface, &image, x0, y0, w, h, alpha);
+        blit(
+            &mut self.surface,
+            &image,
+            [x0, y0],
+            [w, h],
+            alpha,
+            &mut self.image_band,
+        );
         Ok(())
     }
 }
@@ -270,33 +348,35 @@ pub(in crate::render) fn fit_with(
     if !matches!(fit, "fill" | "contain" | "cover") {
         return Err(anyhow!("unsupported object-fit: {fit}"));
     }
-    Ok(match fit {
-        "fill" => resize(image, w, h)?,
-        _ => {
-            let sx = w as f32 / image.width() as f32;
-            let sy = h as f32 / image.height() as f32;
-            let factor = if fit == "contain" {
-                sx.min(sy)
-            } else {
-                sx.max(sy)
-            };
-            let nw = ((image.width() as f32 * factor).round() as u32).max(1);
-            let nh = ((image.height() as f32 * factor).round() as u32).max(1);
-            if u64::from(nw) * u64::from(nh) > (CACHE_LIMIT / 4) as u64 {
-                return Err(anyhow!(
-                    "intermediate image exceeds 64 MiB; adjust object-fit or --scale"
-                ));
+    profile::time(Phase::ImageFit, || {
+        Ok(match fit {
+            "fill" => resize(image, w, h)?,
+            _ => {
+                let sx = w as f32 / image.width() as f32;
+                let sy = h as f32 / image.height() as f32;
+                let factor = if fit == "contain" {
+                    sx.min(sy)
+                } else {
+                    sx.max(sy)
+                };
+                let nw = ((image.width() as f32 * factor).round() as u32).max(1);
+                let nh = ((image.height() as f32 * factor).round() as u32).max(1);
+                if u64::from(nw) * u64::from(nh) > (CACHE_LIMIT / 4) as u64 {
+                    return Err(anyhow!(
+                        "intermediate image exceeds 64 MiB; adjust object-fit or --scale"
+                    ));
+                }
+                let resized = resize(image, nw, nh)?;
+                let mut canvas = RgbaImage::from_pixel(w, h, Rgba([0, 0, 0, 0]));
+                imageops::overlay(
+                    &mut canvas,
+                    &resized,
+                    (w as i64 - nw as i64) / 2,
+                    (h as i64 - nh as i64) / 2,
+                );
+                canvas
             }
-            let resized = resize(image, nw, nh)?;
-            let mut canvas = RgbaImage::from_pixel(w, h, Rgba([0, 0, 0, 0]));
-            imageops::overlay(
-                &mut canvas,
-                &resized,
-                (w as i64 - nw as i64) / 2,
-                (h as i64 - nh as i64) / 2,
-            );
-            canvas
-        }
+        })
     })
 }
 
@@ -305,7 +385,7 @@ impl CachedImage {
     /// contain` left transparent bars around the picture.
     pub(in crate::render) fn frame(pixels: RgbaImage, opaque: bool) -> Self {
         Self {
-            pixels,
+            pixels: ImagePixels::Raw(pixels),
             opaque,
             rows: Vec::new(),
         }
@@ -316,11 +396,23 @@ impl CachedImage {
 pub(in crate::render) fn blit(
     surface: &mut Surface,
     image: &CachedImage,
-    x0: i32,
-    y0: i32,
-    w: u32,
-    h: u32,
+    origin: [i32; 2],
+    size: [u32; 2],
     alpha: f32,
+    scratch: &mut Vec<u8>,
+) {
+    profile::time(Phase::ImageBlit, || {
+        blit_pixels(surface, image, origin, size, alpha, scratch);
+    });
+}
+
+fn blit_pixels(
+    surface: &mut Surface,
+    image: &CachedImage,
+    [x0, y0]: [i32; 2],
+    [w, h]: [u32; 2],
+    alpha: f32,
+    scratch: &mut Vec<u8>,
 ) {
     let Some(bounds) = clip_pixels(
         (surface.width, surface.height),
@@ -337,12 +429,11 @@ pub(in crate::render) fn blit(
     let source_x = (bounds.x0 as i64 - i64::from(x0)) as usize * 4;
     let source_y = (bounds.y0 as i64 - i64::from(y0)) as usize;
     let row_len = (bounds.x1 - bounds.x0) * 4;
+    let mut loaded_band = None;
     for (i, row) in surface.pixels[bounds.y0 * stride..bounds.y1 * stride]
         .chunks_exact_mut(stride)
         .enumerate()
     {
-        let source_offset = (source_y + i) * source_stride + source_x;
-        let source = &image.pixels.as_raw()[source_offset..source_offset + row_len];
         let dest = &mut row[bounds.x0 * 4..bounds.x1 * 4];
         let (first, last, row_opaque) =
             image
@@ -355,7 +446,25 @@ pub(in crate::render) fn blit(
         if start >= end {
             continue;
         }
-        let source = &source[start..end];
+        let y = source_y + i;
+        let (pixels, local_y) = match &image.pixels {
+            ImagePixels::Raw(raw) => (raw.as_raw().as_slice(), y),
+            ImagePixels::Packed(packed) => {
+                let band = y / packed.rows_per_band;
+                if loaded_band != Some(band) {
+                    let first = band * packed.rows_per_band;
+                    let count = (h as usize - first).min(packed.rows_per_band);
+                    if scratch.is_empty() {
+                        scratch.resize(BAND_BYTES, 0);
+                    }
+                    packed.unpack(band, &mut scratch[..count * source_stride]);
+                    loaded_band = Some(band);
+                }
+                (scratch.as_slice(), y % packed.rows_per_band)
+            }
+        };
+        let offset = local_y * source_stride + source_x;
+        let source = &pixels[offset + start..offset + end];
         let dest = &mut dest[start..end];
         if (image.opaque && alpha >= 1.0) || (row_opaque && alpha == 1.0) {
             dest.copy_from_slice(source);
@@ -371,6 +480,32 @@ pub(in crate::render) fn blit(
                     Surface::blend_pixel(dest, color, alpha * f32::from(a) / 255.0);
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn packed_image_blit_matches_raw_with_clipping_and_alpha() {
+        let size = [700, 240];
+        let pixels = RgbaImage::from_fn(size[0], size[1], |x, y| {
+            let a = [0, 85, 255][(x as usize / 54 + y as usize / 21) % 3];
+            Rgba([120, 224, 78, a])
+        });
+        let raw = CachedImage::frame(pixels.clone(), false);
+        let mut packed = CachedImage::frame(pixels, false);
+        packed.pack();
+        assert!(matches!(packed.pixels, ImagePixels::Packed(_)));
+        let mut scratch = Vec::new();
+        for alpha in [0.34, 1.0] {
+            let mut expected = Surface::filled(400, 200, 1.0, Color::BLACK);
+            let mut actual = Surface::filled(400, 200, 1.0, Color::BLACK);
+            blit(&mut expected, &raw, [-157, -41], size, alpha, &mut scratch);
+            blit(&mut actual, &packed, [-157, -41], size, alpha, &mut scratch);
+            assert_eq!(actual.pixels, expected.pixels);
         }
     }
 }

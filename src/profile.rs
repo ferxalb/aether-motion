@@ -12,6 +12,7 @@ use std::time::Instant;
 
 /// A timed part of a render.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(usize)]
 pub enum Phase {
     /// Drawing frames (everything the renderer does for a frame).
     Raster,
@@ -25,23 +26,35 @@ pub enum Phase {
     LayerBlur,
     /// Elements drawn through an offscreen effect layer (part of `Raster`).
     EffectLayer,
+    SvgParse,
+    SvgRaster,
+    ImageFit,
+    ImageBlit,
+    ImagePack,
+    Finish,
 }
 
-const PHASES: [Phase; 6] = [
+const PHASES: [Phase; 12] = [
     Phase::Raster,
     Phase::Convert,
     Phase::Encode,
     Phase::Bloom,
     Phase::LayerBlur,
     Phase::EffectLayer,
+    Phase::SvgParse,
+    Phase::SvgRaster,
+    Phase::ImageFit,
+    Phase::ImageBlit,
+    Phase::ImagePack,
+    Phase::Finish,
 ];
 
-static NANOS: [AtomicU64; 6] = [const { AtomicU64::new(0) }; 6];
-static CALLS: [AtomicU64; 6] = [const { AtomicU64::new(0) }; 6];
+static NANOS: [AtomicU64; PHASES.len()] = [const { AtomicU64::new(0) }; PHASES.len()];
+static CALLS: [AtomicU64; PHASES.len()] = [const { AtomicU64::new(0) }; PHASES.len()];
 
 impl Phase {
     fn index(self) -> usize {
-        PHASES.iter().position(|&p| p == self).unwrap()
+        self as usize
     }
 
     fn name(self) -> &'static str {
@@ -52,6 +65,12 @@ impl Phase {
             Self::Bloom => "bloom",
             Self::LayerBlur => "layer-blur",
             Self::EffectLayer => "effect-layer",
+            Self::SvgParse => "svg-parse",
+            Self::SvgRaster => "svg-raster",
+            Self::ImageFit => "image-fit",
+            Self::ImageBlit => "image-blit",
+            Self::ImagePack => "image-pack",
+            Self::Finish => "finish",
         }
     }
 }
@@ -77,6 +96,43 @@ pub fn time<T>(phase: Phase, f: impl FnOnce() -> T) -> T {
     out
 }
 
+/// Fitted image residency and raster sizes, recorded only in profiling runs.
+#[derive(Clone, Copy)]
+#[repr(usize)]
+pub(crate) enum ImageMetric {
+    Hit,
+    Miss,
+    Eviction,
+    Packed,
+    PeakCacheBytes,
+    LargestRasterBytes,
+    RasterBytes,
+}
+
+const IMAGE_METRICS: [(&str, bool); 7] = [
+    ("hits", false),
+    ("misses", false),
+    ("evictions", false),
+    ("packed", false),
+    ("peak worker fitted bytes", true),
+    ("largest fitted raster bytes", true),
+    ("total fitted raster bytes", false),
+];
+static IMAGE_VALUES: [AtomicU64; IMAGE_METRICS.len()] =
+    [const { AtomicU64::new(0) }; IMAGE_METRICS.len()];
+
+#[inline]
+pub(crate) fn image(metric: ImageMetric, value: usize) {
+    if enabled() {
+        let i = metric as usize;
+        if IMAGE_METRICS[i].1 {
+            IMAGE_VALUES[i].fetch_max(value as u64, Ordering::Relaxed);
+        } else {
+            IMAGE_VALUES[i].fetch_add(value as u64, Ordering::Relaxed);
+        }
+    }
+}
+
 /// The summary printed by [`report`]: one line per phase that ran.
 pub fn summary() -> String {
     let mut out = String::from("profile (thread seconds, summed across workers):");
@@ -94,6 +150,12 @@ pub fn summary() -> String {
             calls,
             seconds * 1e3 / calls as f64
         ));
+    }
+    if IMAGE_VALUES[ImageMetric::Miss as usize].load(Ordering::Relaxed) != 0 {
+        out.push_str("\n  fitted image cache:");
+        for ((name, _), value) in IMAGE_METRICS.iter().zip(&IMAGE_VALUES) {
+            out.push_str(&format!(" {name}={};", value.load(Ordering::Relaxed)));
+        }
     }
     out
 }

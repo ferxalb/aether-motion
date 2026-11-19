@@ -7,9 +7,28 @@ CLI/MCP output may still change between minor releases.
 
 ## [Unreleased]
 
+### Added
+
 - Native PNG and WebP cel playback with clip-local timing, hold, loop, pingpong, and bounded image caching.
 - Camera-relative pan per depth plane and optional filmic root exposure, highlight roll-off, and shadow toe.
 - The Morning Shift, an original layered industrial dawn example with illustrated assets, animated rain and fog, and a 12 FPS character sequence.
+- `AETHER_PROFILE=1` now reports fitted-image hits, misses, evictions, packed entries, and
+  raster and cache byte counts. It also times SVG parsing and rasterization, image fitting,
+  packing, blitting (including alpha blending and unpacking), and frame finishing.
+- `AETHER_IMAGE_PACK=off` selects the raw fitted-image cache for profiling and output comparisons.
+
+### Changed
+
+- Under byte pressure, the fitted-image cache stores compressible SVG rasters in lossless LZ4
+  row bands within the existing 64 MiB budget. Painting unpacks only the bands it needs into a
+  reusable 256 KiB buffer. Cache keys, bitmap and sequence storage, and rendered pixels stay the same.
+- On the native macOS cinematic benchmark, rendering three 4K PNGs took 6.21 s, down from
+  15.30 s. CPU time fell 59.7% and peak RSS fell 31.1%. The isolated 4K still used 33.7% less
+  peak RSS and took 0.12 s longer. The 1080p run was effectively unchanged.
+  [Benchmark details](BENCHMARK.md#fitted-svg-cache-pressure-at-4k)
+- Added regression coverage for packed row bands, clipped alpha blits, and partial bands.
+  The three 4K continuity PNGs matched byte-for-byte, and a cache-pressure fixture produced
+  identical segmented exports at 1, 2, 4, and 64 configured threads.
 
 ## [0.1.6] - 2026-11-18
 

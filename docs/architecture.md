@@ -26,6 +26,23 @@ Each gradient or outer-shadow tile cache retains at most 4,096 keys, including f
 
 Frames and offscreen RGBA layers keep their 128 MiB per-buffer limit, with checked multiplication and widened coordinate subtraction before allocation. Rotation and element blur reject unrepresentable pixel coordinates. Shadow-edge profiles are limited to 16 MiB before allocation. These are per-resource bounds, not a guarantee of total process memory or successful allocation under memory pressure.
 
+### Fitted SVGs under cache pressure
+
+The fitted-image cache uses the same 64 MiB and 4,096-entry limits for raw and packed pixels
+combined. On byte pressure, it attempts to pack resident SVGs and subsequent fitted SVGs of
+at least 512 KiB. `paint/packed_image.rs` stores the original straight RGBA in independent
+lossless LZ4 row bands. It keeps packed data only when it saves at least one quarter of the
+original storage. The blitter reuses a 256 KiB buffer and unpacks only bands with rows it needs
+to paint. Geometry, fitting, alpha math and cache keys remain the same, so cold and warm renders
+use the same pixels. Bitmap and sequence entries retain raw fitted pixels. Cache eviction can
+still occur when the combined working set exceeds the limit.
+
+`AETHER_PROFILE=1` reports SVG parse and raster phases, bitmap fit, image packing, blit
+(time includes blending and unpacking), frame finishing, and fitted-image cache counters.
+Peak fitted bytes are the largest residency of any worker, and raster-byte counters count
+logical fitted allocations. Use the operating system's time tool for process peak RSS.
+`AETHER_IMAGE_PACK=off` selects the raw cache for profiling and output comparisons.
+
 ## Cinematic layers and finishing
 
 `parse/sequence.rs` validates numbered still-image files and builds an immutable path table. `FrameState` includes the cel index so a new cel invalidates the identical-frame shortcut. `paint/images.rs` decodes on demand into a per-renderer 64 MiB FIFO cache shared by all sequence elements. The existing 64 MiB fitted image cache holds fitted cels and static images or SVG plates. Both caches cap their entry count at 4,096. Cel resizing filters premultiplied components and converts back to straight alpha for the existing image blitter. Static image fitting retains its legacy behavior. The temporary resize plane is limited to 128 MiB. Cached pixels and the frame chosen at a given timestamp are independent of cache history.

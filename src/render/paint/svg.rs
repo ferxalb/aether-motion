@@ -4,6 +4,7 @@
 //! Text, external images, and scripts inside an SVG are not rendered; the document is parsed with
 //! no font database and no resource resolver, so output depends only on the markup and the size.
 
+use crate::profile::{self, Phase};
 use anyhow::{anyhow, Context, Result};
 use image::RgbaImage;
 use resvg::{tiny_skia, usvg};
@@ -26,7 +27,9 @@ pub(crate) fn parse_svg(data: &[u8]) -> Result<usvg::Tree> {
     if data.len() as u64 > MAX_SVG_BYTES {
         return Err(anyhow!("SVG exceeds 8 MiB; simplify it"));
     }
-    usvg::Tree::from_data(data, &svg_options()).map_err(|e| anyhow!("invalid SVG: {e}"))
+    profile::time(Phase::SvgParse, || {
+        usvg::Tree::from_data(data, &svg_options()).map_err(|e| anyhow!("invalid SVG: {e}"))
+    })
 }
 
 /// Validates an SVG file and returns its intrinsic size.
@@ -49,6 +52,10 @@ pub(crate) fn read_limited(path: &std::path::Path) -> Result<Vec<u8>> {
 /// Rasterizes `tree` into a `w` x `h` bitmap using `fit` (`fill`, `contain`, or `cover`).
 /// Vectors are drawn at the target resolution, so output stays sharp at any `--scale`.
 pub(crate) fn rasterize(tree: &usvg::Tree, w: u32, h: u32, fit: &str) -> Result<RgbaImage> {
+    profile::time(Phase::SvgRaster, || rasterize_pixels(tree, w, h, fit))
+}
+
+fn rasterize_pixels(tree: &usvg::Tree, w: u32, h: u32, fit: &str) -> Result<RgbaImage> {
     let size = tree.size();
     let (sx, sy) = (w as f32 / size.width(), h as f32 / size.height());
     let (sx, sy) = match fit {

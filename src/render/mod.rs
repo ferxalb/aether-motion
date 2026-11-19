@@ -108,6 +108,8 @@ pub struct Renderer<'a> {
     images: HashMap<ImageKey<'a>, CachedImage>,
     image_order: VecDeque<ImageKey<'a>>,
     image_cache_bytes: usize,
+    pack_svg_images: bool,
+    image_band: Vec<u8>,
     sequence_sources: SequenceSources<'a>,
     /// One decoder per `<video>` element (by element index), created when its first frame is drawn.
     videos: HashMap<usize, VideoPlayer>,
@@ -234,6 +236,8 @@ impl<'a> Renderer<'a> {
             images: HashMap::new(),
             image_order: VecDeque::new(),
             image_cache_bytes: 0,
+            pack_svg_images: false,
+            image_band: Vec::new(),
             sequence_sources: SequenceSources::default(),
             videos: HashMap::new(),
             fonts,
@@ -397,6 +401,12 @@ impl<'a> Renderer<'a> {
 
     /// Frame-wide passes after drawing: root CSS grade, filmic tone curve, vignette, then grain.
     pub(in crate::render) fn finish_frame(&mut self, time: f64) {
+        crate::profile::time(crate::profile::Phase::Finish, || {
+            self.apply_frame_finish(time)
+        });
+    }
+
+    fn apply_frame_finish(&mut self, time: f64) {
         if !self.grade.is_identity() {
             self.grade.grade_frame(&mut self.surface.pixels);
             self.surface.mark_all_painted();
