@@ -1071,3 +1071,57 @@ working set of the blurred column at 4K. Fitted-image peaks stayed under the 64 
 Known limitation: the native encoder converts with limited-range BT.601 and tags the
 stream accordingly (SMPTE C primaries, BT.709 transfer), which is consistent but not the
 BT.709 convention usual for UHD.
+
+## Camera Rig v1 (2026-11-19)
+
+`examples/cinematic-camera-rig-6s.html` (1920×1080, 24 fps, 144 frames, `--quality standard`,
+release build with `AETHER_PROFILE=1`, same desktop machine as the cinematic sections above).
+The baseline is the same composition with the rig replaced by classic `data-hf-camera`
+keyframes at the same four key times, zooms, and resolved focus points (`ease-in-out-cubic`
+segments). It runs on the same binary, so drawing, caching, and encoding are identical. Only
+the camera path differs.
+
+| Run | Wall | CPU (user + sys) | Peak RSS | Effective fps | SVG rasters | Fitted hits / misses / evictions |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Rig, 1 thread | 229.22 s | 229.17 s | 275,173,376 bytes | 0.63 | 1,683 | 2,336 / 1,984 / 1,680 |
+| Classic baseline, 1 thread | 212.38 s | 212.34 s | 264,781,824 bytes | 0.68 | 1,581 | 2,463 / 1,857 / 1,555 |
+| Rig, 4 threads | 75.97 s | 262.46 s | 763,166,720 bytes | 1.90 | 1,757 | 2,219 / 2,101 / 1,193 |
+| Classic baseline, 4 threads | 76.84 s | 254.74 s | 770,052,096 bytes | 1.87 | 1,687 | 2,311 / 2,009 / 1,124 |
+
+Rig evaluation does not appear in the profile. A pose is a few curve evaluations and one
+spline read of the baked path, and the bake (240 Hz over 6 s) runs once at load. The 1-thread
+difference follows the SVG raster count. The rig's log-space dolly yields different fitted
+plate sizes than the baseline's eased zoom, and that costs 102 more SVG rasters (+6.5%); at 4
+threads the wall times are within 1%. Every SVG raster
+happens on a zooming frame: frames 4–23 (zoom held at 1.35 while the camera tracks) did 19
+cold rasters, 0 evictions, and 551 hits on both cameras. Pans and holds therefore reuse the
+cache. Zooming frames fit each plate at a new exact size, as classic zoom always has. This
+cost is pre-existing and is not addressed in this phase (no cache redesign). The cache stays
+within its 64 MiB budget per worker (peak 67,108,804 bytes), so memory is bounded.
+
+Determinism, on the demo itself:
+
+| Check | Result |
+| --- | --- |
+| 1 vs 4 threads | MP4s identical (`32992c86…`); the baseline is also identical across thread counts |
+| Segmented export | 1-second segment parts `4..6`, `0..2`, `2..4`, rendered in that order by separate processes and assembled, are byte-identical to the single render |
+| Frame order | 1080p PNGs of frames 0, 47, 48, 95, 96, and 143 are identical when rendered as one batch (4 threads), in reverse order (1 thread), and one process per frame |
+| Camera curve (`tests/camera_rig.rs`) | Sampled every 1 ms: velocity changes at most 1.5 px/s per ms in translation and 0.01/s per ms in scale. Zoom is held for 0–2 s, rises for 2–4 s, and falls for 4–6 s, monotonically in each segment. The shot ends at rest on its key; the follow-to-fixed blend reverses by at most 0.0014 px in total |
+| Framing | While following (0–2 s), the walker's center stays 189.4–195.6 px left of the frame center (anchor 192 px) and exactly on the vertical anchor. The ±3.1 px ripple is the walk's own 3.75 px steps at zoom 1.62; the camera itself moves smoothly |
+
+Native 4K PNGs (`--size 4k`, 1 thread):
+
+| Frame | Wall | CPU | Peak RSS |
+| --- | ---: | ---: | ---: |
+| 0 (follow) | 8.70 s | 8.68 s | 249,483,264 bytes |
+| 48 (dolly starts) | 8.76 s | 8.74 s | 250,097,664 bytes |
+| 72 (dolly) | 9.99 s | 9.97 s | 285,614,080 bytes |
+| 96 (deepest zoom) | 11.50 s | 11.48 s | 328,704,000 bytes |
+| 120 (reveal) | 8.06 s | 8.05 s | 224,067,584 bytes |
+| 143 (end) | 5.74 s | 5.72 s | 158,412,800 bytes |
+
+The first 4K draft kept the dawn sky inside the camera (`data-hf-parallax="0"`). At zoom 1.6
+its fitted raster exceeded the existing 64 MiB per-image limit, and frame 96 failed with
+`rasterized image exceeds 64 MiB`. The sky is now a fixed backdrop outside the camera, which is
+also physically right for a dolly. The largest fitted raster at 1080p dropped from 22,965,660
+to 13,850,172 bytes.

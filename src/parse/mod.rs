@@ -32,6 +32,8 @@ pub use variables::{read_values_file, values_from_json, VariableValues};
 use crate::model::{Background, BlendMode, Color, Composition, Content, MotionBlur};
 use animation::camera::motion_from_camera;
 use animation::motion::{build_motion, motion_from_keyframes};
+use animation::rig::{attach_rigs, keys_from_frames};
+use animation::shots::compile_shots;
 use anyhow::{anyhow, bail, Context, Result};
 use css::cascade::cascade;
 use css::stylesheet::parse_css;
@@ -58,13 +60,19 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
 /// out on one row per explicit line, the renderer measures where those rows must wrap (with the
 /// same fonts and layout it draws with), and the second parse builds the wrapped rows. Parsing is
 /// deterministic, so both parses see the same document.
+///
+/// Camera rigs that follow a subject are bound last: the renderer measures the resting layout,
+/// and each subject's path is baked once (see `crate::camera::tracking`).
 pub fn parse_file_with(path: &Path, values: &VariableValues) -> Result<Composition> {
     let first = parse_pass(path, values, &SplitPlan::default())?;
-    if !first.elements.iter().any(|e| e.layout.split_wrap.is_some()) {
-        return Ok(first);
-    }
-    let breaks = crate::render::split_wrap_breaks(&first).context("data-hf-split-wrap")?;
-    parse_pass(path, values, &SplitPlan::resolved(breaks))
+    let mut composition = if first.elements.iter().any(|e| e.layout.split_wrap.is_some()) {
+        let breaks = crate::render::split_wrap_breaks(&first).context("data-hf-split-wrap")?;
+        parse_pass(path, values, &SplitPlan::resolved(breaks))?
+    } else {
+        first
+    };
+    crate::render::bind_camera_rigs(&mut composition).context("data-hf-camera-subject")?;
+    Ok(composition)
 }
 
 /// One parse of the composition, with the wrap breaks of `splits` (empty on the first parse).
@@ -237,6 +245,7 @@ fn parse_pass(path: &Path, values: &VariableValues, splits: &SplitPlan) -> Resul
     }
     let mut elements = Vec::with_capacity(pending.len());
     let mut transitions = Vec::new();
+    let mut rigs = Vec::new();
     for (idx, mut p) in pending.into_iter().enumerate() {
         p.element.start = memo[idx].unwrap();
         p.element.end = if let Some(d) = p.duration {
@@ -290,12 +299,30 @@ fn parse_pass(path: &Path, values: &VariableValues, splits: &SplitPlan) -> Resul
                 bail!("data-hf-camera cannot be on the root; add a container inside it");
             }
             if p.camera
+                .frames
                 .last()
                 .is_some_and(|frame| frame.at > clip_len + 1e-9)
             {
                 bail!("data-hf-camera exceeds the duration of {label}");
             }
-            p.element.motion = motion_from_camera(rest, &p.camera);
+            if p.camera.is_rig() {
+                let options = p.camera.options.clone().unwrap_or_default();
+                let keys = if p.camera.shots.is_empty() {
+                    keys_from_frames(&p.camera.frames, &options)
+                } else {
+                    compile_shots(&p.camera.shots, &options, clip_len)
+                        .with_context(|| format!("data-hf-shots on {label}"))?
+                };
+                p.element.motion = crate::model::Motion {
+                    base: rest,
+                    hold_before: true,
+                    hold_after: true,
+                    ..Default::default()
+                };
+                rigs.push((idx, keys, options));
+            } else {
+                p.element.motion = motion_from_camera(rest, &p.camera.frames);
+            }
         }
         if let Some(path) = p.motion_path.take() {
             if idx == 0 {
@@ -361,6 +388,7 @@ fn parse_pass(path: &Path, values: &VariableValues, splits: &SplitPlan) -> Resul
         }
         elements.push(p.element);
     }
+    attach_rigs(&mut elements, rigs, &ids)?;
     apply_transitions(&mut elements, &transitions, &ids, (width, height))?;
     // Light and focus transitions add filter tracks to scenes that had none.
     for element in elements.iter_mut().skip(1) {

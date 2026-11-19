@@ -64,10 +64,7 @@ impl FrameState {
             rotate: pose.rotate,
             reveal: pose.reveal,
             camera_pan: if element.layout.has_parallax {
-                [
-                    motion.x.eval(elapsed, motion.base.x, true, true) - motion.base.x,
-                    motion.y.eval(elapsed, motion.base.y, true, true) - motion.base.y,
-                ]
+                motion.camera_pan(elapsed)
             } else {
                 [0.0; 2]
             },

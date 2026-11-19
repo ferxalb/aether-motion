@@ -1,8 +1,10 @@
 //! DOM walk: validates elements, resolves styles, and collects clips in document order.
 use crate::model::{Content, Element, Keyframe, LayoutHints, Motion, Pose};
-use crate::parse::animation::camera::{parse_camera, CameraFrame};
+use crate::parse::animation::camera::{parse_camera, uses_rig, CameraFrame};
 use crate::parse::animation::keyframes::parse_keyframes;
 use crate::parse::animation::reveal::{parse_reveal, RevealSpec};
+use crate::parse::animation::rig::{parse_rig_options, RigOptions};
+use crate::parse::animation::shots::{parse_shots, ShotSpec};
 use crate::parse::animation::AnimationSpec;
 use crate::parse::audio::{parse_audio, PendingAudio};
 use crate::parse::captions::parse_captions;
@@ -26,11 +28,32 @@ pub(in crate::parse) struct Pending {
     pub(in crate::parse) start_expr: Option<String>,
     pub(in crate::parse) duration: Option<f64>,
     pub(in crate::parse) keyframes: Vec<Keyframe>,
-    pub(in crate::parse) camera: Vec<CameraFrame>,
+    pub(in crate::parse) camera: CameraDecl,
     pub(in crate::parse) transition: Option<TransitionSpec>,
     pub(in crate::parse) reveal: Option<RevealSpec>,
     pub(in crate::parse) animation: Option<AnimationSpec>,
     pub(in crate::parse) motion_path: Option<crate::model::MotionPath>,
+}
+
+/// What makes an element a camera: classic `data-hf-camera` keyframes, `data-hf-shots`, and the
+/// `data-hf-camera-*` rig options.
+#[derive(Debug, Default)]
+pub(in crate::parse) struct CameraDecl {
+    pub(in crate::parse) frames: Vec<CameraFrame>,
+    pub(in crate::parse) shots: Vec<ShotSpec>,
+    pub(in crate::parse) options: Option<RigOptions>,
+}
+
+impl CameraDecl {
+    pub(in crate::parse) fn is_empty(&self) -> bool {
+        self.frames.is_empty() && self.shots.is_empty() && self.options.is_none()
+    }
+
+    /// Whether the camera compiles to a [`crate::camera::CameraRig`] (otherwise it keeps the
+    /// classic zoom and pan tracks, unchanged).
+    pub(in crate::parse) fn is_rig(&self) -> bool {
+        !self.shots.is_empty() || self.options.is_some() || uses_rig(&self.frames)
+    }
 }
 
 /// Inputs shared by the whole walk.
@@ -130,16 +153,31 @@ pub(in crate::parse) fn walk(
             )
         })?
         .unwrap_or_default();
-    let camera = attr(node, "data-hf-camera")
-        .map(|raw| parse_camera(&raw))
-        .transpose()
-        .with_context(|| {
-            format!(
-                "data-hf-camera on <{tag}> ({})",
-                attr(node, "id").as_deref().unwrap_or("no id")
-            )
-        })?
-        .unwrap_or_default();
+    let label = || {
+        format!(
+            "<{tag}> ({})",
+            attr(node, "id").as_deref().unwrap_or("no id")
+        )
+    };
+    let camera = CameraDecl {
+        frames: attr(node, "data-hf-camera")
+            .map(|raw| parse_camera(&raw))
+            .transpose()
+            .with_context(|| format!("data-hf-camera on {}", label()))?
+            .unwrap_or_default(),
+        shots: attr(node, "data-hf-shots")
+            .map(|raw| parse_shots(&raw))
+            .transpose()
+            .with_context(|| format!("data-hf-shots on {}", label()))?
+            .unwrap_or_default(),
+        options: parse_rig_options(node).with_context(|| format!("camera rig on {}", label()))?,
+    };
+    if !camera.frames.is_empty() && !camera.shots.is_empty() {
+        bail!(
+            "{} has both data-hf-camera and data-hf-shots; use keyframes or shots, not both",
+            label()
+        );
+    }
     if animation.is_some() && !keyframes.is_empty() {
         bail!(
             "<{tag}> ({}) combines CSS animation and data-hf-keyframes; use only one",
@@ -148,7 +186,7 @@ pub(in crate::parse) fn walk(
     }
     if !camera.is_empty() && (animation.is_some() || !keyframes.is_empty()) {
         bail!(
-            "<{tag}> ({}) combines data-hf-camera with another animation; wrap the element in a camera container",
+            "<{tag}> ({}) combines data-hf-camera (or data-hf-shots) with another animation; wrap the element in a camera container",
             attr(node, "id").as_deref().unwrap_or("no id")
         );
     }

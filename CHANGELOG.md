@@ -7,6 +7,35 @@ CLI/MCP output may still change between minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- Camera Rig v1: `data-hf-camera-subject` follows a descendant of a camera, held at
+  `data-hf-camera-anchor`, with `-lag`, `-lookahead`, `-deadzone`, `-offset`, `-axis`, and
+  `-easing` options. Tracking is baked once at load on a fixed 240 Hz grid and read back as a
+  pure function of time, so frames match in any render order, thread count, and split. Subjects
+  inside `data-hf-parallax` planes are framed with their plane's pan.
+- The `smooth` camera easing: monotone cubic Hermite curves with automatic tangents and
+  continuous velocity, no overshoot, and rest at the end keys. `data-hf-camera` keyframes also
+  accept `anchorX`, `anchorY`, and `follow` (a weight that blends from keyframed focus to
+  subject framing). On rig cameras, zoom interpolates in log space.
+- `data-hf-shots`, a minimal shot composer: `static`, `follow`, `pan`, `dolly-in`,
+  `dolly-out`, and `reveal` presets played back to back on one continuous rig, with `duration`,
+  `zoom`, `to`, `anchor`, `follow`, `easing`, `blend`, and an opening pose (`from`). Invalid shots
+  and rig options are rejected with specific errors and a fix hint.
+- `check` and `aether_check` report rig cameras under `cameras`: the subject, its settings,
+  and the resolved zoom, focus, anchor, and follow weight at every key.
+- `examples/cinematic-camera-rig-6s.html`: a six-second 1920×1080 shot on The Morning Shift's
+  street that tracks the walker, dollies in, and reveals the skyline. It reuses the short's
+  artwork; the 15-second short is unchanged.
+- `tests/camera_rig.rs`: rendered anchor framing through zoom and parallax, the demo's
+  velocity continuity and end poses, identical frames across render order, thread count, and
+  segmented export, unchanged classic cameras, and rig diagnostics.
+
+### Changed
+
+- Cameras that use no rig feature keep their exact classic zoom and pan tracks. `Motion` gains an
+  optional `rig`, and the parallax pan is read through `Motion::camera_pan`.
+
 ## [0.1.7] - 2026-11-19
 
 ### Added

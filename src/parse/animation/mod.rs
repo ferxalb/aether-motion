@@ -1,4 +1,6 @@
-//! CSS animation model: declarations, resolved frames, and shared limits.
+//! CSS animation model: declarations, resolved frames, and shared limits. Submodules compile each
+//! motion source: `camera` (`data-hf-camera`), `rig` (camera rig options), `shots` (the
+//! `data-hf-shots` composer), `keyframes`, `motion`, `resolve`, `reveal`, `timing`, and `decl`.
 
 pub(in crate::parse) mod camera;
 pub(in crate::parse) mod decl;
@@ -6,6 +8,8 @@ pub(in crate::parse) mod keyframes;
 pub(in crate::parse) mod motion;
 pub(in crate::parse) mod resolve;
 pub(in crate::parse) mod reveal;
+pub(in crate::parse) mod rig;
+pub(in crate::parse) mod shots;
 pub(in crate::parse) mod timing;
 
 use crate::model::Easing;

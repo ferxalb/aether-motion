@@ -1,6 +1,8 @@
 //! Layout entry points: which children follow a flex parent, and how items are sized and placed.
-//! `split_wrap` measures the line breaks of `data-hf-split-wrap` text between the two parses.
+//! `split_wrap` measures the line breaks of `data-hf-split-wrap` text between the two parses;
+//! `camera_subjects` measures the resting layout that camera rigs frame their subjects from.
 
+pub(super) mod camera_subjects;
 pub(super) mod flex;
 pub(super) mod sizing;
 pub(super) mod split_wrap;

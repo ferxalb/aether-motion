@@ -1035,6 +1035,9 @@ pub struct Motion {
     pub fx: FxMotion,
     /// `data-hf-motion-path`: an offset (and optional turn) along a vector path.
     pub path: Option<std::sync::Arc<MotionPath>>,
+    /// Camera rig (`data-hf-camera` with rig features, or `data-hf-shots`): replaces the `x`, `y`,
+    /// and `scale` tracks, which stay empty.
+    pub rig: Option<std::sync::Arc<crate::camera::CameraRig>>,
     /// Animated `clip-path` parameters (one track per [`ClipPath::params`] entry, in its unit);
     /// empty when the clip path is static. Always holds its first and last values.
     pub clip: Vec<Track>,
@@ -1175,6 +1178,12 @@ impl Motion {
     pub fn pose(&self, elapsed: f64) -> Pose {
         let (b, hb, ha) = (self.base, self.hold_before, self.hold_after);
         let mut pose = self.track_pose(elapsed, b, hb, ha);
+        if let Some(rig) = &self.rig {
+            let ([x, y], zoom) = rig.transform(elapsed);
+            pose.x = b.x + x;
+            pose.y = b.y + y;
+            pose.scale = b.scale * zoom;
+        }
         if let Some(path) = &self.path {
             let (dx, dy, turn) = path.offset(elapsed);
             pose.x += dx;
@@ -1195,6 +1204,18 @@ impl Motion {
         }
     }
 
+    /// Camera pan (translation away from the resting position, without motion paths) that
+    /// `data-hf-parallax` children scale.
+    pub fn camera_pan(&self, elapsed: f64) -> [f32; 2] {
+        if let Some(rig) = &self.rig {
+            return rig.transform(elapsed).0;
+        }
+        [
+            self.x.eval(elapsed, self.base.x, true, true) - self.base.x,
+            self.y.eval(elapsed, self.base.y, true, true) - self.base.y,
+        ]
+    }
+
     pub fn is_static(&self) -> bool {
         [
             &self.x,
@@ -1210,6 +1231,7 @@ impl Motion {
             && self.fx.is_static()
             && self.clip.is_empty()
             && self.path.is_none()
+            && self.rig.is_none()
     }
 
     /// Sorted, distinct point times across all channels.
@@ -1232,6 +1254,7 @@ impl Motion {
                 .iter()
                 .flat_map(|path| [path.at, path.at + path.duration]),
         )
+        .chain(self.rig.iter().flat_map(|rig| rig.times()))
         .collect();
         times.sort_by(f64::total_cmp);
         times.dedup();

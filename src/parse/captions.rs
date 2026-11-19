@@ -372,7 +372,7 @@ mod tests {
             start_expr: None,
             duration: None,
             keyframes: Vec::new(),
-            camera: Vec::new(),
+            camera: Default::default(),
             transition: None,
             reveal: None,
             animation: None,

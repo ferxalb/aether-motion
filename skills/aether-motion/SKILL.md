@@ -18,7 +18,7 @@ Use this skill for compositions rendered by the `aether-motion` native renderer.
 
 1. Translate the brief into a clear sequence of scenes, choose the requested aspect ratio and duration, and identify the main visual change in each scene.
 2. Define root composition metadata and timed `.clip` elements with stable IDs, explicit starts, durations, and track indices. Use clip IDs plus offsets to align transitions when appropriate.
-3. Keep every visible result a function of composition time. Prefer `data-hf-keyframes`, `data-hf-camera`, `data-hf-split` (with `data-hf-split-wrap` for long kinetic lines), `data-hf-reveal`, `data-hf-counter`, `data-hf-transition`, `data-hf-bloom`, and `data-hf-motion-blur` for the supported motion and light they describe. Use CSS animation only within the documented subset.
+3. Keep every visible result a function of composition time. Prefer `data-hf-keyframes`, `data-hf-camera` (with `data-hf-shots` and `data-hf-camera-subject` for cinematic follow, dolly, and reveal moves), `data-hf-split` (with `data-hf-split-wrap` for long kinetic lines), `data-hf-reveal`, `data-hf-counter`, `data-hf-transition`, `data-hf-bloom`, and `data-hf-motion-blur` for the supported motion and light they describe. Use CSS animation only within the documented subset.
 4. When the same video must be produced with different text, colors, numbers, or assets, declare composition variables and bind them (`var(--id)`, `data-var-text`, `data-var-src`, `data-var-if`) instead of copying the file; see the composition contract.
 5. Prefer an existing AETHER Motion block or theme when one fits. If the companion `aether-motion-blocks` skill is installed, use it for discovery and parameterized markup; otherwise run `aether-motion block list`.
 6. Route SVG-heavy artwork through `aether-motion-svg` when available. For an explicit migration from an existing HyperFrames or Remotion project, use `aether-motion-import` and its source-specific reference.
@@ -26,7 +26,7 @@ Use this skill for compositions rendered by the `aether-motion` native renderer.
 
 ## Layer an illustrated shot
 
-Use independent, local artwork for each depth plane. Set `data-hf-parallax` on direct camera children and leave enough overscan for the pan. Keep transparent PNG or WebP cels in one directory and use `data-hf-sequence` for clip-local playback. Layer soft gradients, masks, and deterministic motion for fog and rain. Put localized bloom on the light source, then tune exposure, highlight rolloff, and the shadow toe on the composition root. In this checkout, `examples/cinematic-dystopia.html` shows all of these techniques together.
+Use independent, local artwork for each depth plane. Set `data-hf-parallax` on direct camera children and leave enough overscan for the pan. Keep transparent PNG or WebP cels in one directory and use `data-hf-sequence` for clip-local playback. Layer soft gradients, masks, and deterministic motion for fog and rain. Put localized bloom on the light source, then tune exposure, highlight rolloff, and the shadow toe on the composition root. In this checkout, `examples/cinematic-dystopia.html` shows all of these techniques together. `examples/cinematic-camera-rig-6s.html` adds a tracked character, a dolly-in, and a skyline reveal on one continuous camera rig.
 
 ## Validate and inspect
 

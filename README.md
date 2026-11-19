@@ -87,6 +87,47 @@ aether-motion render examples/cinematic-walk-15s.html --output out/cinematic-wal
 aether-motion render examples/cinematic-walk-15s.html --output out/cinematic-walk-4k-v3.mp4 --size 4k --fps 24 --quality max --threads 4
 ```
 
+### Camera rig and shot composer
+
+A camera container can follow a character and move through a sequence of shots on one
+continuous camera. `data-hf-camera-subject` names the element to follow and
+`data-hf-camera-anchor` sets where it sits in the frame; `data-hf-shots` lists presets
+(`static`, `follow`, `pan`, `dolly-in`, `dolly-out`, `reveal`) played back to back:
+
+```html
+<section id="rig" data-hf-camera-subject="worker" data-hf-camera-anchor="0.4 0.6"
+    data-hf-camera-lag="0.45" data-hf-camera-lookahead="0.45"
+    data-hf-shots='[{"preset":"follow","duration":2,"from":{"zoom":1.35}},
+                    {"preset":"dolly-in","duration":2,"zoom":1.6},
+                    {"preset":"reveal","zoom":1.0,"to":[0,40]}]'>
+  <img class="plate" src="sky.svg" data-hf-parallax="0.3">
+  <div id="worker" data-hf-parallax="1.14">...</div>
+</section>
+```
+
+Shots use the `smooth` easing by default: zoom, focus, framing, and follow weight are cubic
+curves with automatic tangents, so velocity stays continuous across shots and the camera never
+overshoots a key. Classic `data-hf-camera` keyframes take `"easing":"smooth"`, `anchorX`,
+`anchorY`, and `follow` too. The camera pose is a pure function of time. The only stateful
+part of tracking, the dead zone and the lag, is baked once at load on a fixed 240 Hz grid.
+Frames therefore match in any order, at any thread count, and across segmented renders.
+Cameras that use no rig feature keep their exact classic tracks. Scene changes remain clips
+joined by `data-hf-transition`; shots never interpolate between unrelated scenes. The
+[six-second rig demo](examples/cinematic-camera-rig-6s.html) tracks the walker of The Morning
+Shift, dollies in, and reveals the skyline. It reuses the short's artwork and leaves the
+short unchanged.
+
+```bash
+aether-motion check examples/cinematic-camera-rig-6s.html      # lists the resolved keys under "cameras"
+aether-motion render examples/cinematic-camera-rig-6s.html --output out/camera-rig-1080p.mp4 --size 1080p --fps 24
+aether-motion render examples/cinematic-camera-rig-6s.html --output out/camera-rig-4k.png --size 4k --fps 24 --frame 96
+```
+
+Known limits: the subject is followed by translation (scale and rotation of the subject and its
+ancestors are not followed), rig cameras cannot roll, zoom is uniform across depth planes
+(parallax scales only the pan), and every zooming frame fits SVG plates at a new size, as a
+classic zoom does.
+
 ### Manually with the CLI
 
 ```bash
@@ -180,7 +221,7 @@ aether-motion block theme-midnight
 - **One binary:** no browser, no Node.js, no FFmpeg. Runs on macOS, Linux, and Windows, including CI runners and servers.
 - **Deterministic:** same input, same frames, same output, byte for byte for any `--threads` value, render split, or CPU (vectorized paths produce the same bits as scalar ones). Generic families (`sans-serif`, `serif`, `monospace`, and the fallback) always use the embedded Roboto, italic included (synthesized), so their text matches across machines; a named family matches only where the same font file is installed.
 - **Honest errors:** unsupported HTML or CSS returns the exact problem and a suggested fix, never a silently wrong video.
-- **Native motion:** keyframes with expo, back, spring (`spring(overshoot, oscillations)`), and `cubic-bezier` easing, CSS `@keyframes`, camera zoom and pan, kinetic text, reveals, counters, and crossfade, push, cover, wipe, and zoom transitions.
+- **Native motion:** keyframes with expo, back, spring (`spring(overshoot, oscillations)`), and `cubic-bezier` easing, CSS `@keyframes`, camera zoom and pan with subject tracking and shot presets, kinetic text, reveals, counters, and crossfade, push, cover, wipe, and zoom transitions.
 - **Captions:** `data-hf-captions` turns a transcript (`transcript.json`, OpenAI Whisper or whisper.cpp JSON, SRT, VTT) into word-highlighted captions; `aether-motion captions` converts transcripts to SRT or VTT. See `examples/captions.html`.
 - **Typography:** wrapping, rich inline runs (`<span>`, `<strong>`, `<em>`, `<code>`), italics (synthesized when no italic face is installed), pair kerning with `font-kerning: normal`, outline and gradient text, and kinetic text with `data-hf-split`: combined position, scale, rotation, and opacity entrances, stagger orders, per-word or per-line masks, `<br>` lines, and automatic wrapping (`data-hf-split-wrap`) with animated lines; see `examples/kinetic-wrap.html`.
 - **Video clips:** local H.264 MP4 `<video>` without B-frames (its sound included) with trim (`data-media-start`), loop, `object-fit`, and the usual fades, transforms, and clipping; see `examples/video.html`.

@@ -1,8 +1,9 @@
-//! Library facade: `model` (data), `parse` (input), `render` (frames), `encode` (MP4), `agent` (check and MCP), `audio` (decode, mix, and AAC for `<audio>`), `speed` (variable playback speed curves for `<video>` and `<audio>`), `vector` (path measurement, self-drawing SVG strokes), `blocks` (ready-made blocks and themes), `captions` (transcript import, cue grouping, SRT/VTT export), `cli` (human-facing subcommands), `setup` (agent skills and MCP config), `profile` (the opt-in `AETHER_PROFILE` phase timer).
+//! Library facade: `model` (data), `parse` (input), `render` (frames), `encode` (MP4), `agent` (check and MCP), `audio` (decode, mix, and AAC for `<audio>`), `speed` (variable playback speed curves for `<video>` and `<audio>`), `vector` (path measurement, self-drawing SVG strokes), `blocks` (ready-made blocks and themes), `camera` (the cinematic camera rig: smooth zoom and focus curves and subject tracking), `captions` (transcript import, cue grouping, SRT/VTT export), `cli` (human-facing subcommands), `setup` (agent skills and MCP config), `profile` (the opt-in `AETHER_PROFILE` phase timer).
 
 pub mod agent;
 pub mod audio;
 pub mod blocks;
+pub mod camera;
 pub mod captions;
 pub mod cli;
 pub mod encode;

@@ -60,8 +60,14 @@ fn fix_hint(message: &str) -> &'static str {
         "on the incoming clip use data-hf-transition=crossfade|push-<dir>|cover-<dir>|wipe-<dir>|whip-<dir>|zoom-in|zoom-out|dip-to-black|dip-to-white|flash|blur|glitch|rgb-split (dir: left, right, up, down) and data-hf-transition-from=<outgoing id>; start it inside the outgoing clip (data-start=\"a-0.6\"), give the outgoing clip a data-duration, and draw it above on a higher data-track-index"
     } else if message.contains("data-hf-split") || message.contains("data-hf-stagger") {
         "use data-hf-split=words|chars on an element with plain text (no child elements other than <br>); add data-hf-split-wrap to wrap at the element's width; see AGENTS.md for data-hf-stagger, data-hf-split-from, the -x/-y/-scale/-rotate/-opacity start values, -order, -mask, and the -line-* options"
+    } else if message.contains("data-hf-shots")
+        || message.contains("data-hf-camera-")
+        || message.contains("camera rig")
+        || message.contains("camera option")
+    {
+        "on a non-root camera container use data-hf-shots='[{\"preset\":\"follow\",\"duration\":2},{\"preset\":\"dolly-in\",\"duration\":2,\"zoom\":1.3},{\"preset\":\"reveal\"}]' (presets static, follow, pan (needs to: [x, y]), dolly-in, dolly-out, reveal; duration required except on the last shot; fields zoom, to, anchor, follow, easing, blend, and from on the first shot) or data-hf-camera keyframes; follow needs data-hf-camera-subject=\"<id of a descendant>\" with optional -lag and -lookahead (0 to 5 s), -deadzone and -offset (\"x y\" px), -axis (both|x|y), -anchor (\"x y\" fractions), and -easing (smooth or a keyframe easing); the subject's plane cannot have data-hf-parallax 0"
     } else if message.contains("data-hf-camera") || message.contains("camera keyframe") {
-        "use a JSON array of {at, zoom, x, y, easing} on a non-root container; at in local seconds, strictly increasing; zoom between 0.05 and 50"
+        "use a JSON array of {at, zoom, x, y, easing} on a non-root container (easing may be smooth; anchorX, anchorY, and follow need data-hf-camera-subject); at in local seconds, strictly increasing; zoom between 0.05 and 50"
     } else if message.contains("data-hf-keyframes") {
         "use a JSON array of {at, x, y, opacity, easing} plus optional filter amounts blur (0 to 200 px), brightness, contrast, saturate (0 to 100), grayscale, sepia, invert (0 to 1), and hueRotate (degrees), and the effects glitch (0 to 1) and rgbSplit (-500 to 500 px); at in local seconds, strictly increasing and within the clip; check the indicated field"
     } else if message.contains("CSS variable") || message.contains("var()") {
@@ -293,8 +299,31 @@ pub fn check_with(path: &Path, values: &VariableValues) -> Value {
                 "keyframeTimes": e.motion.times()})
             })
             .collect();
+        let cameras: Vec<Value> = c
+            .elements
+            .iter()
+            .filter_map(|e| e.motion.rig.as_ref().map(|rig| (e, rig)))
+            .map(|(e, rig)| {
+                let subject = rig.subject().map(|s| {
+                    json!({"id": c.elements[s.element].id, "depth": s.depth,
+                        "lag": s.settings.lag, "lookahead": s.settings.lookahead,
+                        "deadzone": s.settings.deadzone, "offset": s.settings.offset,
+                        "axis": match s.settings.axis { [true, false] => "x", [false, true] => "y", _ => "both" }})
+                });
+                let keys: Vec<Value> = rig
+                    .keys()
+                    .iter()
+                    .map(|key| {
+                        let pose = rig.pose(key.at);
+                        json!({"at": key.at, "zoom": pose.zoom, "focus": pose.focus,
+                            "anchor": key.anchor, "follow": key.follow})
+                    })
+                    .collect();
+                json!({"id": e.id, "start": e.start, "end": e.end, "subject": subject, "keys": keys})
+            })
+            .collect();
         Ok(
-            json!({"animations": animations, "ok": true, "width": c.width, "height": c.height, "duration": c.duration, "elements": c.elements.len(), "clips": clips, "audio": audio, "videos": videos, "effects": effects, "variables": variables_json(&c)}),
+            json!({"animations": animations, "cameras": cameras, "ok": true, "width": c.width, "height": c.height, "duration": c.duration, "elements": c.elements.len(), "clips": clips, "audio": audio, "videos": videos, "effects": effects, "variables": variables_json(&c)}),
         )
     };
     match run() {

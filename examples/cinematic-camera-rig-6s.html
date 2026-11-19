@@ -1,0 +1,110 @@
+<!-- Camera Rig v1 demonstration: one continuous six-second shot on the rainy street of The Morning Shift.
+     The camera is a single rig: it tracks the walker laterally (0-2 s), dollies in on him (2-4 s), and
+     pulls back to reveal the skyline (4-6 s). Velocity is continuous across the three shots, framing
+     comes from data-hf-camera-subject, and depth comes from the existing data-hf-parallax planes.
+     Artwork is reused from the approved 15-second short, which is not modified. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Morning Shift — Camera Rig</title>
+<style>
+  /* The set is authored at 1600x900 like the approved short; the camera box scales it to 1920x1080. */
+  #rig { left: 160px; top: 90px; width: 1600px; height: 900px; transform: scale(1.2); }
+  .plate, .walk, .layer, .rain, .tile { position: absolute; }
+  .sky { left: -38.4px; top: -21.6px; width: 1996.8px; height: 1123.2px; }
+  .smoke { left: 528px; top: -18px; width: 1104px; height: 291px; }
+  .stacks { left: 528px; top: 92px; width: 948px; height: 370px; }
+  .horizon { left: 420px; top: 449px; width: 968px; height: 235px; }
+  .mills { left: 245px; top: 72px; width: 1387px; height: 607px; }
+  .mist-high { left: 388px; top: 239px; width: 1244px; height: 363px; opacity: .70; }
+  .street { left: -32px; top: 632px; width: 1664px; height: 345px; }
+  .bridges { left: 224px; top: -18px; width: 1408px; height: 667px; }
+  .foundry-right { left: 1150px; top: 46px; width: 482px; height: 824px; }
+  .mist-street { left: 329px; top: 522px; width: 1303px; height: 215px; opacity: .72; }
+  .foundry-left { left: -32px; top: -18px; width: 555px; height: 936px; }
+  .sidewalk { left: -32px; top: 627px; width: 956px; height: 351px; }
+  .lampworks { left: 275px; top: 376px; width: 1213px; height: 421px; }
+  .first-air { left: 196px; top: 423px; width: 448px; height: 427px; opacity: .78; }
+  .first-bulb { left: 386px; top: 447px; width: 80px; height: 10px; border-radius: 5px; background: #f2f2f2; }
+  .canopy { left: -35px; top: 120px; width: 830px; height: 671px; }
+  .pavement { left: 425px; top: 650px; width: 593px; height: 144px; }
+  .last-lamp { left: 742px; top: 425px; width: 140px; height: 314px; }
+  .last-air { left: 681px; top: 464px; width: 324px; height: 326px; }
+  .last-bulb { left: 816px; top: 498px; width: 53px; height: 6px; border-radius: 3px; background: #fdfdfd; }
+  .rain { left: -64px; top: -182px; width: 1696px; height: 1250px; }
+  .tile { width: 848px; height: 625px; }
+  .rain-far { opacity: .42; animation: far-rain .72s linear infinite; }
+  .rain-near { opacity: .72; animation: near-rain .43s linear infinite; }
+  /* The walk advances 3.75 px per cel at 12 cels per second, so the soles stay planted. */
+  .walk { width: 131.25px; height: 198px; animation: walk 6s steps(72, jump-end) forwards; }
+  .walk img { width: 100%; height: 100%; }
+  .walk img.sole { top: 89.015%; height: 10.985%; }
+  .walk .sole { position: absolute; }
+  /* Lamp key light on the walker, fading as he leaves the first lamp. */
+  .old-key { left: 268px; top: 535px; width: 414px; height: 293px;
+             mask-image: linear-gradient(to right, black 10%, black 38%, #000000a9 68%, transparent 99%); }
+  /* A near-lens steel post, in front of every plane: it slides fastest and frames the reveal. */
+  .post { left: 1380px; top: -300px; width: 92px; height: 1500px;
+          background: linear-gradient(to right, transparent, #050505 22%, #151515 46%, #070707 70%, transparent); }
+  @keyframes walk { from { transform: translate(0px, 0px); } to { transform: translate(270px, 0px); } }
+  @keyframes far-rain { from { transform: translate(19px, -52px); } to { transform: translate(-14px, 110px); } }
+  @keyframes near-rain { from { transform: translate(30px, -86px); } to { transform: translate(-29px, 145px); } }
+</style>
+</head>
+<body>
+<div data-composition-id="the-morning-shift-camera-rig" data-width="1920" data-height="1080" data-duration="6"
+     data-hf-exposure=".14" data-hf-highlight-rolloff=".49" data-hf-shadow-toe=".24"
+     data-hf-grain=".084" data-hf-vignette=".39" style="background:#151515; filter: grayscale(1) contrast(1.10);">
+  <!-- The dawn sky is at infinity: it stays outside the camera, so the dolly does not magnify it
+       (and its 4K raster stays small). -->
+  <img class="plate sky" src="cinematic-assets/dawn.svg" alt="">
+  <!-- One rig, three shots. Tracking: the walker's box center, held at 40% / 60% of the frame, with a
+       0.45 s lag cancelled by an equal look-ahead so the stepped walk is framed steadily. -->
+  <section id="rig" data-hf-camera-subject="worker" data-hf-camera-lag="0.45" data-hf-camera-lookahead="0.45"
+      data-hf-camera-anchor="0.4 0.6"
+      data-hf-shots='[{"preset":"follow","duration":2,"from":{"zoom":1.35}},
+                      {"preset":"dolly-in","duration":2,"zoom":1.6,"anchor":[0.42,0.62]},
+                      {"preset":"reveal","zoom":1.0,"to":[0,40]}]'>
+    <img class="plate smoke" src="cinematic-assets/smoke.svg" data-hf-parallax="0.34" alt="" data-hf-keyframes='[{"at":0,"x":-17,"y":2},{"at":6,"x":7,"y":-5}]'>
+    <img class="plate stacks" src="cinematic-assets/stacks.svg" data-hf-parallax="0.36" alt="">
+    <img class="plate horizon" src="cinematic-assets/horizon.svg" data-hf-parallax="0.25" alt="">
+    <img class="plate mills" src="cinematic-assets/mills.svg" data-hf-parallax="0.46" alt="">
+    <img class="plate mist-high" src="cinematic-assets/upper-mist.svg" data-hf-parallax="0.48" alt="" data-hf-keyframes='[{"at":0,"x":-40},{"at":6,"x":-4,"y":-7}]'>
+    <img class="plate street" src="cinematic-assets/wet-street.svg" data-hf-parallax="1.14" alt="">
+    <img class="plate bridges" src="cinematic-assets/viaducts.svg" data-hf-parallax="1.00" alt="">
+    <img class="plate foundry-right" src="cinematic-assets/foundry-right.svg" data-hf-parallax="1.06" alt="">
+    <img class="plate mist-street" src="cinematic-assets/street-mist.svg" data-hf-parallax="0.83" alt="" data-hf-keyframes='[{"at":0,"x":25},{"at":6,"x":-5,"y":-6}]'>
+    <img class="plate foundry-left" src="cinematic-assets/foundry-left.svg" data-hf-parallax="1.15" alt="">
+    <img class="plate sidewalk" src="cinematic-assets/sidewalk.svg" data-hf-parallax="1.14" alt="">
+    <img class="plate pavement" src="cinematic-walk-assets/shadow-pavement.svg" data-hf-parallax="1.14" alt="">
+    <img class="plate first-air" src="cinematic-assets/lamp-air.svg" data-hf-parallax="1.14" alt="">
+    <img class="plate lampworks" src="cinematic-assets/lampworks.svg" data-hf-parallax="1.14" alt="">
+    <img class="plate last-air" src="cinematic-walk-assets/last-air.svg" data-hf-parallax="1.14" alt="">
+    <div class="layer first-bulb" data-hf-parallax="1.14" data-hf-bloom="1.35" data-hf-bloom-radius="54"></div>
+    <div class="rain rain-far" data-hf-parallax="0.66">
+      <img class="tile" style="left:0px;top:0px" src="cinematic-assets/rain-2.svg" alt="">
+      <img class="tile" style="left:848px;top:0px" src="cinematic-assets/rain-2.svg" alt="">
+      <img class="tile" style="left:0px;top:625px" src="cinematic-assets/rain-2.svg" alt="">
+      <img class="tile" style="left:848px;top:625px" src="cinematic-assets/rain-2.svg" alt="">
+    </div>
+    <!-- The canopy pillar and the far lamppost stand behind the walker: his soles land nearer the
+         lens than their bases, so he passes in front of them. -->
+    <img class="plate canopy" src="cinematic-walk-assets/canopy.svg" data-hf-parallax="1.14" alt="">
+    <img class="plate last-lamp" src="cinematic-walk-assets/last-lamp.svg" data-hf-parallax="1.14" alt="">
+    <div class="layer last-bulb" data-hf-parallax="1.14" data-hf-bloom="1.35" data-hf-bloom-radius="68"></div>
+    <div id="worker" class="walk" style="left:400px;top:592px" data-hf-parallax="1.14"><img class="sole" data-hf-sequence="cinematic-walk-assets/contact/cel-{frame:02}.png" data-hf-sequence-first="1" data-hf-sequence-fps="12" data-hf-sequence-playback="loop" alt=""><img data-hf-sequence="cinematic-walk-assets/shadow/cel-{frame:02}.png" data-hf-sequence-first="1" data-hf-sequence-fps="12" data-hf-sequence-playback="loop" alt="A lone worker walking through the rain"></div>
+    <div class="layer old-key" data-hf-parallax="1.14">
+      <div class="walk" style="left:132px;top:57px"><img data-hf-sequence="cinematic-walk-assets/lit/cel-{frame:02}.png" data-hf-sequence-first="1" data-hf-sequence-fps="12" data-hf-sequence-playback="loop" alt=""></div>
+    </div>
+    <div class="rain rain-near" data-hf-parallax="1.37">
+      <img class="tile" style="left:0px;top:0px" src="cinematic-assets/rain-2.svg" alt="">
+      <img class="tile" style="left:848px;top:0px" src="cinematic-assets/rain-2.svg" alt="">
+      <img class="tile" style="left:0px;top:625px" src="cinematic-assets/rain-2.svg" alt="">
+      <img class="tile" style="left:848px;top:625px" src="cinematic-assets/rain-2.svg" alt="">
+    </div>
+    <div class="layer post" data-hf-parallax="1.6"></div>
+  </section>
+</div>
+</body>
+</html>
