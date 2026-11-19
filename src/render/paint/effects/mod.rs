@@ -1,13 +1,14 @@
 //! Element effects drawn through an offscreen layer: `filter` (blur, color functions,
-//! `drop-shadow`), the tint, channel split, and glitch of `model::FxMotion` (`fx.rs`), and
-//! `mix-blend-mode`.
+//! `drop-shadow`), the tint, channel split, and glitch of `model::FxMotion` (`fx.rs`),
+//! `mix-blend-mode`, and the `data-hf-bloom` halo (`bloom.rs`).
 //!
 //! The element (box, shadows, content, and children) is drawn twice, on black and on white, to
 //! recover premultiplied RGBA. The layer is padded by the reach of the blur and the drop shadow.
 //! The stages then run in a fixed order, matching the order `filter` accepts: gaussian blur
 //! (premultiplied, the backdrop blur's three-pass box approximation), color functions
 //! (`color.rs`, on unpremultiplied values), tint, channel split, glitch, drop shadow (the blurred, offset alpha under the
-//! layer), and finally compositing with the blend function (`blend.rs`) over the frame.
+//! layer), and finally compositing with the blend function (`blend.rs`) over the frame. A bloom
+//! halo, computed from the final texels, is then added over the composited element.
 //!
 //! Animated filters read their amounts from the element's `FrameState`. An animated blur uses the
 //! continuous kernel of `exact_blur.rs`; a static blur keeps the whole-radius box kernel. Animated
@@ -19,6 +20,7 @@
 //! stand-in is behind the element.
 
 pub(in crate::render) mod blend;
+pub(in crate::render) mod bloom;
 pub(in crate::render) mod color;
 pub(in crate::render) mod exact_blur;
 mod fx;
@@ -113,7 +115,20 @@ impl<'a> Renderer<'a> {
                 || style.drop_shadow.is_some()
                 || style.blend != BlendMode::Normal
                 || !element.motion.filter.is_static()
-                || !element.motion.fx.is_static())
+                || !element.motion.fx.is_static()
+                || element.effects.bloom.is_some())
+    }
+
+    /// The element's bloom at the current instant, in output pixels; `None` when it casts none.
+    fn bloom_pass(&self, idx: usize, cumulative: f32) -> Option<bloom::BloomPass> {
+        let element = &self.composition.elements[idx];
+        let bloom = element.effects.bloom?;
+        let intensity = if element.motion.fx.bloom.0.is_empty() {
+            bloom.intensity
+        } else {
+            self.current[idx].fx[3]
+        };
+        bloom::BloomPass::new(bloom, intensity, self.scale * cumulative)
     }
 
     /// The element's `filter: blur()` radius (composition px) at the current instant.
@@ -183,11 +198,13 @@ impl<'a> Renderer<'a> {
         let tint = tint_color.filter(|_| fx[0] > 0.0).map(|c| (c, fx[0]));
         let split = (fx[2] * cumulative * k).round();
         let has_fx = tint.is_some() || fx[1] > 0.0 || split != 0.0;
+        let bloom = self.bloom_pass(idx, cumulative);
         if kernel.is_none()
             && colors.is_identity()
             && style.drop_shadow.is_none()
             && blend == BlendMode::Normal
             && !has_fx
+            && bloom.is_none()
         {
             return self.draw_posed(idx, rect, cumulative);
         }
@@ -201,6 +218,7 @@ impl<'a> Renderer<'a> {
             .max(1)
             .checked_add(shadow_pad)
             .and_then(|n| n.checked_add(split.abs() as i32))
+            .and_then(|n| n.checked_add(bloom.map_or(0, bloom::BloomPass::reach)))
             .ok_or_else(|| anyhow::anyhow!("filter: reach is too large; use --scale"))?;
         // Shadows can extend past the box, so pad generously; stay near the frame to bound memory.
         let own = self.shadow_reach(idx, cumulative)?;
@@ -246,6 +264,7 @@ impl<'a> Renderer<'a> {
             && !has_fx
             && shadow.is_none()
             && blend == BlendMode::Normal
+            && bloom.is_none()
             && matches!(kernel, Kernel::Boxes(_)));
         if share {
             self.surface.gradient_cache.freeze();
@@ -291,6 +310,13 @@ impl<'a> Renderer<'a> {
                 origin: (x0, y0),
             };
             blend::composite_layer(blend, &mut self.surface.pixels, stride, bounds, &layer);
+            if let Some(bloom) = bloom {
+                let pixels = &mut self.surface.pixels;
+                let scratch = &mut self.bloom_scratch;
+                crate::profile::time(crate::profile::Phase::Bloom, || {
+                    bloom.apply(&layer, lh, pixels, stride, bounds, scratch)
+                });
+            }
             return Ok(());
         }
         // Zeroed allocations come from the allocator already cleared; zips avoid bounds checks.
@@ -347,6 +373,13 @@ impl<'a> Renderer<'a> {
             origin: (x0, y0),
         };
         blend::composite_layer(blend, &mut self.surface.pixels, stride, bounds, &layer);
+        if let Some(bloom) = bloom {
+            let pixels = &mut self.surface.pixels;
+            let scratch = &mut self.bloom_scratch;
+            crate::profile::time(crate::profile::Phase::Bloom, || {
+                bloom.apply(&layer, lh, pixels, stride, bounds, scratch)
+            });
+        }
         Ok(())
     }
 

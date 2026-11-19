@@ -8,7 +8,7 @@ pub(in crate::render) struct Rect {
     pub(in crate::render) h: f32,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::render) struct PixelRect {
     pub(in crate::render) x0: usize,
     pub(in crate::render) y0: usize,

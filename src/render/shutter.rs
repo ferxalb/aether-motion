@@ -19,7 +19,7 @@ use anyhow::Result;
 /// Whether any element visible in two samples (the `center` state counts as one) has a different
 /// geometry in them, or is visible at the center but in none of the samples. Drawing once at the
 /// center is only equivalent to the average when this is false.
-fn moves(samples: &[Vec<FrameState>], center: &[FrameState]) -> bool {
+pub(in crate::render) fn moves(samples: &[Vec<FrameState>], center: &[FrameState]) -> bool {
     let Some(first) = samples.first() else {
         return false;
     };
@@ -50,7 +50,7 @@ fn moves(samples: &[Vec<FrameState>], center: &[FrameState]) -> bool {
 
 /// Largest distance (composition px) any visible element travels between two state sets.
 /// Rotation and scale count as the movement of a point a quarter of the frame's short side away.
-fn travel(from: &[FrameState], to: &[FrameState], short_side: u32) -> f32 {
+pub(in crate::render) fn travel(from: &[FrameState], to: &[FrameState], short_side: u32) -> f32 {
     let reach = short_side as f32 / 4.0;
     from.iter()
         .zip(to)
@@ -70,6 +70,7 @@ pub(in crate::render) const SNAPSHOT_FPS: u32 = 30;
 impl<'a> Renderer<'a> {
     /// Draws the frame at `time`, motion-blurred over the shutter window at `fps` when enabled.
     pub(in crate::render) fn render_shuttered(&mut self, time: f64, fps: u32) -> Result<&[u8]> {
+        self.fps = fps;
         let Some(blur) = self.composition.motion_blur else {
             return self.render_time(time);
         };

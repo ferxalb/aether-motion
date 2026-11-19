@@ -151,7 +151,8 @@ fn filter_from_keyframes(filter_base: [f32; 8], frames: &[Keyframe]) -> FilterMo
     }
 }
 
-/// `data-hf-keyframes` `glitch` and `rgbSplit`: like filter amounts, with a resting value of 0.
+/// `data-hf-keyframes` `glitch`, `rgbSplit`, and `bloom`: like filter amounts, with a resting
+/// value of 0 (the `bloom` intensity starts from `data-hf-bloom` instead; see `parse/effects.rs`).
 fn fx_from_keyframes(frames: &[Keyframe]) -> FxMotion {
     let track = |i: usize| {
         if frames.iter().all(|k| k.effects[i].is_none()) {
@@ -175,6 +176,7 @@ fn fx_from_keyframes(frames: &[Keyframe]) -> FxMotion {
     FxMotion {
         glitch: track(0),
         rgb_split: track(1),
+        bloom: track(2),
         ..FxMotion::default()
     }
 }

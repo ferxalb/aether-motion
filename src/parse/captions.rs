@@ -367,6 +367,7 @@ mod tests {
                 motion: Motion::default(),
                 layout: Default::default(),
                 spans: Vec::new(),
+                effects: Default::default(),
             },
             start_expr: None,
             duration: None,

@@ -14,14 +14,54 @@ impl<'a> Renderer<'a> {
         parent_scale: f32,
         assigned: Option<Rect>,
     ) -> Result<()> {
+        if self.is_layer_blurred(idx) {
+            return crate::profile::time(crate::profile::Phase::LayerBlur, || {
+                self.draw_layer_blurred(idx, parent, parent_scale, assigned)
+            });
+        }
         let state = self.current[idx];
         let alpha = state.alpha;
         if alpha <= 0.0 {
             return Ok(());
         }
-        let element = &self.composition.elements[idx];
         let ps = parent_scale;
-        let mut rect = if idx == 0 {
+        let mut rect = self.place(idx, parent, ps, assigned);
+        rect.x += state.x * ps;
+        rect.y += state.y * ps;
+        // CSS scale grows around the element center; descendants inherit it.
+        let mut cumulative = ps;
+        if idx != 0 && state.scale != 1.0 {
+            let (cx, cy) = (rect.x + rect.w / 2.0, rect.y + rect.h / 2.0);
+            rect.w *= state.scale;
+            rect.h *= state.scale;
+            rect.x = cx - rect.w / 2.0;
+            rect.y = cy - rect.h / 2.0;
+            cumulative *= state.scale;
+        }
+        let sigma = self.filter_blur(idx) * cumulative * self.scale;
+        if self.needs_mask(idx) {
+            return self.draw_masked(idx, rect, cumulative, sigma);
+        }
+        if self.has_effects(idx, sigma) {
+            return crate::profile::time(crate::profile::Phase::EffectLayer, || {
+                self.draw_with_effects(idx, rect, cumulative, sigma)
+            });
+        }
+        self.draw_posed(idx, rect, cumulative)
+    }
+
+    /// Border box of element `idx` at rest (before its pose): the root fills `parent`, flex items
+    /// take their `assigned` slot (shifted by `position: relative`), and other boxes resolve
+    /// `left`, `top`, `width`, `height`, `max-width`, and margins against `parent`.
+    pub(in crate::render) fn place(
+        &self,
+        idx: usize,
+        parent: Rect,
+        ps: f32,
+        assigned: Option<Rect>,
+    ) -> Rect {
+        let element = &self.composition.elements[idx];
+        if idx == 0 {
             parent
         } else if let Some(slot) = assigned {
             // Static items ignore left/top; `position: relative` shifts them.
@@ -55,27 +95,20 @@ impl<'a> Renderer<'a> {
                     .height
                     .map_or(parent.h, |n| n.resolve_scaled(parent.h, ps)),
             }
-        };
-        rect.x += state.x * ps;
-        rect.y += state.y * ps;
-        // CSS scale grows around the element center; descendants inherit it.
-        let mut cumulative = ps;
-        if idx != 0 && state.scale != 1.0 {
-            let (cx, cy) = (rect.x + rect.w / 2.0, rect.y + rect.h / 2.0);
-            rect.w *= state.scale;
-            rect.h *= state.scale;
-            rect.x = cx - rect.w / 2.0;
-            rect.y = cy - rect.h / 2.0;
-            cumulative *= state.scale;
         }
-        let sigma = self.filter_blur(idx) * cumulative * self.scale;
-        if self.needs_mask(idx) {
-            return self.draw_masked(idx, rect, cumulative, sigma);
+    }
+
+    /// Content box of `rect`: inside the element's padding and border.
+    pub(in crate::render) fn content_box(&self, idx: usize, rect: Rect, cumulative: f32) -> Rect {
+        let style = &self.composition.elements[idx].style;
+        let border = style.border_width * cumulative;
+        let [top, right, bottom, left] = style.padding.map(|padding| padding * cumulative + border);
+        Rect {
+            x: rect.x + left,
+            y: rect.y + top,
+            w: (rect.w - left - right).max(0.0),
+            h: (rect.h - top - bottom).max(0.0),
         }
-        if self.has_effects(idx, sigma) {
-            return self.draw_with_effects(idx, rect, cumulative, sigma);
-        }
-        self.draw_posed(idx, rect, cumulative)
     }
 
     /// Draws a placed element through its reveal, rotation, or plain box path.
@@ -164,16 +197,7 @@ impl<'a> Renderer<'a> {
             let color = element.style.border_color.unwrap_or(Color::WHITE);
             self.surface.draw_border(rect, radius, border, color, alpha);
         }
-        let [top, right, bottom, left] = element
-            .style
-            .padding
-            .map(|padding| padding * cumulative + border);
-        let content = Rect {
-            x: rect.x + left,
-            y: rect.y + top,
-            w: (rect.w - left - right).max(0.0),
-            h: (rect.h - top - bottom).max(0.0),
-        };
+        let content = self.content_box(idx, rect, cumulative);
         if element.style.overflow_hidden {
             return self.draw_clipped(idx, rect, content, cumulative);
         }

@@ -4,7 +4,9 @@
 //! deterministic and independent of render order. The vignette is a per-pixel brightness table built
 //! once per surface size and strength, so a frame costs one integer multiply per channel; the grain is
 //! an integer hash per pixel. All arithmetic is fixed point (1/256 steps), in branch-free row loops
-//! that are also compiled for AVX2 and chosen at run time (same results on every CPU).
+//! that are also compiled for AVX2 and chosen at run time (same results on every CPU). Rows are
+//! processed in blocks of eight pixels (eight hashes, then one uniform operation on all 32 bytes),
+//! which vectorizes; a test checks the blocks against the per-pixel loop they replaced.
 
 use crate::render::geometry::PixelRect;
 use crate::render::paint::Surface;
@@ -88,6 +90,8 @@ fn finish_rows(
     finish_rows_impl(pixels, width, factors, seed, amplitude);
 }
 
+/// Plain loops (no closures), so the row code inlines into the AVX2 copy of [`finish_rows`]: a
+/// closure would be compiled as a separate function without the target feature.
 #[inline(always)]
 fn finish_rows_impl(
     pixels: &mut [u8],
@@ -96,15 +100,14 @@ fn finish_rows_impl(
     seed: u32,
     amplitude: i32,
 ) {
-    let rows = pixels.chunks_exact_mut(width * 4).enumerate();
-    match (factors, amplitude > 0) {
-        (Some(table), true) => rows.for_each(|(y, row)| {
-            finish_row::<true>(row, &table[y * width..(y + 1) * width], y, seed, amplitude)
-        }),
-        (Some(table), false) => rows.for_each(|(y, row)| {
-            finish_row::<false>(row, &table[y * width..(y + 1) * width], y, seed, 0)
-        }),
-        (None, _) => rows.for_each(|(y, row)| grain_row(row, y, seed, amplitude)),
+    for (y, row) in pixels.chunks_exact_mut(width * 4).enumerate() {
+        match factors {
+            Some(table) if amplitude > 0 => {
+                finish_row::<true>(row, &table[y * width..(y + 1) * width], y, seed, amplitude)
+            }
+            Some(table) => finish_row::<false>(row, &table[y * width..(y + 1) * width], y, seed, 0),
+            None => grain_row(row, y, seed, amplitude),
+        }
     }
 }
 
@@ -112,7 +115,50 @@ fn finish_rows_impl(
 #[inline(always)]
 fn noise(x: usize, y: usize, seed: u32, amplitude: i32) -> i32 {
     let bits = ((hash(x as u32, y as u32, seed) >> 8) & 0xFFFF) as i32;
-    ((bits * 2 - 65535) * amplitude) / 65535
+    div_65535((bits * 2 - 65535) * amplitude)
+}
+
+/// `v / 65535`, truncated toward zero like Rust's `/`, in 32-bit operations so rows of noise
+/// vectorize. With `x = 65535 q + r` (`0 <= r < 65535`) and `q < 2^16`, `x >> 16` is `q` or `q - 1`
+/// (when `r < q`), so `(x + 1 + (x >> 16)) >> 16 = q + (r + 1 - [r < q]) / 2^16 = q` exactly; every
+/// magnitude here is at most `2^31`.
+#[inline(always)]
+fn div_65535(v: i32) -> i32 {
+    let x = v.unsigned_abs();
+    let q = ((x + 1 + (x >> 16)) >> 16) as i32;
+    // Branch-free sign: `(q ^ s) - s` is `q` for `s = 0` and `-q` for `s = -1`.
+    let sign = v >> 31;
+    (q ^ sign) - sign
+}
+
+/// [`noise`] of the `BLOCK` pixels from `(x0, y)`, one simple pass per hash step so the eight hashes
+/// are computed side by side (the bits equal [`hash`]'s: XOR is associative).
+#[inline(always)]
+fn noise_block(x0: usize, y: usize, seed: u32, amplitude: i32, out: &mut [i32; BLOCK]) {
+    let base = (y as u32).wrapping_mul(0x85EB_CA77) ^ seed.wrapping_mul(0xC2B2_AE3D);
+    let mut h = [0_u32; BLOCK];
+    for (i, h) in h.iter_mut().enumerate() {
+        *h = ((x0 + i) as u32).wrapping_mul(0x9E37_79B1) ^ base;
+    }
+    for h in &mut h {
+        *h ^= *h >> 15;
+    }
+    for h in &mut h {
+        *h = h.wrapping_mul(0x2C1B_3C6D);
+    }
+    for h in &mut h {
+        *h ^= *h >> 12;
+    }
+    for h in &mut h {
+        *h = h.wrapping_mul(0x297A_2D39);
+    }
+    for h in &mut h {
+        *h ^= *h >> 15;
+    }
+    for (out, &h) in out.iter_mut().zip(&h) {
+        let bits = ((h >> 8) & 0xFFFF) as i32;
+        *out = div_65535((bits * 2 - 65535) * amplitude);
+    }
 }
 
 #[inline(always)]
@@ -123,7 +169,33 @@ fn shade(pixel: &mut [u8; 4], factor: i32, noise: i32) {
     }
 }
 
-/// Vignette (and, with `GRAIN`, grain) over one row of pixels with its row of factors.
+/// Pixels per block of the row loops: the noise of a block is computed first (eight hashes side
+/// by side), then each pixel is shaded as one `u32` lane (red, green, and blue extracted, shaded
+/// like [`shade`], and packed back with the alpha byte unchanged), which vectorizes.
+const BLOCK: usize = 8;
+
+/// Shades one block of `BLOCK` RGBA pixels by the per-pixel `factors` (1/256 steps) and `noise`
+/// (1/256 of a level); the same result as [`shade`] on each pixel.
+#[inline(always)]
+fn shade_block(bytes: &mut [u8], factors: &[i32; BLOCK], noise: &[i32; BLOCK]) {
+    let mut lanes = [0_u32; BLOCK];
+    for (lane, pixel) in lanes.iter_mut().zip(bytes.as_chunks::<4>().0) {
+        *lane = u32::from_le_bytes(*pixel);
+    }
+    for ((lane, &factor), &noise) in lanes.iter_mut().zip(factors).zip(noise) {
+        let channel = |shift: u32| {
+            let value = ((*lane >> shift) & 0xFF) as i32;
+            (((value * factor + noise + 128) >> 8).clamp(0, 255) as u32) << shift
+        };
+        *lane = (*lane & 0xFF00_0000) | channel(0) | channel(8) | channel(16);
+    }
+    for (pixel, lane) in bytes.as_chunks_mut::<4>().0.iter_mut().zip(lanes) {
+        *pixel = lane.to_le_bytes();
+    }
+}
+
+/// Vignette (and, with `GRAIN`, grain) over one row of pixels with its row of factors; the same
+/// result as [`shade`] with [`noise`] per pixel, in blocks the compiler can vectorize.
 #[inline(always)]
 fn finish_row<const GRAIN: bool>(
     row: &mut [u8],
@@ -132,15 +204,31 @@ fn finish_row<const GRAIN: bool>(
     seed: u32,
     amplitude: i32,
 ) {
-    for (x, (pixel, &factor)) in row
+    let mut blocks = row.chunks_exact_mut(BLOCK * 4);
+    let mut table = factors.chunks_exact(BLOCK);
+    let mut x0 = 0;
+    for (bytes, table) in (&mut blocks).zip(&mut table) {
+        let mut f = [0_i32; BLOCK];
+        for (f, &t) in f.iter_mut().zip(table) {
+            *f = i32::from(t);
+        }
+        let mut n = [0_i32; BLOCK];
+        if GRAIN {
+            noise_block(x0, y, seed, amplitude, &mut n);
+        }
+        shade_block(bytes, &f, &n);
+        x0 += BLOCK;
+    }
+    for (i, (pixel, &factor)) in blocks
+        .into_remainder()
         .as_chunks_mut::<4>()
         .0
         .iter_mut()
-        .zip(factors)
+        .zip(table.remainder())
         .enumerate()
     {
         let noise = if GRAIN {
-            noise(x, y, seed, amplitude)
+            noise(x0 + i, y, seed, amplitude)
         } else {
             0
         };
@@ -151,8 +239,22 @@ fn finish_row<const GRAIN: bool>(
 /// Grain alone over one row of pixels.
 #[inline(always)]
 fn grain_row(row: &mut [u8], y: usize, seed: u32, amplitude: i32) {
-    for (x, pixel) in row.as_chunks_mut::<4>().0.iter_mut().enumerate() {
-        shade(pixel, 256, noise(x, y, seed, amplitude));
+    let mut blocks = row.chunks_exact_mut(BLOCK * 4);
+    let mut x0 = 0;
+    for bytes in &mut blocks {
+        let mut n = [0_i32; BLOCK];
+        noise_block(x0, y, seed, amplitude, &mut n);
+        shade_block(bytes, &[256; BLOCK], &n);
+        x0 += BLOCK;
+    }
+    for (i, pixel) in blocks
+        .into_remainder()
+        .as_chunks_mut::<4>()
+        .0
+        .iter_mut()
+        .enumerate()
+    {
+        shade(pixel, 256, noise(x0 + i, y, seed, amplitude));
     }
 }
 
@@ -211,6 +313,86 @@ mod tests {
     fn pixel(surface: &Surface, x: u32, y: u32) -> [u8; 4] {
         let offset = ((y * surface.width + x) * 4) as usize;
         surface.pixels[offset..offset + 4].try_into().unwrap()
+    }
+
+    /// The per-pixel loop the blocked rows replaced.
+    fn reference(
+        pixels: &mut [u8],
+        width: usize,
+        factors: Option<&[u16]>,
+        seed: u32,
+        amplitude: i32,
+    ) {
+        for (y, row) in pixels.chunks_exact_mut(width * 4).enumerate() {
+            for (x, pixel) in row.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+                let factor = factors.map_or(256, |t| i32::from(t[y * width + x]));
+                // The noise as it was computed before the multiply-shift division.
+                let bits = ((hash(x as u32, y as u32, seed) >> 8) & 0xFFFF) as i32;
+                let n = if amplitude > 0 {
+                    ((bits * 2 - 65535) * amplitude) / 65535
+                } else {
+                    0
+                };
+                shade(pixel, factor, n);
+            }
+        }
+    }
+
+    #[test]
+    fn the_noise_division_matches_integer_division() {
+        let amplitudes = [1, 7, 255, 4096, 16_384];
+        for amplitude in amplitudes {
+            for bits in 0..=65_535 {
+                let v = (bits * 2 - 65_535) * amplitude;
+                assert_eq!(div_65535(v), v / 65_535, "{v}");
+            }
+        }
+        for v in [i32::MAX, i32::MIN + 1, 65_535, -65_535, 65_534, -65_534, 0] {
+            assert_eq!(div_65535(v), v / 65_535, "{v}");
+        }
+        // Every multiple of 65535 and its neighbors, up to the largest magnitude.
+        for q in 0..=32_768_i64 {
+            for r in [-1_i64, 0, 1, 65_534] {
+                let v = (q * 65_535 + r).clamp(0, i64::from(i32::MAX)) as i32;
+                assert_eq!(div_65535(v), v / 65_535, "{v}");
+                assert_eq!(div_65535(-v), -v / 65_535, "{v}");
+            }
+        }
+    }
+
+    #[test]
+    fn block_noise_matches_the_per_pixel_noise() {
+        for (x0, y, seed, amplitude) in
+            [(0, 0, 0, 1), (8, 3, 77, 4000), (4088, 2159, 9_999, 16_384)]
+        {
+            let mut block = [0; BLOCK];
+            noise_block(x0, y, seed, amplitude, &mut block);
+            for (i, &n) in block.iter().enumerate() {
+                assert_eq!(n, noise(x0 + i, y, seed, amplitude));
+            }
+        }
+    }
+
+    #[test]
+    fn blocked_rows_match_the_per_pixel_loop() {
+        // Odd widths leave a remainder after the blocks; levels cover clamping at both ends.
+        for (width, height) in [(37, 5), (64, 3), (3, 4), (8, 2)] {
+            let lut = FinishLut::build(width as u32, height as u32, 0.8);
+            let source: Vec<u8> = (0..width * height * 4)
+                .map(|i| (i as u32).wrapping_mul(2_654_435_761).rotate_left(7) as u8)
+                .collect();
+            for (factors, amplitude) in [
+                (Some(lut.factors.as_slice()), 4000),
+                (Some(lut.factors.as_slice()), 0),
+                (None, 16_384),
+            ] {
+                let mut fast = source.clone();
+                let mut slow = source.clone();
+                finish_rows(&mut fast, width, factors, 99, amplitude);
+                reference(&mut slow, width, factors, 99, amplitude);
+                assert_eq!(fast, slow, "{width}x{height} grain {amplitude}");
+            }
+        }
     }
 
     #[test]

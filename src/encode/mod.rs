@@ -320,7 +320,9 @@ fn video_frames<'a, 'composition>(
                 }
             };
             let yuv = Arc::get_mut(&mut pool[index]).unwrap();
-            yuv.read_rgba8(RgbaSliceU8::new(rgba, dimensions));
+            crate::profile::time(crate::profile::Phase::Convert, || {
+                yuv.read_rgba8(RgbaSliceU8::new(rgba, dimensions))
+            });
             current = Some(index);
             last_rasterized = Some(rasterized);
         }
@@ -485,7 +487,9 @@ fn write_video(
     let mut written = 0;
     for (frame, yuv) in frames.into_iter().enumerate() {
         let yuv = yuv?;
-        let (nal, frame_type) = encode_one(&mut encoder, &yuv, frame, fps)?;
+        let (nal, frame_type) = crate::profile::time(crate::profile::Phase::Encode, || {
+            encode_one(&mut encoder, &yuv, frame, fps)
+        })?;
         if writer.is_none() {
             if frame_type != FrameType::IDR {
                 bail!("the first H.264 frame is not IDR");

@@ -18,7 +18,7 @@ Use this skill for compositions rendered by the `aether-motion` native renderer.
 
 1. Translate the brief into a clear sequence of scenes, choose the requested aspect ratio and duration, and identify the main visual change in each scene.
 2. Define root composition metadata and timed `.clip` elements with stable IDs, explicit starts, durations, and track indices. Use clip IDs plus offsets to align transitions when appropriate.
-3. Keep every visible result a function of composition time. Prefer `data-hf-keyframes`, `data-hf-camera`, `data-hf-split`, `data-hf-reveal`, `data-hf-counter`, and `data-hf-transition` for the supported motion they describe. Use CSS animation only within the documented subset.
+3. Keep every visible result a function of composition time. Prefer `data-hf-keyframes`, `data-hf-camera`, `data-hf-split` (with `data-hf-split-wrap` for long kinetic lines), `data-hf-reveal`, `data-hf-counter`, `data-hf-transition`, `data-hf-bloom`, and `data-hf-motion-blur` for the supported motion and light they describe. Use CSS animation only within the documented subset.
 4. When the same video must be produced with different text, colors, numbers, or assets, declare composition variables and bind them (`var(--id)`, `data-var-text`, `data-var-src`, `data-var-if`) instead of copying the file; see the composition contract.
 5. Prefer an existing AETHER Motion block or theme when one fits. If the companion `aether-motion-blocks` skill is installed, use it for discovery and parameterized markup; otherwise run `aether-motion block list`.
 6. Route SVG-heavy artwork through `aether-motion-svg` when available. For an explicit migration from an existing HyperFrames or Remotion project, use `aether-motion-import` and its source-specific reference.
@@ -26,7 +26,7 @@ Use this skill for compositions rendered by the `aether-motion` native renderer.
 
 ## Validate and inspect
 
-After structural edits, run `aether-motion check <file.html>` and fix errors using the reported `fix` guidance until `ok` is true; when `fix` only points to the contract, the `error` itself names the exact problem and remedy (for example the re-encode command for a video with B-frames). Then inspect representative frames, especially the start, midpoint, and end of a transition. Use `aether_snapshot` at absolute times when MCP is available; otherwise render PNG frames with the CLI's `--frame N` option. The companion `aether-motion-cli` skill has the full export workflow when installed.
+After structural edits, run `aether-motion check <file.html>` and fix errors using the reported `fix` guidance until `ok` is true; when `fix` only points to the contract, the `error` itself names the exact problem and remedy (for example the re-encode command for a video with B-frames). Then inspect representative frames, especially the start, midpoint, and end of a transition. Use `aether_snapshot` at absolute times when MCP is available (pass the export's `fps` when the composition has motion blur, so the still matches the exported frame); otherwise render PNG frames with the CLI's `--frame N --fps F`. The companion `aether-motion-cli` skill has the full export workflow when installed.
 
 Render an MP4 when the user requests a file or delivery. Preserve the requested dimensions and frame rate, and inspect the produced frame or video before describing it as complete. For 16:9 and 9:16 outputs, select `--size 1080p` or `--size 4k` and an explicit `--fps` of 30 or 60 when the request does not specify them.
 

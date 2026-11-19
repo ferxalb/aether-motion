@@ -7,6 +7,7 @@
 
 use super::progress::Tracker;
 use super::{encode_one, make_encoder, Quality, Sample};
+use crate::profile::{self, Phase};
 use crate::render::Renderer;
 use anyhow::{anyhow, bail, Context, Result};
 use openh264::encoder::FrameType;
@@ -60,10 +61,13 @@ fn encode_segment(
     for frame in range {
         let (rgba, revision) = renderer.render_frame_with_revision(frame, fps)?;
         if last_revision != Some(revision) {
-            yuv.read_rgba8(RgbaSliceU8::new(rgba, dims));
+            profile::time(Phase::Convert, || {
+                yuv.read_rgba8(RgbaSliceU8::new(rgba, dims))
+            });
             last_revision = Some(revision);
         }
-        let (nal, frame_type) = encode_one(&mut encoder, &yuv, frame, fps)?;
+        let (nal, frame_type) =
+            profile::time(Phase::Encode, || encode_one(&mut encoder, &yuv, frame, fps))?;
         if samples.is_empty() {
             if frame_type != FrameType::IDR {
                 bail!("the first frame of segment {index} is not IDR");

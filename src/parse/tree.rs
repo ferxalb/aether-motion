@@ -8,9 +8,10 @@ use crate::parse::audio::{parse_audio, PendingAudio};
 use crate::parse::captions::parse_captions;
 use crate::parse::counter::parse_counter;
 use crate::parse::css::{Stylesheet, Vars};
+use crate::parse::effects::parse_effects;
 use crate::parse::html::{attr, direct_text, number};
 use crate::parse::rich_text::{collect as collect_rich_text, has_inline_runs};
-use crate::parse::split::parse_split;
+use crate::parse::split::{parse_split, SplitPlan};
 use crate::parse::style::{style_for, Resolved};
 use crate::parse::transition::{parse_transition, TransitionSpec};
 use crate::parse::vector::{parse_motion_path, prepare_draw};
@@ -32,15 +33,23 @@ pub(in crate::parse) struct Pending {
     pub(in crate::parse) motion_path: Option<crate::model::MotionPath>,
 }
 
+/// Inputs shared by the whole walk.
+pub(in crate::parse) struct WalkContext<'a> {
+    pub(in crate::parse) base: &'a Path,
+    pub(in crate::parse) sheet: &'a Stylesheet,
+    /// Line breaks of `data-hf-split-wrap` elements (see `split::SplitPlan`).
+    pub(in crate::parse) splits: &'a SplitPlan,
+}
+
 pub(in crate::parse) fn walk(
     node: &NodeRef,
     parent: Option<usize>,
-    base: &Path,
-    sheet: &Stylesheet,
+    context: &WalkContext<'_>,
     vars: &Vars,
     out: &mut Vec<Pending>,
     audio: &mut Vec<PendingAudio>,
 ) -> Result<()> {
+    let (base, sheet) = (context.base, context.sheet);
     let Some(el) = node.as_element() else {
         return Ok(());
     };
@@ -215,7 +224,14 @@ pub(in crate::parse) fn walk(
     })?;
     let inherited_align = std::iter::successors(parent, |&i| out[i].element.parent)
         .find_map(|i| out[i].element.style.text_align.clone());
-    let split = parse_split(node, &tag, &style, inherited_align.as_deref()).with_context(|| {
+    let split = parse_split(
+        node,
+        &tag,
+        &style,
+        inherited_align.as_deref(),
+        context.splits,
+    )
+    .with_context(|| {
         format!(
             "data-hf-split on <{tag}> ({})",
             attr(node, "id").as_deref().unwrap_or("no id")
@@ -271,6 +287,12 @@ pub(in crate::parse) fn walk(
             bail!("data-hf-captions requires an empty element (no text or child elements)");
         }
     }
+    let effects = parse_effects(node).with_context(|| {
+        format!(
+            "<{tag}> ({})",
+            attr(node, "id").as_deref().unwrap_or("no id")
+        )
+    })?;
     let host_style = captions.as_ref().map(|_| style.clone());
     let idx = out.len();
     let rest = Pose {
@@ -302,8 +324,10 @@ pub(in crate::parse) fn walk(
             layout: LayoutHints {
                 allow_safe_zone: flag(node, "data-layout-allow-safe-zone")?,
                 allow_caption_zone: flag(node, "data-layout-allow-caption-zone")?,
+                split_wrap: split.as_ref().and_then(|spec| spec.unresolved_wrap()),
                 ..LayoutHints::default()
             },
+            effects,
         },
         start_expr,
         duration,
@@ -347,7 +371,7 @@ pub(in crate::parse) fn walk(
         if inline_children.contains(&child) {
             continue;
         }
-        walk(&child, Some(idx), base, sheet, &vars, out, audio)?;
+        walk(&child, Some(idx), context, &vars, out, audio)?;
     }
     Ok(())
 }
