@@ -14,6 +14,7 @@ Use SVG when vector artwork will improve an AETHER Motion composition. This rend
 - Do not use SVG `<text>`, scripts, SMIL animation, `<foreignObject>`, event handlers, or external resource URLs. Put readable copy in ordinary HTML text beside the artwork; if text must be part of the vector, convert it to paths before importing.
 - Treat each `<img>` or inline `<svg>` as one visual layer. Apply timing and motion to that outer element with supported `data-hf-*` attributes. If parts need independent timing, split them into separate SVG assets or HTML elements rather than animating paths inside one SVG.
 - For sizing, use a local example such as `examples/svg.html`, then account for `object-fit` and the final composition size. Avoid building SVGs at one fixed screen size when a `viewBox` can preserve their proportions.
+- Under an animated camera zoom or scale, `object-fit: fill` SVG plates are resampled from shared zoom-ladder rasters (at most about 9% above the drawn size) instead of being rasterized every frame; frames at rest stay exact. Keep plates at `fill` for fast zooms, and inspect zooming frames at the export size. A plate whose fit exceeds 64 MiB is rasterized for its visible part every frame, which is slow, so keep backdrops that never need to zoom outside the camera.
 
 ## Validate the composition
 

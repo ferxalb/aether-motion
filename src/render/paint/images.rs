@@ -9,8 +9,8 @@ use crate::model::Color;
 use crate::profile::{self, ImageMetric, Phase};
 use crate::render::check_image;
 use crate::render::geometry::{clip_pixels, Rect};
-use crate::render::paint::{svg, svg_levels};
 use crate::render::paint::Surface;
+use crate::render::paint::{svg, svg_levels};
 use crate::render::Renderer;
 use anyhow::{anyhow, Context, Result};
 use image::{imageops, Rgba, RgbaImage};
@@ -209,10 +209,10 @@ impl<'a> Renderer<'a> {
     }
 
     /// Draws a fitted image. `zoom` is the element's combined CSS scale while it (or an ancestor) is
-    /// changing scale: vector artwork then reuses a ladder-level raster resampled to this frame's
-    /// size instead of being rasterized again at every passing size. At rest, or with `None`, the
-    /// image is fitted exactly, as before. Vector fits too large to cache are rasterized for their
-    /// visible part only.
+    /// changing scale: vector artwork with `object-fit: fill` then reuses a ladder-level raster
+    /// resampled to this frame's size instead of being rasterized again at every passing size. At
+    /// rest, or with `None`, the image is fitted exactly, as before. Vector fits too large to cache
+    /// are rasterized for their visible part only.
     pub(in crate::render) fn draw_image(
         &mut self,
         src: ImageSrc<'a>,
@@ -228,7 +228,11 @@ impl<'a> Renderer<'a> {
         if src.is_vector() && raster_bytes(w, h)? > CACHE_LIMIT {
             return self.draw_visible_svg(src, [x0, y0], [w, h], fit, alpha);
         }
-        let fitting = match zoom.filter(|_| src.is_vector()) {
+        // Only `fill` maps the artwork onto the box independently per axis, so resampling a level
+        // back to the box reproduces the exact geometry. `contain` and `cover` would be placed at
+        // the level's rounded aspect ratio and then stretched, a sub-pixel misplacement, so they
+        // stay exact.
+        let fitting = match zoom.filter(|_| src.is_vector() && fit == "fill") {
             Some(scale) => {
                 let size = [rect.w * self.scale, rect.h * self.scale];
                 let [lw, lh] = svg_levels::level_size(size, scale, [w, h]);
@@ -362,13 +366,15 @@ impl CachedImage {
         &self,
         [w, h]: [u32; 2],
         scratch: &mut Vec<u8>,
-        f: &mut dyn FnMut(usize, &[u8], (usize, usize)),
+        f: &mut svg_levels::RowSink<'_>,
     ) {
         let stride = w as usize * 4;
         let span = |y: usize| {
             self.rows
                 .get(y)
-                .map_or((0, w as usize), |&(first, last, _)| (first as usize, last as usize))
+                .map_or((0, w as usize), |&(first, last, _)| {
+                    (first as usize, last as usize)
+                })
         };
         match &self.pixels {
             ImagePixels::Raw(raw) => {

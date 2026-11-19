@@ -100,7 +100,8 @@ impl CameraRig {
             bail!("a camera rig accepts at most {MAX_KEYS} keys");
         }
         for pair in keys.windows(2) {
-            if !(pair[1].at > pair[0].at) {
+            // `partial_cmp` also rejects NaN times.
+            if pair[1].at.partial_cmp(&pair[0].at) != Some(std::cmp::Ordering::Greater) {
                 bail!("camera key times must be strictly increasing");
             }
         }

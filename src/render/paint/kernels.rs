@@ -219,7 +219,13 @@ dispatched!(
 );
 
 #[inline(always)]
-fn filter_columns_impl(out: &mut [i32], row: &[u8], starts: &[usize], weights: &[i32], taps: usize) {
+fn filter_columns_impl(
+    out: &mut [i32],
+    row: &[u8],
+    starts: &[usize],
+    weights: &[i32],
+    taps: usize,
+) {
     for ((o, &start), w) in out
         .as_chunks_mut::<4>()
         .0
@@ -274,7 +280,12 @@ pub(in crate::render) fn unpremultiply_row(dest: &mut [u8], acc: &[i32], shift: 
                 ((c * 255 + a / 2) / a).min(255) as u8
             }
         };
-        *pixel = [straight(acc[0]), straight(acc[1]), straight(acc[2]), a as u8];
+        *pixel = [
+            straight(acc[0]),
+            straight(acc[1]),
+            straight(acc[2]),
+            a as u8,
+        ];
     }
 }
 

@@ -67,7 +67,9 @@ pub(crate) fn rasterize_region(
     fit: &str,
     region: [u32; 4],
 ) -> Result<RgbaImage> {
-    profile::time(Phase::SvgRaster, || rasterize_pixels(tree, w, h, fit, region))
+    profile::time(Phase::SvgRaster, || {
+        rasterize_pixels(tree, w, h, fit, region)
+    })
 }
 
 fn rasterize_pixels(
@@ -124,39 +126,65 @@ mod tests {
         assert_eq!(c.get_pixel(10, 5).0, [255, 0, 0, 255]);
     }
 
+    /// Per-pixel largest premultiplied channel difference between `region` (rasterized alone) and
+    /// the same part of the whole `333 x 201` raster.
+    fn region_differences(art: &str, fit: &str, [x, y, w, h]: [u32; 4]) -> Vec<i32> {
+        let tree = parse_svg(art.as_bytes()).unwrap();
+        let whole = rasterize(&tree, 333, 201, fit).unwrap();
+        let part = rasterize_region(&tree, 333, 201, fit, [x, y, w, h]).unwrap();
+        let crop = image::imageops::crop_imm(&whole, x, y, w, h).to_image();
+        // Compare premultiplied: a low-alpha pixel's straight color is coarse.
+        let pm = |px: &image::Rgba<u8>, c: usize| {
+            if c == 3 {
+                i32::from(px[3])
+            } else {
+                i32::from(px[c]) * i32::from(px[3]) / 255
+            }
+        };
+        part.pixels()
+            .zip(crop.pixels())
+            .map(|(p, q)| (0..4).map(|c| (pm(p, c) - pm(q, c)).abs()).max().unwrap())
+            .collect()
+    }
+
     #[test]
     fn a_region_matches_the_same_part_of_the_whole_raster() {
-        let art = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60">
+        const REGION: [u32; 4] = [101, 37, 150, 90];
+        // The blurred circle's filter region crosses the region's top edge; every shape is
+        // rasterized identically, so the region matches within rounding.
+        let filtered = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60">
             <defs><filter id="f"><feGaussianBlur stdDeviation="2"/></filter></defs>
-            <path d="M3 50 L97 7" stroke="#123" stroke-width="0.6" fill="none"/>
+            <rect x="40" y="16" width="16" height="10" fill="#4a8"/>
             <circle cx="51" cy="29" r="17" fill="#e84" opacity=".6" filter="url(#f)"/></svg>"##;
-        let tree = parse_svg(art.as_bytes()).unwrap();
+        // A hairline that crosses the region's left and right edges is clipped to the region,
+        // which re-derives its edge segments; its antialiasing can then move by one step of
+        // tiny-skia's 4x4 supersampling (16 of 255; measured: exactly 16 on 4 to 10 pixels).
+        let stroke = r##"<path d="M3 50 L97 7" stroke="#123" stroke-width="0.6" fill="none"/>"##;
+        let stroked = filtered.replace("<rect", &format!("{stroke}<rect"));
+        let stroke_only = format!(
+            r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60">{stroke}</svg>"##
+        );
+        let [x, y, w, _] = REGION;
         for fit in ["fill", "contain", "cover"] {
-            let whole = rasterize(&tree, 333, 201, fit).unwrap();
-            let [x, y, w, h] = [101, 37, 150, 90];
-            let part = rasterize_region(&tree, 333, 201, fit, [x, y, w, h]).unwrap();
-            let crop = image::imageops::crop_imm(&whole, x, y, w, h).to_image();
-            // Compare premultiplied: a low-alpha pixel's straight color is coarse.
-            let worst = part
-                .pixels()
-                .zip(crop.pixels())
-                .flat_map(|(p, q)| {
-                    let pm = |px: &image::Rgba<u8>, c: usize| {
-                        i32::from(px[c]) * i32::from(px[3]) / 255
-                    };
-                    (0..4).map(move |c| {
-                        let (a, b) = if c == 3 {
-                            (i32::from(p[3]), i32::from(q[3]))
-                        } else {
-                            (pm(p, c), pm(q, c))
-                        };
-                        (a - b).abs()
-                    })
-                })
-                .max()
-                .unwrap();
-            eprintln!("{fit}: worst premultiplied difference {worst}");
-            assert!(worst <= 1, "{fit}: worst premultiplied difference {worst}");
+            let control = region_differences(filtered, fit, REGION);
+            let worst = control.iter().copied().max().unwrap();
+            assert!(
+                worst <= 1,
+                "{fit}: without the clipped stroke, worst {worst}"
+            );
+
+            // Differences beyond rounding may only sit under the stroke, by at most one step.
+            let tree = parse_svg(stroke_only.as_bytes()).unwrap();
+            let line = rasterize(&tree, 333, 201, fit).unwrap();
+            let diffs = region_differences(&stroked, fit, REGION);
+            for (i, &d) in diffs.iter().enumerate() {
+                let (px, py) = (x + i as u32 % w, y + i as u32 / w);
+                let under_stroke = line.get_pixel(px, py)[3] > 0;
+                assert!(
+                    d <= 1 || (under_stroke && d <= 16),
+                    "{fit}: ({px}, {py}) differs by {d}, under the stroke: {under_stroke}"
+                );
+            }
         }
     }
 

@@ -38,6 +38,21 @@ to paint. Geometry, fitting, alpha math and cache keys remain the same, so cold 
 use the same pixels. Bitmap and sequence entries retain raw fitted pixels. Cache eviction can
 still occur when the combined working set exceeds the limit.
 
+### Vector artwork under animated zoom
+
+While an element's scale (or an ancestor's) is changing, `FrameState::zooming` is set from a
+1 ms look-ahead of the pose, a pure function of time. Vector images with `object-fit: fill` are
+then drawn from a zoom-ladder level (`paint/svg_levels.rs`): an exact raster at
+`2^(k/8)` times the unscaled box, never smaller than the frame's fit, resampled down by at most
+one ladder step (≈9%) with a separable fixed-point Catmull-Rom filter on premultiplied samples.
+Levels are ordinary exact entries of the fitted-image cache (keyed by `Fitting::Exact`, packed
+under pressure as above), and resampled fits are keyed by `Fitting::Level`, so the pixels never
+depend on what is cached. Resampled fits are evicted first and never push out an exact raster;
+when they would, they are drawn once without being stored. Frames at rest, `contain`, `cover`,
+raster images, and sequences are fitted exactly as before. A vector fit larger than the 64 MiB
+per-image limit is rasterized only for its part on the current surface (`svg::rasterize_region`)
+and not cached; that part must itself fit in 64 MiB.
+
 `AETHER_PROFILE=1` reports SVG parse and raster phases, bitmap fit, image packing, blit
 (time includes blending and unpacking), frame finishing, and fitted-image cache counters.
 Peak fitted bytes are the largest residency of any worker, and raster-byte counters count

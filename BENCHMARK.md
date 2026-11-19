@@ -1125,3 +1125,109 @@ its fitted raster exceeded the existing 64 MiB per-image limit, and frame 96 fai
 `rasterized image exceeds 64 MiB`. The sky is now a fixed backdrop outside the camera, which is
 also physically right for a dolly. The largest fitted raster at 1080p dropped from 22,965,660
 to 13,850,172 bytes.
+
+## Zoom-aware SVG reuse (2026-11-19)
+
+Release builds of the commit before the zoom ladder (baseline) and of the ladder, measured in the
+same session on a 4-core Linux container (so absolute times differ from the desktop sections
+above), `AETHER_PROFILE=1`, `--quality standard`, 24 fps. CPU is user plus system time and RSS is
+the process maximum (`getrusage`). Every pair uses identical commands and thread counts.
+
+`examples/cinematic-camera-rig-6s.html`, full 1080p MP4 export (144 frames):
+
+| Run | Wall | CPU | Peak RSS | Effective fps | SVG rasters | Fitted hits / misses / evictions |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Baseline, 1 thread | 184.53 s | 182.69 s | 216,760,320 bytes | 0.78 | 1,683 (150.8 s) | 2,336 / 1,984 / 1,680 |
+| Ladder, 1 thread | 57.00 s | 56.42 s | 211,279,872 bytes | 2.53 | 128 (11.5 s) | 3,897 / 2,541 / 961 |
+| Baseline, 4 threads | 58.95 s | 200.80 s | 696,029,184 bytes | 2.44 | 1,757 (167.8 s) | 2,219 / 2,101 / 1,193 |
+| Ladder, 4 threads | 22.89 s | 66.43 s | 730,923,008 bytes | 6.29 | 238 (24.7 s) | 3,738 / 2,309 / 1,693 |
+
+At one thread, SVG rasterizations fall 92% and wall time 69%. The new cost is resampling: 2,118
+calls, 22.5 s (10.6 ms each at 1080p). Most misses and evictions are now resampled fits, which are
+cheap to remake and are evicted before any exact raster. At four threads, peak RSS rises 5%
+(each worker holds its own ladder levels inside its own 64 MiB budget). A rerun of the final
+binary took 53.38 s at one thread and 21.09 s at four.
+
+Drawing-only windows (`bench`, 1 thread):
+
+| Window | Wall | CPU | Peak RSS | SVG rasters | Resample | Fitted hits / misses / evictions |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1080p frames 48–67 (dolly), baseline | 34.53 s | 34.25 s | 139,231,232 bytes | 347 (29.9 s) | — | 199 / 401 / 196 |
+| 1080p frames 48–67 (dolly), ladder | 10.06 s | 9.98 s | 147,144,704 bytes | 37 (3.7 s) | 3.6 s | 509 / 451 / 349 |
+| 1080p frames 4–23 (zoom held, camera tracks), baseline | 4.22 s | 4.19 s | 108,814,336 bytes | 19 | — | 551 / 49 / 0 |
+| 1080p frames 4–23 (zoom held, camera tracks), ladder | 4.32 s | 4.30 s | 106,704,896 bytes | 19 | — | 551 / 49 / 0 |
+| 4K frames 88–95 (deepest dolly), baseline | 67.79 s | 67.29 s | 267,235,328 bytes | 145 (61.1 s) | — | 73 / 167 / 96 |
+| 4K frames 88–95 (deepest dolly), ladder | 23.59 s | 23.38 s | 256,937,984 bytes | 19 (9.1 s) | 9.6 s | 199 / 214 / 114 |
+| 15 s short, 1080p frames 140–159 (pan only), baseline | 1.42 s | 1.38 s | 59,101,184 bytes | 4 | — | 346 / 34 / 0 |
+| 15 s short, 1080p frames 140–159 (pan only), ladder | 1.36 s | 1.34 s | 59,105,280 bytes | 4 | — | 346 / 34 / 0 |
+
+Held-zoom and pan-only windows do the same work (the difference is noise). Memory does not grow
+with frame count: the ladder binary peaked at 148,037,632 bytes over frames 48–67 and
+149,676,032 bytes over frames 48–127, and the per-worker fitted cache stayed at or below its
+67,108,864-byte budget in every run.
+
+Visual difference against the baseline's exact rasters (lossless PNGs; mean and max absolute RGB
+difference, PSNR, share of pixels off by more than 8, and the ratio of Sobel edge energy, ladder
+over baseline, which drops when an image softens):
+
+| Frame | Mean / max | PSNR | > 8 | Edge energy |
+| --- | ---: | ---: | ---: | ---: |
+| 1080p 10 (zoom held) | 0 / 0 | identical | 0% | 1.000 |
+| 1080p 55, 72, 110 (dolly in) | 1.03–1.04 / 61–65 | 38.9–39.1 dB | 2.4–2.6% | 0.984–0.988 |
+| 1080p 96 (deepest zoom) | 0.92 / 66 | 39.9 dB | 2.0% | 0.992 |
+| 1080p 130 (reveal) | 1.17 / 71 | 38.0 dB | 3.0% | 0.983 |
+| 4K 0 (follow, no zoom) | 0 / 0 | identical | 0% | 1.000 |
+| 4K 72, 96 | 0.51–0.56 / 61–68 | 42.3–42.8 dB | 1.0–1.2% | 0.999–1.000 |
+| 4K 143 | 0.72 / 75 | 40.1 dB | 1.7% | 0.997 |
+
+Difference heat maps put every change on antialiased edges; 1:1 crops of thin railings, window
+mullions, and lamp posts at 4K frame 96 show no visible softening or displacement. The largest
+local changes are on the canopy's patterned rivets: resvg rasterizes a `<pattern>` tile at a
+pixel-rounded size, so its phase already moves with the raster size (exact rasters at 1091 and
+1001 px of `canopy.svg`, the first scaled to the second, place the rivets a row apart). The
+baseline therefore re-phases the pattern on every zooming frame; the ladder re-phases it only at
+level changes. A filter-width experiment (unwidened Catmull-Rom) changed PSNR by at most 0.1 dB, so
+the remaining difference is the resampling itself, not over-filtering. `contain` and `cover` fits
+would be placed at the level's rounded aspect ratio, so they stay exact (`tests/svg_zoom.rs`).
+On a synthetic worst case (0.7-unit hairlines about 1 px wide at 1.5×) a zooming frame differs
+by mean 1.34, max 74, 0.17 px centroid shift.
+
+Determinism (ladder binary): the 1080p MP4 is identical at 1 and 4 threads and when assembled from
+segment parts `4..6`, `0..2`, `2..4` rendered in that order by separate processes (`4c79e281…`).
+Frames 0, 47, 55, 72, 96, 130, and 143 rendered as one 4-thread batch equal cold 1-thread renders
+in reverse order. The 15-second short (pan-only cameras) is byte-identical to the baseline at
+frames 0, 60, 123, 150, 238, 300, and 359, including both transitions.
+
+Oversized fits: with the dawn sky moved inside the camera (`data-hf-parallax="0"`, the first 4K
+draft), 4K frame 96 fails on the baseline with `rasterized image exceeds 64 MiB`. The ladder
+binary renders it with one visible-region raster (the sky's on-screen part, uncached, re-rasterized
+each frame it stays oversized). A region raster matches the same part of a whole raster except
+where a path is clipped at the region edge: one 1/16 antialiasing step on a few pixels.
+`svg::tests::a_region_matches_the_same_part_of_the_whole_raster` pins this: without the
+clipped stroke the region matches within 1 everywhere (blur filter included); with it, every
+pixel off by more than 1 lies under that stroke and differs by exactly one supersample step
+(16 of 255; 4 to 10 pixels per fit). A region raster offset by 0.3 px fails the test.
+
+### Temporal stability
+
+Measured on lossless 1080p PNG sequences from both binaries. The temporal second difference
+`|f(t+1) - 2 f(t) + f(t-1)|` stays small under smooth zoom and spikes on jumps, flicker, or shimmer.
+
+| Sequence | Mean second difference, baseline → ladder | Worst frame |
+| --- | ---: | --- |
+| Rig demo without grain (scratch copy), frames 44–143 | 18.80 → 18.41 | ladder at most 1.2% above the baseline on any frame |
+| `canopy.svg` alone, linear zoom 1.9× → 2.4× over 48 frames, rivet band | 2.54 → 1.90 | 2.98 → 2.49; ladder below the baseline on every frame |
+
+- **Level switches.** The canopy probe crosses three ladder levels (frames 9→10, 26→27, 45→46).
+  The frame-to-frame change rises to 1.62–1.69 there (0.9–1.3 between switches), inside the
+  baseline's every-frame range of 1.08–1.68.
+- **Sharpness.** Edge energy relative to the exact raster stays within 1.008–1.029 on all 48
+  frames, with no sawtooth that follows the resample ratio.
+- **Sub-pixel shift.** On pattern-free structure (the pillar), the best sub-pixel alignment
+  between exact and ladder frames is within ±0.04 px on every sampled frame.
+- **Rivet pattern.** The exact baseline re-phases the rivets relative to the struts by about 3 px
+  on every zooming frame. The ladder keeps them locked within a level and re-phases once per
+  level switch.
+- **Reference check.** Against a 3× supersampled, box-downsampled reference of the same frames,
+  both binaries score 34–41 dB and alternate which is closer. The rivet phase error belongs to
+  resvg's pattern rasterization, not to the ladder; the ladder only makes it change less often.
