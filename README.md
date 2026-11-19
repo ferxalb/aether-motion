@@ -68,6 +68,17 @@ aether-motion check examples/cinematic-dystopia.html
 aether-motion render examples/cinematic-dystopia.html --output out/cinematic-4k.png --size 4k --fps 24 --frame 72
 ```
 
+[The Morning Shift — Into the Shadows](examples/cinematic-walk-15s.html) is a 15-second
+short in three shots. Matching 12 FPS cels move through stationary world-space light
+masks, and the overpass pillar occludes the worker as he passes behind it. The reflected
+cels are masked to the wet pavement. The PNG cels are included and their
+[drawing script](examples/cinematic-walk-assets/draw-cels.py) can regenerate them on macOS.
+
+```bash
+aether-motion check examples/cinematic-walk-15s.html
+aether-motion render examples/cinematic-walk-15s.html --output out/cinematic-walk-4k.mp4 --size 4k --fps 24 --quality max --threads 3
+```
+
 ### Manually with the CLI
 
 ```bash

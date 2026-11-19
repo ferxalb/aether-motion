@@ -12,6 +12,9 @@ CLI/MCP output may still change between minor releases.
 - Native PNG and WebP cel playback with clip-local timing, hold, loop, pingpong, and bounded image caching.
 - Camera-relative pan per depth plane and optional filmic root exposure, highlight roll-off, and shadow toe.
 - The Morning Shift, an original layered industrial dawn example with illustrated assets, animated rain and fog, and a 12 FPS character sequence.
+- The Morning Shift — Into the Shadows, a 15-second three-shot short with an original 12-cel
+  walking cycle, world-space character lighting, foreground occlusion, and animated wet-pavement
+  reflections. The example includes the new illustrations, cels, and their drawing source.
 - `AETHER_PROFILE=1` now reports fitted-image hits, misses, evictions, packed entries, and
   raster and cache byte counts. It also times SVG parsing and rasterization, image fitting,
   packing, blitting (including alpha blending and unpacking), and frame finishing.
@@ -19,6 +22,8 @@ CLI/MCP output may still change between minor releases.
 
 ### Changed
 
+- Extended the cinematic validation with a 15-frame 4K benchmark, an animated-zoom probe,
+  native MP4 cadence checks, and byte-identical comparisons with the original continuity PNGs.
 - Under byte pressure, the fitted-image cache stores compressible SVG rasters in lossless LZ4
   row bands within the existing 64 MiB budget. Painting unpacks only the bands it needs into a
   reusable 256 KiB buffer. Cache keys, bitmap and sequence storage, and rendered pixels stay the same.

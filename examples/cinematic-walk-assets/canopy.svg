@@ -1,0 +1,18 @@
+<!-- Riveted service overpass and near-side pillar, painted in street coordinates. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="830" height="671" viewBox="-35 120 830 671">
+  <defs>
+    <linearGradient id="steel" x2="0" y2="1"><stop stop-color="#3e3e3e"/><stop offset=".18" stop-color="#292929"/><stop offset=".54" stop-color="#191919"/><stop offset="1" stop-color="#0b0b0b"/></linearGradient>
+    <linearGradient id="pillar"><stop stop-color="#171717"/><stop offset=".22" stop-color="#313131"/><stop offset=".55" stop-color="#202020"/><stop offset=".91" stop-color="#131313"/><stop offset="1" stop-color="#4a4a4a"/></linearGradient>
+    <pattern id="rib" width="32" height="14" patternUnits="userSpaceOnUse"><path d="M0 6h32" stroke="#828282" opacity=".26"/><path d="M4 0v13" stroke="#141414" stroke-width="2"/><circle cx="9" cy="10" r="1.2" fill="#777777"/></pattern>
+  </defs>
+  <path d="M-35 129L793 330V359L742 366 702 411 668 427-35 269Z" fill="url(#steel)"/>
+  <path d="M-35 173L770 353 733 384-35 226Z" fill="#131313"/>
+  <path d="M-35 182L763 359 740 379-35 219Z" fill="url(#rib)" opacity=".59"/>
+  <path d="M-35 130L792 330M-35 139L792 336M-35 228L723 390M-35 260L667 420" fill="none" stroke="#626262" stroke-width="2"/>
+  <path d="M-35 155L787 345M-35 223L740 384M-35 257L673 421" fill="none" stroke="#0d0d0d" stroke-width="5"/>
+  <path d="M-35 255L755 351 715 405 711 744 723 752 718 764 682 768 675 756 684 744 683 451Q677 424 642 410L-35 280Z" fill="url(#pillar)"/>
+  <path d="M686 752V443Q688 418 665 407L-30 268M709 743l3-329 25-37" fill="none" stroke="#777777" stroke-width="1.3" opacity=".74"/>
+  <path d="M679 752l39-5 4 11-43 8ZM682 612l28-3M686 538l26-3M687 482l27-5" fill="none" stroke="#111111" stroke-width="3"/>
+  <path d="M681 755l36-6M694 440v303M702 590v144M703 453v81" fill="none" stroke="#606060" stroke-width="1" opacity=".48"/>
+  <path d="M553 326l25 21 14-31m-91-5l32 22 10-26m-100-23l29 29 15-17m-120-31l21 30 18-17m-102-18l26 28 17-21m-105-24l30 29 11-18m-105-24l28 26 18-19m-110-25l34 28 19-21m-108-20l30 27 15-21" fill="none" stroke="#5a5a5a" stroke-width="2" opacity=".28"/>
+</svg>

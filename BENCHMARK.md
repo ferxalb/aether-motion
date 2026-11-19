@@ -982,3 +982,40 @@ The raw cache spent 91% of its measured raster phase on SVG rasterization. The o
 cache retained those exact pixels within the existing 64 MiB budget, shifting a small
 amount of work into blitting. A small, cache-pressure fixture produced byte-identical
 segmented MP4s at 1, 2, 4 and 64 configured threads and with packing disabled.
+
+## Cinematic short production validation
+
+Native macOS x86-64, Intel Core i5-10400F. The existing release build rendered the original
+`examples/cinematic-dystopia.html` before production changes. CPU totals combine user
+and system time. The original 4K reference frames 72, 84, and 96 matched byte-for-byte.
+
+| Phase 1 run | Wall | CPU | Peak RSS | Fitted-image hits / misses / evictions | SVG rasters |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 4K draw, frames 64–78, 1 thread | 10.82 s | 10.58 s | 201,129,984 bytes | 290 / 25 / 0 | 17 |
+| 4K animated zoom with parallax, three PNGs 70–72, 1 thread | 16.07 s | 15.89 s | 237,826,048 bytes | 10 / 53 / 0 | 50 |
+| Original 1080p MP4, 192 frames, 2 threads, high | 15.62 s | 30.71 s | 263,069,696 bytes | 3,974 / 58 / 0 | 34 |
+
+The zoom probe changed the camera from 1.026× to 1.10× over eight seconds. Its SVG
+rasters took 13.850 s because the exact fitted dimensions changed, even though the cache
+did not evict entries. The original export's sampled live RSS plateaued around
+227–239 MiB after startup. AVFoundation decoded all 192 frames at 1920×1080, exactly
+24 fps with correct presentation timestamps and an eight-second duration.
+
+The production scene uses three fixed shot zooms with moving camera focus. Near geometry,
+the walker, light masks, and reflection share one parallax factor so they stay registered.
+Tiled rain keeps the near and far rain placements within the fitted-image budget. The 1080p
+preview decoded all 360 frames with correct cadence. It took 35.57 s wall, 68.20 s CPU, and
+296,435,712 bytes peak RSS at two threads and high quality.
+
+The final native 4K master uses the max quality preset and three threads. It rendered
+360 frames in 103.04 s wall (3.49 frames/s), with 296.96 s user CPU, 4.60 s system CPU,
+and 1,042,837,504 bytes peak RSS. The file is 562,600,610 bytes. The profile recorded
+213.426 s of raster work, including 57.608 s across 171 SVG raster calls, and 85.867 s
+of encoding. The fitted cache served 10,497 hits, with 423 misses and 123 evictions over
+all workers. The 171 SVG raster calls are consistent with warming the artwork at three
+shot sizes on three workers. Cache usage stayed within the 64 MiB fitted-image budget
+per worker. The measured process RSS includes the render surfaces and native encoders.
+
+The native frame 300 PNG took 6.77 s wall and 6.74 s CPU with 216,211,456 bytes peak RSS.
+AVFoundation decoded all 360 master frames at 3840×2160 with correct 24 fps presentation
+timestamps and an exact 15-second duration.
