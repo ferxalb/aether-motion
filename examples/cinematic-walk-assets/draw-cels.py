@@ -21,21 +21,47 @@ def point(x, y):
     return f"{x:.3f},{y:.3f}"
 
 
-def leg(phase, bob, far):
+def footprint(phase, far):
+    """Return an ankle and sole pivot. The stance pivot stays fixed in street space."""
     phase %= 1
+    floor = 252 - (2 if far else 0)
     if phase < .5:
-        x = 113 - STANCE_TRAVEL * phase * 2
-        y = 241 + 7 * phase * 2
-        tilt = 9 * cos(phase * 2 * pi)
+        progress = 2 * phase
+        x = 113 - STANCE_TRAVEL * progress
+        # Sink from heel strike into a flat sole, then roll about the toe.
+        if progress < .26:
+            tilt, pivot = -10 * (1 - progress / .26)**2, -7
+        elif progress > .64:
+            tilt, pivot = 16 * ((progress - .64) / .36)**2, 21
+        else:
+            tilt, pivot = 0, 4
     else:
-        v = (phase - .5) * 2
-        x = 83 + STANCE_TRAVEL * (.5 - .5 * cos(pi * v))
-        y = 248 - 15 * sin(pi * v) - 7 * v
-        tilt = -13 * sin(pi * v) - 9 * cos(pi * v)
-    if far:
-        x -= 4
-        y -= 1
-    hip_x, hip_y = (96 if far else 90), 150 + bob
+        progress = 2 * (phase - .5)
+        x = 83 + STANCE_TRAVEL * (.5 - .5 * cos(pi * progress))
+        floor -= 16 * sin(pi * progress)**1.45
+        tilt = 16 * (1-progress)**2 - 10 * progress**2
+        pivot = 21 - 28 * progress
+    x -= 5 if far else 0
+    angle = tilt * pi / 180
+    # Correct the ankle position after rotation so the sole pivots at the intended contact.
+    ankle_x = x + pivot - (pivot * cos(angle) - 11 * sin(angle))
+    ankle_y = floor - (pivot * sin(angle) + 11 * cos(angle))
+    return ankle_x, ankle_y, tilt, x + pivot, floor
+
+
+def contact(index):
+    art = []
+    for shift, far in [(0, False), (.5, True)]:
+        phase = (index / STEPS + shift) % 1
+        if phase < .5:
+            _, _, _, x, floor = footprint(phase, far)
+            art.append(f'<ellipse cx="{x:.2f}" cy="{floor+1:.2f}" rx="16" ry="4.3" fill="url(#shoe-shadow)"/>')
+    return "".join(art)
+
+
+def leg(phase, bob, far):
+    x, y, tilt, _, _ = footprint(phase, far)
+    hip_x, hip_y = (94 if far else 89), 150 + bob
     dx, dy = x - hip_x, y - hip_y
     distance = hypot(dx, dy)
     bend = sqrt(max(2, 48**2 - distance**2 / 4))
@@ -59,16 +85,18 @@ def leg(phase, bob, far):
 
 def figure(index):
     phase = index / STEPS
-    bob = -2.4 * sin(phase * 4 * pi)
-    swing = sin((phase + .10) * 2 * pi)
-    coat = 4 * sin(2 * pi * phase - .7)
+    bob = -3.1 * sin(phase * 4 * pi - .55)
+    swing = cos((phase + .05) * 2 * pi)
+    coat = 4.5 * sin(2 * pi * phase - .9)
     body = leg(phase + .5, bob, True) + leg(phase, bob, False)
-    body.append(f'<g transform="translate(0,{bob:.3f})">')
+    body.append(f'<g transform="translate(0,{bob:.3f}) rotate({1.2+1.65*swing:.2f} 92 153)">')
     body.extend([
-        path("M95 76Q113 74 119 95L126 129 121 147 115 145 117 127 107 108Z", "#232323", "#565656", .7),
+        f'<g transform="rotate({-14*swing:.2f} 108 91)">',
+        path("M96 78Q112 76 119 95L123 129 120 147 113 145 115 125 106 105Z", "#282828", "#3c3c3c", .7),
+        '</g>',
         path(f"M82 64 C72 71 65 84 65 106 L61 150 Q56 177 {46+coat:.2f} 200 "
              f"Q49 208 67 204 L88 208 109 202 120 203 Q117 176 111 156 "
-             "L122 106 Q117 81 105 75Z", "url(#coat)", "#696969", 1),
+             "L122 106 Q117 81 105 75Z", "url(#coat)", "#525252", .75),
         path(f"M78 84Q68 121 67 158 Q62 183 {51+coat:.2f} 198 L68 200 80 181 89 106Z",
              "#252525"),
         path("M84 101Q78 124 79 153L75 193M96 113Q98 148 92 173L96 201M109 159L115 195",
@@ -86,8 +114,8 @@ def figure(index):
         path("M84 58L93 54M112 48H117M112 62L117 60M91 31L111 25M103 32L118 29",
              "none", "#8c8c8c", .85),
         path("M79 78Q68 88 65 106M87 84L101 96M97 102L90 124M109 177L116 199",
-             "none", "#a2a2a2", 1),
-        f'<g transform="rotate({21*swing:.2f} 100 93)">',
+             "none", "#767676", .85),
+        f'<g transform="rotate({15*swing:.2f} 100 93)">',
         path("M97 90Q109 88 113 101 L115 124 112 152 102 153 99 130 93 109Z",
              "url(#sleeve)", "#686868", .9),
         path("M103 150L112 149 112 159 108 167 103 161Z", "#737373", "#292929", .8),
@@ -100,17 +128,20 @@ def figure(index):
 GRADIENTS = """<linearGradient id="coat" x2="1" y2="1">
 <stop stop-color="#767676"/><stop offset=".58" stop-color="#424242"/><stop offset="1" stop-color="#292929"/>
 </linearGradient><linearGradient id="face" x2="1" y2=".3">
-<stop stop-color="#696969"/><stop offset="1" stop-color="#999999"/>
+<stop stop-color="#696969"/><stop offset="1" stop-color="#898989"/>
 </linearGradient><linearGradient id="trouser" x2="1" y2="1">
 <stop stop-color="#414141"/><stop offset="1" stop-color="#252525"/>
 </linearGradient><linearGradient id="sleeve" x2="1" y2="1">
 <stop stop-color="#606060"/><stop offset="1" stop-color="#303030"/>
-</linearGradient>"""
+</linearGradient>
+<radialGradient id="shoe-shadow"><stop stop-color="#050505" stop-opacity=".75"/>
+<stop offset=".54" stop-color="#050505" stop-opacity=".42"/><stop offset="1" stop-color="#050505" stop-opacity="0"/>
+</radialGradient>"""
 
 
 def shadow_value(svg):
     def darken(match):
-        value = round(int(match[0][1:3], 16) * .43)
+        value = round(int(match[0][1:3], 16) * .54)
         return "#" + f"{value:02x}" * 3
 
     return re.sub(r"#[0-9a-f]{6}", darken, svg)
@@ -121,12 +152,15 @@ def render():
         source = Path(scratch) / "cel.svg"
         for i in range(STEPS):
             shape = figure(i)
-            for mode in ("lit", "shadow", "reflection"):
+            for mode in ("lit", "shadow", "reflection", "contact"):
                 if mode == "reflection":
                     # Compress and invert the reflection above its foot-line. The layer in HTML
                     # supplies the stationary pool mask and mixes the reflection into the asphalt.
                     dims = 'width="350" height="154" viewBox="0 0 175 77"'
-                    art = f'<g transform="translate(7 84) skewX(-10) scale(1 -.32)">{shape}</g>'
+                    art = f'<g transform="translate(-5 80.64) skewX(6) scale(1 -.32)">{shape}</g>'
+                elif mode == "contact":
+                    dims = 'width="350" height="58" viewBox="0 235 175 29"'
+                    art = contact(i)
                 else:
                     dims = 'width="350" height="528" viewBox="0 0 175 264"'
                     art = shape

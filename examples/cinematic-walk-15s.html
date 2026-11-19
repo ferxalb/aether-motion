@@ -27,36 +27,54 @@
   .last-lamp { left: 742px; top: 425px; width: 140px; height: 314px; }
   .last-air { left: 681px; top: 464px; width: 324px; height: 326px; }
   .last-bulb { left: 816px; top: 498px; width: 53px; height: 6px; border-radius: 3px; background: #fdfdfd; }
-  .pool-fog { left: 782px; top: 558px; width: 484px; height: 157px;
-              background: radial-gradient(ellipse farthest-side, #c9c9c95c, #a9a9a92d 44%, transparent); }
   .rain { left: -64px; top: -182px; width: 1696px; height: 1250px; }
   .tile { width: 848px; height: 625px; }
-  .rain-far { opacity: .56; animation: far-rain .72s linear infinite; }
-  .rain-near { opacity: .84; animation: near-rain .43s linear infinite; }
-  .lamp-rain { left: 717px; top: 490px; width: 251px; height: 263px;
-               mask-image: radial-gradient(ellipse farthest-side, black, black 38%, transparent); }
-  .lamp-rain img { width: 251px; height: 340px; top: -50px; opacity: .68;
-                   animation: lamp-rain .54s linear infinite; }
+  .rain-far { opacity: .42; animation: far-rain .72s linear infinite; }
+  .rain-near { opacity: .72; animation: near-rain .43s linear infinite; }
   .walk { width: var(--body-w); height: var(--body-h);
           animation: var(--walk-track) 5s steps(60, jump-end) forwards; }
   .walk img { width: 100%; height: 100%; }
-  .walk .shadow { position: absolute; left: 26%; top: 91%; width: 63%; height: 11%;
-                  background: radial-gradient(ellipse farthest-side, #080808b8, #0909095f 46%, transparent); }
-  .old-key { left: 260px; top: 510px; width: 412px; height: 340px;
-             mask-image: linear-gradient(to right, black, black 75%, #00000070 85%, transparent 98%); }
-  .new-key { left: 725px; top: 465px; width: 284px; height: 270px;
-             mask-image: linear-gradient(to right, transparent 13%, #00000049 25%, black 38%, black 50%, #0000006b 68%, transparent 95%); }
-  .mirror { left: 752px; top: 672px; width: 244px; height: 102px;
-            mask-image: radial-gradient(ellipse farthest-side, black, #000000a9 46%, transparent);
-            opacity: .31; }
-  .reflection { height: 47px; }
+  .walk img.sole { top: 89.015%; height: 10.985%; }
+  .walk .sole { position: absolute; }
+  .old-key { left: 268px; top: 535px; width: 414px; height: 293px;
+             mask-image: linear-gradient(to right, black 10%, black 38%, #000000a9 68%, transparent 99%); }
+  .side-wall { width: 1900px; height: 692px; }
+  .side-ground { top: 666px; width: 1900px; height: 264px; }
+  .side-steel { left: -20px; width: 1544px; height: 771px; }
+  .side-key { left: 510px; top: 406px; width: 450px; height: 351px;
+              mask-image: linear-gradient(to right, black 12%, #000000db 36%, #00000071 59%, transparent 82%); }
+  .side-haze { left: 1050px; top: 465px; width: 750px; height: 300px;
+               background: radial-gradient(ellipse farthest-side, #bdbdbd45, #bdbdbd20 45%, transparent); }
+  .canopy-shade { width: 1500px; height: 752px;
+                  background: linear-gradient(to right, #1010103e, #0c0c0c48 50%, #11111118 75%, transparent); }
+  .yard-wall { width: 1900px; height: 715px; }
+  .yard-paving { top: 568px; width: 1900px; height: 362px; }
+  .yard-lamp { left: 690px; top: 239px; width: 220px; height: 505px; }
+  .yard-air { left: 579px; top: 316px; width: 537px; height: 507px; opacity: .68; }
+  .yard-bulb { left: 809px; top: 358px; width: 79px; height: 9px; border-radius: 4px; background: #ebebeb; }
+  .yard-pool { left: 632px; top: 663px; width: 443px; height: 176px;
+               background: radial-gradient(ellipse farthest-side, #d0d0d052, #bbbbbb28 47%, transparent); }
+  .yard-key { left: 642px; top: 355px; width: 461px; height: 405px;
+              mask-image: linear-gradient(to right, transparent 12%, #00000048 27%, #000000e3 43%, black 48%, #0000008c 60%, transparent 85%); }
+  .yard-mirror { left: 656px; top: 719px; width: 414px; height: 143px;
+                 mask-image: radial-gradient(ellipse farthest-side, black, #000000a9 40%, transparent);
+                 opacity: .34; }
+  .walk.reflection { height: 108px; }
+  .yard-haze { left: 888px; top: 360px; width: 830px; height: 480px;
+               background: radial-gradient(ellipse farthest-side, #c2c2c286, #b4b4b461 52%, transparent); }
+  .near-haze { left: 883px; top: 554px; width: 780px; height: 252px;
+               background: radial-gradient(ellipse farthest-side, #c3c3c37a, #b4b4b437 46%, transparent); }
+  .lamp-rain { left: 683px; top: 365px; width: 338px; height: 352px;
+               mask-image: radial-gradient(ellipse farthest-side, black, #00000097 53%, transparent); }
+  .lamp-rain img { width: 338px; height: 430px; top: -54px; opacity: .48;
+                   animation: lamp-rain .67s linear infinite; }
   .blackout { width: 1600px; height: 900px; background: #000; }
   #city { --body-w: 131.25px; --body-h: 198px; --walk-track: city-walk; }
-  #shadow { --body-w: 122.5px; --body-h: 184.8px; --walk-track: shadow-walk; }
-  #light { --body-w: 105px; --body-h: 158.4px; --walk-track: light-walk; }
-  @keyframes city-walk { from { transform: translate(0px, 0px); } to { transform: translate(225px, -46px); } }
-  @keyframes shadow-walk { from { transform: translate(0px, 0px); } to { transform: translate(210px, -57px); } }
-  @keyframes light-walk { from { transform: translate(0px, 0px); } to { transform: translate(180px, -41px); } }
+  #shadow { --body-w: 196px; --body-h: 295.68px; --walk-track: shadow-walk; }
+  #light { --body-w: 245px; --body-h: 369.6px; --walk-track: light-walk; }
+  @keyframes city-walk { from { transform: translate(0px, 0px); } to { transform: translate(225px, 0px); } }
+  @keyframes shadow-walk { from { transform: translate(0px, 0px); } to { transform: translate(336px, 0px); } }
+  @keyframes light-walk { from { transform: translate(0px, 0px); } to { transform: translate(420px, 0px); } }
   @keyframes far-rain { from { transform: translate(19px, -52px); } to { transform: translate(-14px, 110px); } }
   @keyframes near-rain { from { transform: translate(30px, -86px); } to { transform: translate(-29px, 145px); } }
   @keyframes lamp-rain { from { transform: translate(5px, -8px); } to { transform: translate(-7px, 40px); } }
@@ -65,12 +83,12 @@
 <body>
 <div data-composition-id="the-morning-shift-into-the-shadows" data-width="1600" data-height="900" data-duration="15"
      data-hf-exposure=".14" data-hf-highlight-rolloff=".49" data-hf-shadow-toe=".24"
-     data-hf-grain=".10" data-hf-vignette=".39" style="background:#151515; filter: grayscale(1) contrast(1.10);">
-  <img class="plate dawn" src="cinematic-assets/dawn.svg" alt="">
+     data-hf-grain=".084" data-hf-vignette=".39" style="background:#151515; filter: grayscale(1) contrast(1.10);">
+  <img class="plate dawn" src="cinematic-assets/dawn.svg" data-duration="5" alt="">
 
   <!-- The City, 0–5 seconds. -->
   <section id="city" class="clip camera" data-start="0" data-duration="5" data-track-index="1"
-      data-hf-camera='[{"at":0,"zoom":1.045,"x":-19,"y":20},{"at":5,"x":6,"y":36}]'>
+      data-hf-camera='[{"at":0,"x":-14,"y":8},{"at":5,"x":7,"y":12}]'>
     <img class="plate smoke" src="cinematic-assets/smoke.svg" data-hf-parallax="0.34" alt="" data-hf-keyframes='[{"at":0,"x":-17,"y":2},{"at":5,"x":3,"y":-4}]'>
     <img class="plate stacks" src="cinematic-assets/stacks.svg" data-hf-parallax="0.36" alt="">
     <img class="plate horizon" src="cinematic-assets/horizon.svg" data-hf-parallax="0.25" alt="">
@@ -93,14 +111,14 @@
       <img class="tile" style="left:0px;top:625px" src="cinematic-assets/rain-2.svg" alt="">
       <img class="tile" style="left:848px;top:625px" src="cinematic-assets/rain-2.svg" alt="">
     </div>
-    <div class="walk" style="left:276.0px;top:623.75px" data-hf-parallax="1.14"><div class="shadow"></div><img data-hf-sequence="cinematic-walk-assets/shadow/cel-{frame:02}.png" data-hf-sequence-first="1" data-hf-sequence-fps="12" data-hf-sequence-playback="loop" alt=""></div>
+    <div class="walk" style="left:276.0px;top:592px" data-hf-parallax="1.14"><img class="sole" data-hf-sequence="cinematic-walk-assets/contact/cel-{frame:02}.png" data-hf-sequence-first="1" data-hf-sequence-fps="12" data-hf-sequence-playback="loop" alt=""><img data-hf-sequence="cinematic-walk-assets/shadow/cel-{frame:02}.png" data-hf-sequence-first="1" data-hf-sequence-fps="12" data-hf-sequence-playback="loop" alt=""></div>
     <div class="layer old-key" data-hf-parallax="1.14">
-      <div class="walk" style="left:16.0px;top:113.75px"><img data-hf-sequence="cinematic-walk-assets/lit/cel-{frame:02}.png" data-hf-sequence-first="1" data-hf-sequence-fps="12" data-hf-sequence-playback="loop" alt=""></div>
+      <div class="walk" style="left:8px;top:57px"><img data-hf-sequence="cinematic-walk-assets/lit/cel-{frame:02}.png" data-hf-sequence-first="1" data-hf-sequence-fps="12" data-hf-sequence-playback="loop" alt=""></div>
     </div>
     <!-- The pillar and lamppost sit in front of the walker and share his world-plane pan. -->
     <img class="plate canopy" src="cinematic-walk-assets/canopy.svg" data-hf-parallax="1.14" alt="">
     <img class="plate last-lamp" src="cinematic-walk-assets/last-lamp.svg" data-hf-parallax="1.14" alt="">
-    <div class="layer last-bulb" data-hf-parallax="1.14" data-hf-bloom="2.35" data-hf-bloom-radius="68"></div>
+    <div class="layer last-bulb" data-hf-parallax="1.14" data-hf-bloom="1.35" data-hf-bloom-radius="68"></div>
     <div class="rain rain-near" data-hf-parallax="1.37">
       <img class="tile" style="left:0px;top:0px" src="cinematic-assets/rain-2.svg" alt="">
       <img class="tile" style="left:848px;top:0px" src="cinematic-assets/rain-2.svg" alt="">
@@ -108,92 +126,75 @@
       <img class="tile" style="left:848px;top:625px" src="cinematic-assets/rain-2.svg" alt="">
     </div>
   </section>
-  <!-- Into the Shadows, 5–10 seconds. -->
+  <!-- Into the Shadows. Side elevation, tracking parallel to the loading dock. -->
   <section id="shadow" class="clip camera" data-start="5" data-duration="5" data-track-index="1"
-      data-hf-camera='[{"at":0,"zoom":1.35,"x":-169,"y":105},{"at":5,"x":-24,"y":119}]'>
-    <img class="plate smoke" src="cinematic-assets/smoke.svg" data-hf-parallax="0.34" alt="" data-hf-keyframes='[{"at":0,"x":3,"y":2},{"at":5,"x":23,"y":-4}]'>
-    <img class="plate stacks" src="cinematic-assets/stacks.svg" data-hf-parallax="0.36" alt="">
-    <img class="plate horizon" src="cinematic-assets/horizon.svg" data-hf-parallax="0.25" alt="">
-    <img class="plate mills" src="cinematic-assets/mills.svg" data-hf-parallax="0.46" alt="">
-    <img class="plate mist-high" src="cinematic-assets/upper-mist.svg" data-hf-parallax="0.48" alt="" data-hf-keyframes='[{"at":0,"x":-10},{"at":5,"x":20,"y":-6}]'>
-    <img class="plate street" src="cinematic-assets/wet-street.svg" data-hf-parallax="1.14" alt="">
-    <img class="plate bridges" src="cinematic-assets/viaducts.svg" data-hf-parallax="1.00" alt="">
-    <img class="plate foundry-right" src="cinematic-assets/foundry-right.svg" data-hf-parallax="1.06" alt="">
-    <img class="plate mist-street" src="cinematic-assets/street-mist.svg" data-hf-parallax="0.83" alt="" data-hf-keyframes='[{"at":0,"x":0},{"at":5,"x":-25,"y":-5}]'>
-    <img class="plate foundry-left" src="cinematic-assets/foundry-left.svg" data-hf-parallax="1.15" alt="">
-    <img class="plate sidewalk" src="cinematic-assets/sidewalk.svg" data-hf-parallax="1.14" alt="">
-    <img class="plate pavement" src="cinematic-walk-assets/shadow-pavement.svg" data-hf-parallax="1.14" alt="">
-    <img class="plate first-air" src="cinematic-assets/lamp-air.svg" data-hf-parallax="1.14" alt="">
-    <img class="plate lampworks" src="cinematic-assets/lampworks.svg" data-hf-parallax="1.14" alt="">
-    <img class="plate last-air" src="cinematic-walk-assets/last-air.svg" data-hf-parallax="1.14" alt="">
-    <div class="layer first-bulb" data-hf-parallax="1.14" data-hf-bloom="1.35" data-hf-bloom-radius="54"></div>
-    <div class="rain rain-far" data-hf-parallax="0.66">
+      data-hf-camera='[{"at":0,"x":12},{"at":5,"x":248}]'>
+    <img class="plate side-wall" src="cinematic-walk-assets/track-wall.svg" data-hf-parallax="0.95" alt="">
+    <img class="plate side-ground" src="cinematic-walk-assets/track-ground.svg" data-hf-parallax="1" alt="">
+    <div class="layer canopy-shade" data-hf-parallax="1"></div>
+    <div class="layer side-haze" data-hf-parallax="0.67"
+         data-hf-keyframes='[{"at":0,"x":20},{"at":5,"x":-21}]'></div>
+    <div class="rain rain-far" data-hf-parallax="0.68" style="top:-229px; opacity:.24">
       <img class="tile" style="left:0px;top:0px" src="cinematic-assets/rain-2.svg" alt="">
       <img class="tile" style="left:848px;top:0px" src="cinematic-assets/rain-2.svg" alt="">
+      <img class="tile" style="left:1696px;top:0px" src="cinematic-assets/rain-2.svg" alt="">
       <img class="tile" style="left:0px;top:625px" src="cinematic-assets/rain-2.svg" alt="">
       <img class="tile" style="left:848px;top:625px" src="cinematic-assets/rain-2.svg" alt="">
+      <img class="tile" style="left:1696px;top:625px" src="cinematic-assets/rain-2.svg" alt="">
     </div>
-    <div class="walk" style="left:505.6px;top:590.3px" data-hf-parallax="1.14"><div class="shadow"></div><img data-hf-sequence="cinematic-walk-assets/shadow/cel-{frame:02}.png" data-hf-sequence-first="1" data-hf-sequence-fps="12" data-hf-sequence-playback="loop" alt=""></div>
-    <div class="layer old-key" data-hf-parallax="1.14">
-      <div class="walk" style="left:245.6px;top:80.3px"><img data-hf-sequence="cinematic-walk-assets/lit/cel-{frame:02}.png" data-hf-sequence-first="1" data-hf-sequence-fps="12" data-hf-sequence-playback="loop" alt=""></div>
+    <div class="walk" style="left:578px;top:446px" data-hf-parallax="1"><img class="sole" data-hf-sequence="cinematic-walk-assets/contact/cel-{frame:02}.png" data-hf-sequence-first="1" data-hf-sequence-fps="12" data-hf-sequence-playback="loop" alt=""><img data-hf-sequence="cinematic-walk-assets/shadow/cel-{frame:02}.png" data-hf-sequence-first="1" data-hf-sequence-fps="12" data-hf-sequence-playback="loop" alt=""></div>
+    <div class="layer side-key" data-hf-parallax="1">
+      <div class="walk" style="left:68px;top:40px"><img data-hf-sequence="cinematic-walk-assets/lit/cel-{frame:02}.png" data-hf-sequence-first="1" data-hf-sequence-fps="12" data-hf-sequence-playback="loop" alt=""></div>
     </div>
-    <!-- The pillar and lamppost sit in front of the walker and share his world-plane pan. -->
-    <img class="plate canopy" src="cinematic-walk-assets/canopy.svg" data-hf-parallax="1.14" alt="">
-    <img class="plate last-lamp" src="cinematic-walk-assets/last-lamp.svg" data-hf-parallax="1.14" alt="">
-    <div class="layer last-bulb" data-hf-parallax="1.14" data-hf-bloom="2.35" data-hf-bloom-radius="68"></div>
-    <div class="rain rain-near" data-hf-parallax="1.37">
+    <!-- The riveted pillar sits in front of the actor; both share the ground-plane pan. -->
+    <img class="plate side-steel" src="cinematic-walk-assets/track-steel.svg" data-hf-parallax="1" alt="">
+    <div class="rain rain-near" data-hf-parallax="1.19" style="opacity:.47">
       <img class="tile" style="left:0px;top:0px" src="cinematic-assets/rain-2.svg" alt="">
       <img class="tile" style="left:848px;top:0px" src="cinematic-assets/rain-2.svg" alt="">
+      <img class="tile" style="left:1696px;top:0px" src="cinematic-assets/rain-2.svg" alt="">
       <img class="tile" style="left:0px;top:625px" src="cinematic-assets/rain-2.svg" alt="">
       <img class="tile" style="left:848px;top:625px" src="cinematic-assets/rain-2.svg" alt="">
+      <img class="tile" style="left:1696px;top:625px" src="cinematic-assets/rain-2.svg" alt="">
     </div>
   </section>
-  <!-- The Last Light, 10–15 seconds. -->
+  <!-- The Last Light. Reverse oblique down the lamp yard, with the lamp ahead of the walker. -->
   <section id="light" class="clip camera" data-start="10" data-duration="5" data-track-index="1"
-      data-hf-camera='[{"at":0,"zoom":1.16,"x":4,"y":96},{"at":5,"x":117,"y":115}]'>
-    <img class="plate smoke" src="cinematic-assets/smoke.svg" data-hf-parallax="0.34" alt="" data-hf-keyframes='[{"at":0,"x":23,"y":2},{"at":5,"x":43,"y":-4}]'>
-    <img class="plate stacks" src="cinematic-assets/stacks.svg" data-hf-parallax="0.36" alt="">
-    <img class="plate horizon" src="cinematic-assets/horizon.svg" data-hf-parallax="0.25" alt="">
-    <img class="plate mills" src="cinematic-assets/mills.svg" data-hf-parallax="0.46" alt="">
-    <img class="plate mist-high" src="cinematic-assets/upper-mist.svg" data-hf-parallax="0.48" alt="" data-hf-keyframes='[{"at":0,"x":20},{"at":5,"x":50,"y":-6}]'>
-    <img class="plate street" src="cinematic-assets/wet-street.svg" data-hf-parallax="1.14" alt="">
-    <img class="plate bridges" src="cinematic-assets/viaducts.svg" data-hf-parallax="1.00" alt="">
-    <img class="plate foundry-right" src="cinematic-assets/foundry-right.svg" data-hf-parallax="1.06" alt="">
-    <img class="plate mist-street" src="cinematic-assets/street-mist.svg" data-hf-parallax="0.83" alt="" data-hf-keyframes='[{"at":0,"x":-25},{"at":5,"x":-50,"y":-5}]'>
-    <img class="plate foundry-left" src="cinematic-assets/foundry-left.svg" data-hf-parallax="1.15" alt="">
-    <img class="plate sidewalk" src="cinematic-assets/sidewalk.svg" data-hf-parallax="1.14" alt="">
-    <img class="plate pavement" src="cinematic-walk-assets/shadow-pavement.svg" data-hf-parallax="1.14" alt="">
-    <img class="plate first-air" src="cinematic-assets/lamp-air.svg" data-hf-parallax="1.14" alt="">
-    <img class="plate lampworks" src="cinematic-assets/lampworks.svg" data-hf-parallax="1.14" alt="">
-    <img class="plate last-air" src="cinematic-walk-assets/last-air.svg" data-hf-parallax="1.14" alt="">
-    <div class="layer first-bulb" data-hf-parallax="1.14" data-hf-bloom="1.35" data-hf-bloom-radius="54"></div>
-    <div class="rain rain-far" data-hf-parallax="0.66">
+      data-hf-camera='[{"at":0,"x":4},{"at":5,"x":109}]'>
+    <img class="plate yard-wall" src="cinematic-walk-assets/lamp-yard.svg" data-hf-parallax="0.92" alt="">
+    <img class="plate yard-paving" src="cinematic-walk-assets/lamp-ground.svg" data-hf-parallax="1" alt="">
+    <div class="layer yard-haze" data-hf-parallax=".78"
+         data-hf-keyframes='[{"at":0,"x":15,"opacity":0.78},{"at":5,"x":-32,"opacity":1}]'></div>
+    <div class="layer yard-pool" data-hf-parallax="1"></div>
+    <img class="plate yard-air" src="cinematic-walk-assets/last-air.svg" data-hf-parallax="1" alt="">
+    <div class="rain rain-far" data-hf-parallax="0.62">
       <img class="tile" style="left:0px;top:0px" src="cinematic-assets/rain-2.svg" alt="">
       <img class="tile" style="left:848px;top:0px" src="cinematic-assets/rain-2.svg" alt="">
+      <img class="tile" style="left:1696px;top:0px" src="cinematic-assets/rain-2.svg" alt="">
       <img class="tile" style="left:0px;top:625px" src="cinematic-assets/rain-2.svg" alt="">
       <img class="tile" style="left:848px;top:625px" src="cinematic-assets/rain-2.svg" alt="">
+      <img class="tile" style="left:1696px;top:625px" src="cinematic-assets/rain-2.svg" alt="">
     </div>
-    <div class="layer lamp-rain" data-hf-parallax="1.14">
+    <div class="layer lamp-rain" data-hf-parallax="1">
       <img class="plate" src="cinematic-assets/lamp-drizzle.svg" alt="">
     </div>
-    <div class="layer mirror" data-hf-parallax="1.14">
-      <div class="walk reflection" style="left:-27.2px;top:34px"><img data-hf-sequence="cinematic-walk-assets/reflection/cel-{frame:02}.png" data-hf-sequence-first="1" data-hf-sequence-fps="12" data-hf-sequence-playback="loop" alt=""></div>
+    <div class="layer yard-mirror" data-hf-parallax="1">
+      <div class="walk reflection" style="left:-138px;top:15px"><img data-hf-sequence="cinematic-walk-assets/reflection/cel-{frame:02}.png" data-hf-sequence-first="1" data-hf-sequence-fps="12" data-hf-sequence-playback="loop" alt=""></div>
     </div>
-    <div class="walk" style="left:724.8px;top:558.4px" data-hf-parallax="1.14"><div class="shadow"></div><img data-hf-sequence="cinematic-walk-assets/shadow/cel-{frame:02}.png" data-hf-sequence-first="1" data-hf-sequence-fps="12" data-hf-sequence-playback="loop" alt=""></div>
-    <div class="layer new-key" data-hf-parallax="1.14">
-      <div class="walk" style="left:-0.2px;top:93.4px"><img data-hf-sequence="cinematic-walk-assets/lit/cel-{frame:02}.png" data-hf-sequence-first="1" data-hf-sequence-fps="12" data-hf-sequence-playback="loop" alt=""></div>
+    <div class="walk" style="left:518px;top:383px" data-hf-parallax="1"><img class="sole" data-hf-sequence="cinematic-walk-assets/contact/cel-{frame:02}.png" data-hf-sequence-first="1" data-hf-sequence-fps="12" data-hf-sequence-playback="loop" alt=""><img data-hf-sequence="cinematic-walk-assets/shadow/cel-{frame:02}.png" data-hf-sequence-first="1" data-hf-sequence-fps="12" data-hf-sequence-playback="loop" alt=""></div>
+    <div class="layer yard-key" data-hf-parallax="1">
+      <div class="walk" style="left:-124px;top:28px"><img data-hf-sequence="cinematic-walk-assets/lit/cel-{frame:02}.png" data-hf-sequence-first="1" data-hf-sequence-fps="12" data-hf-sequence-playback="loop" alt=""></div>
     </div>
-    <div class="layer pool-fog" data-hf-parallax="1.14"
-         data-hf-keyframes='[{"at":0,"x":18,"opacity":0.77},{"at":5,"x":-28,"opacity":1}]'></div>
-    <!-- The pillar and lamppost sit in front of the walker and share his world-plane pan. -->
-    <img class="plate canopy" src="cinematic-walk-assets/canopy.svg" data-hf-parallax="1.14" alt="">
-    <img class="plate last-lamp" src="cinematic-walk-assets/last-lamp.svg" data-hf-parallax="1.14" alt="">
-    <div class="layer last-bulb" data-hf-parallax="1.14" data-hf-bloom="2.35" data-hf-bloom-radius="68"></div>
-    <div class="rain rain-near" data-hf-parallax="1.37">
+    <div class="layer near-haze" data-hf-parallax="0.87"
+         data-hf-keyframes='[{"at":0,"x":28,"opacity":0.65},{"at":5,"x":-24,"opacity":1}]'></div>
+    <img class="plate yard-lamp" src="cinematic-walk-assets/last-lamp.svg" data-hf-parallax="1" alt="">
+    <div class="layer yard-bulb" data-hf-parallax="1" data-hf-bloom="1.28" data-hf-bloom-radius="56"></div>
+    <div class="rain rain-near" data-hf-parallax="1.21" style="opacity:.57">
       <img class="tile" style="left:0px;top:0px" src="cinematic-assets/rain-2.svg" alt="">
       <img class="tile" style="left:848px;top:0px" src="cinematic-assets/rain-2.svg" alt="">
+      <img class="tile" style="left:1696px;top:0px" src="cinematic-assets/rain-2.svg" alt="">
       <img class="tile" style="left:0px;top:625px" src="cinematic-assets/rain-2.svg" alt="">
       <img class="tile" style="left:848px;top:625px" src="cinematic-assets/rain-2.svg" alt="">
+      <img class="tile" style="left:1696px;top:625px" src="cinematic-assets/rain-2.svg" alt="">
     </div>
   </section>
   <div class="clip blackout" data-start="13.93" data-duration="1.07" data-track-index="20"

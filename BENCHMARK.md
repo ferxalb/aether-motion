@@ -1019,3 +1019,15 @@ per worker. The measured process RSS includes the render surfaces and native enc
 The native frame 300 PNG took 6.77 s wall and 6.74 s CPU with 216,211,456 bytes peak RSS.
 AVFoundation decoded all 360 master frames at 3840×2160 with correct 24 fps presentation
 timestamps and an exact 15-second duration.
+
+### Into the Shadows 1080p revision
+
+On the same native macOS setup, the revised scene rendered all 360 frames in 25.75 s
+wall (13.98 frames/s), using 48.17 s user CPU, 0.41 s system CPU, and 281,980,928
+bytes peak RSS. The previous 1080p preview took 35.57 s wall and 68.20 s CPU at the
+same two-thread, high-quality settings. The revision uses independently drawn shots.
+The measurements compare the two compositions on the same engine.
+
+The revised export had 8,466 fitted-image hits and zero evictions, with 54 SVG
+rasterizations across both workers. AVFoundation decoded all 360 frames at 1920×1080
+with the expected 24 FPS timestamps and an exact 15-second duration.
