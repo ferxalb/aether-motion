@@ -73,13 +73,16 @@ short with a wide city view, a loading-dock side elevation, and an oblique view 
 lamp yard. The cameras pan at fixed scale. The 12 FPS gait pairs planted-sole pivots
 and contact shadows with stepped motion. The worker passes through stationary light
 masks and behind the overpass pillar. His reflected cels are masked to the wet pavement.
+The shot changes are hidden rather than cut: a near-lens steel column carries a linear
+`wipe-left` at 5 seconds, and a lamp-lit fog veil covers a short crossfade at 10 seconds.
+Every shot keeps the shared walk phase.
 The included [cel drawing script](examples/cinematic-walk-assets/draw-cels.py) regenerates
 PNGs on macOS, and the [set drawing script](examples/cinematic-walk-assets/draw-sets.py)
 regenerates the SVG plates.
 
 ```bash
 aether-motion check examples/cinematic-walk-15s.html
-aether-motion render examples/cinematic-walk-15s.html --output out/cinematic-walk-1080p-v2.mp4 --size 1080p --fps 24 --quality high --threads 2
+aether-motion render examples/cinematic-walk-15s.html --output out/cinematic-walk-1080p-v3.mp4 --size 1080p --fps 24 --quality high --threads 2
 ```
 
 ### Manually with the CLI
