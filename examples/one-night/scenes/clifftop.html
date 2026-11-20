@@ -1,7 +1,9 @@
 <!doctype html>
-<!-- One Night, shot 2. All movement is evaluated on the local scene clock. It opens with the
-     walker's coat where shot 1 left it on screen (an axial cut: the eye stays on him while the
-     frame widens), then tilts up to the sea as he stops. -->
+<!-- One Night, shot 1: one continuous take on the clifftop. The camera opens close behind the
+     walker and follows him up the path; he slows and stops short of the edge, the camera settles,
+     then pulls back smoothly to the wide view of the headland and the moonlit sea. A single rig
+     drives the whole shot (data-hf-shots), so there are no cuts. All movement is evaluated on the
+     local scene clock. -->
 <meta charset="utf-8">
 <style>
 /* Independent coastal planes and full-body character cels. */
@@ -22,17 +24,21 @@ img { position:absolute; object-fit:fill; }
 #man { position:absolute; }
 .shadow { position:absolute; background:radial-gradient(ellipse farthest-side, #02060bbd, #05091060 42%, transparent 100%); }
 </style>
-<main data-composition-id="horizon" data-width="1920" data-height="1080" data-duration="5" style="background:#070c15">
-  <div id="world" data-hf-camera='[{"at":0,"zoom":1,"anchorX":0.5,"anchorY":0.486},{"at":0.3,"anchorX":0.5,"anchorY":0.49,"easing":"smooth"},{"at":2.3,"anchorX":0.51,"anchorY":0.61,"easing":"smooth"},{"at":5,"anchorX":0.48,"anchorY":0.615,"easing":"smooth"}]' data-hf-camera-subject="man" data-hf-camera-anchor="0.5 0.486" data-hf-camera-lag="0.16" data-hf-camera-lookahead="0.08">
+<main data-composition-id="clifftop" data-width="1920" data-height="1080" data-duration="11" style="background:#070c15">
+  <!-- Follow close (zoom 2.1) while he walks, keep following as he stops, then reveal the clifftop. -->
+  <div id="world"
+       data-hf-shots='[{"preset":"follow","duration":6.3,"from":{"zoom":2.1,"anchor":[0.45,0.625]},"anchor":[0.5,0.6]},{"preset":"reveal","zoom":1,"to":[0,0]}]'
+       data-hf-camera-subject="man" data-hf-camera-anchor="0.45 0.625"
+       data-hf-camera-lag="0.3" data-hf-camera-lookahead="0.15">
   <div class="plane" data-hf-parallax="0.12">
     <img src="../assets/sky.svg" style="left:-240px;top:-190px;width:2400px;height:700px" >
-    <img src="../assets/clouds.svg" style="left:-220px;top:34px;width:2480px;height:290px" data-hf-keyframes='[{"at":0,"x":14,"y":2,"opacity":0.8},{"at":5,"x":28,"y":4,"opacity":0.8,"easing":"linear"}]'>
+    <img src="../assets/clouds.svg" style="left:-220px;top:34px;width:2480px;height:290px" data-hf-keyframes='[{"at":0,"x":0,"y":0,"opacity":0.8},{"at":11,"x":30,"y":4,"opacity":0.8,"easing":"linear"}]'>
   </div>
   <div class="plane" data-hf-parallax="0.24">
     <img src="../assets/ocean.svg" style="left:-240px;top:393px;width:2400px;height:817px" >
     <img src="../assets/reflection-1.svg" style="left:1130px;top:425px;width:650px;height:505px" class="shimmer-a">
     <img src="../assets/reflection-2.svg" style="left:1130px;top:425px;width:650px;height:505px" class="shimmer-b">
-    <img src="../assets/sea-mist.svg" style="left:-70px;top:414px;width:2160px;height:258px" data-hf-keyframes='[{"at":0,"x":17,"y":0,"opacity":0.78},{"at":5,"x":31,"y":2,"opacity":0.78,"easing":"linear"}]'>
+    <img src="../assets/sea-mist.svg" style="left:-70px;top:414px;width:2160px;height:258px" data-hf-keyframes='[{"at":0,"x":0,"y":0,"opacity":0.78},{"at":11,"x":31,"y":2,"opacity":0.78,"easing":"linear"}]'>
     <div style="position:absolute;left:1090px;top:376px;width:700px;height:284px;background:radial-gradient(ellipse farthest-side at 50% 42%,#b2cce426,#92aed116 42%,transparent)"></div>
   </div>
   <div class="plane" data-hf-parallax="0.32">
@@ -41,12 +47,15 @@ img { position:absolute; object-fit:fill; }
   <div class="plane" data-hf-parallax="1">
     <img src="../assets/cliff.svg" style="left:-250px;top:535px;width:2020px;height:745px" >
   </div>
-    <div id="man" style="left:1090px;top:506px;width:195.0px;height:351.5px" data-hf-keyframes='[{"at":0},{"at":1.34,"x":20,"y":-13.5},{"at":1.6,"x":22,"y":-15,"easing":"ease-out"},{"at":5,"x":22,"y":-15}]'>
+    <!-- He walks up the path at a steady pace, decelerates over the last stride, and stops at 5.6 s.
+         The cycle ends on a whole number of strides plus five cels (45 cels), matching the stance
+         of the standing cel. -->
+    <div id="man" style="left:1112px;top:491px;width:195.0px;height:351.5px" data-hf-keyframes='[{"at":0,"x":-110,"y":75},{"at":5.0,"x":-6.2,"y":4.2,"easing":"linear"},{"at":5.6,"x":0,"y":0,"easing":"ease-out"}]'>
     <div class="shadow" style="left:19.5px;top:330.0px;width:141.0px;height:27.5px"></div>
       <img data-hf-sequence="walker/walker-cel-{frame:02}.webp"
-           data-hf-sequence-fps="8" data-hf-sequence-playback="loop" data-duration="1.625"
+           data-hf-sequence-fps="8" data-hf-sequence-playback="loop" data-duration="5.625"
            style="left:0px;top:3px;width:185px;height:350px">
-      <img src="walker/walker-cel-hold.webp" data-start="1.625"
+      <img src="walker/walker-cel-hold.webp" data-start="5.625" data-duration="5.375"
            style="left:0px;top:3px;width:185px;height:350px">
     </div>
   <div class="plane" data-hf-parallax="1.3">

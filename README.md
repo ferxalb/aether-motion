@@ -61,7 +61,7 @@ The agent reads the contract with `aether_guide`, writes the file, validates it 
 
 ### Motion Scenes
 
-Import reusable native HTML scenes with `data-composition-src`. Each instance has its own timeline position, track, scoped IDs, and variable overrides. [One Night](examples/one-night/index.html) combines three external scenes into a 15-second coastal short. Repeated instances compile once, scenes of another canvas size fit with `data-composition-fit`, and `preview --watch` re-renders when a scene or its assets change. See the [Motion Scenes v1.1 contract](docs/motion-scenes.md).
+Import reusable native HTML scenes with `data-composition-src`. Each instance has its own timeline position, track, scoped IDs, and variable overrides. [One Night](examples/one-night/index.html) combines two external scenes, joined by a dissolve, into a 15-second coastal short. Repeated instances compile once, scenes of another canvas size fit with `data-composition-fit`, and `preview --watch` re-renders when a scene or its assets change. See the [Motion Scenes v1.1 contract](docs/motion-scenes.md).
 
 ### Cinematic compositing
 
@@ -280,6 +280,7 @@ Install the skill collection with `npx skills add ferxalb/aether-motion`, then s
 | Skill | Use it for |
 | --- | --- |
 | `aether-motion` | Creating and editing compositions |
+| `aether-motion-cinematic` | Directing consistent, cinematic scenes, characters, and camera work |
 | `aether-motion-cli` | Checking, inspecting, and rendering compositions |
 | `aether-motion-blocks` | Finding and adapting ready-made blocks and themes |
 | `aether-motion-svg` | Creating and placing static SVG artwork |

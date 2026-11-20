@@ -23,6 +23,10 @@ pub const FILES: &[(&str, &str)] = &[
         include_str!("../../skills/aether-motion-blocks/SKILL.md"),
     ),
     (
+        "aether-motion-cinematic/SKILL.md",
+        include_str!("../../skills/aether-motion-cinematic/SKILL.md"),
+    ),
+    (
         "aether-motion-cli/SKILL.md",
         include_str!("../../skills/aether-motion-cli/SKILL.md"),
     ),

@@ -42,4 +42,4 @@ The scene root is laid out at its own size and placed with a static uniform scal
 
 - Frame-wide finishing (root CSS color grade, exposure, highlight roll-off, shadow toe, vignette, and grain) and the root motion-blur shutter belong on the outer composition. For per-shot grading, put supported CSS color filters on an inner container. Imported scenes run entirely in Rust within the existing renderer.
 
-[One Night](../examples/one-night/index.html) uses three independently authored scenes and one continuous sound bed.
+[One Night](../examples/one-night/index.html) uses two independently authored scenes joined by a crossfade and one continuous sound bed.

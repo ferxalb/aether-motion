@@ -1,7 +1,8 @@
 <!doctype html>
-<!-- One Night, shot 3. The reverse view from the water: the walker is a small figure on a tall sea cliff,
-     and the camera pulls back to reveal its scale. It opens on the walker at the screen position he
-     held at the end of shot 2, so the eye finds him across the reverse cut, then eases back.
+<!-- One Night, shot 2. The reverse view from the water: the walker is a small figure on a tall sea cliff,
+     and the camera keeps pulling back to reveal its scale. It opens with the walker at the screen
+     position he holds at the end of shot 1, so the 1.4 s dissolve between them reads as one
+     continuous pull-back, then fades to black.
      All movement is evaluated on the local scene clock. -->
 <meta charset="utf-8">
 <style>
@@ -35,11 +36,12 @@ img { position:absolute; object-fit:fill; }
   to { transform:translate(-6px,3px); opacity:.2; }
 }
 </style>
-<main data-composition-id="night" data-width="1920" data-height="1080" data-duration="5" style="background:#070c15">
-  <div id="world" data-hf-shots='[{"preset":"reveal","duration":4.6,"zoom":1,"to":[0,0],"from":{"zoom":1.55,"x":-236,"y":-346}},{"preset":"static"}]'>
+<main data-composition-id="night" data-width="1920" data-height="1080" data-duration="5.4" style="background:#070c15">
+  <div id="world" data-hf-shots='[{"preset":"reveal","duration":5,"zoom":1,"to":[0,0],"from":{"zoom":1.55,"x":-422,"y":-346}},{"preset":"static"}]'>
   <div class="plane" data-hf-parallax="0.15">
     <div style="position:absolute;left:-300px;top:600px;width:2520px;height:400px;background:#445160"></div>
-    <img src="../assets/sky.svg" style="left:-300px;top:-260px;width:2520px;height:900px" >
+    <!-- Shifted so the moon sits where shot 1 leaves it at the middle of the dissolve. -->
+    <img src="../assets/sky.svg" style="left:-531px;top:-273px;width:2520px;height:900px" >
     <img src="../assets/clouds.svg" style="left:-260px;top:40px;width:2600px;height:320px" data-hf-keyframes='[{"at":0,"x":0,"y":0,"opacity":0.8},{"at":5,"x":-16,"y":2,"opacity":0.8,"easing":"linear"}]'>
   </div>
   <div class="plane" data-hf-parallax="0.4">
@@ -62,5 +64,5 @@ img { position:absolute; object-fit:fill; }
     <img src="../assets/shoal.svg" style="left:1200px;top:770px;width:1000px;height:360px" >
   </div>
   </div>
-  <div style="position:absolute;width:1920px;height:1080px;background:#000" data-track-index="10" data-hf-keyframes='[{"at":0,"opacity":0},{"at":3.6,"opacity":0},{"at":4.94,"opacity":1,"easing":"ease-in-out"}]'></div>
+  <div style="position:absolute;width:1920px;height:1080px;background:#000" data-track-index="10" data-hf-keyframes='[{"at":0,"opacity":0},{"at":4.0,"opacity":0},{"at":5.34,"opacity":1,"easing":"ease-in-out"}]'></div>
 </main>

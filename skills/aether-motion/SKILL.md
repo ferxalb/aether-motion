@@ -30,6 +30,8 @@ For independently authored or reusable shots, import each scene with `data-compo
 
 ## Layer an illustrated shot
 
+For any narrative, character, or multi-shot scene, follow the `aether-motion-cinematic` skill: it sets the design standard (continuous camera, motivated transitions, finished characters) and the review checklist.
+
 Use independent, local artwork for each depth plane. Set `data-hf-parallax` on direct camera children and leave enough overscan for the pan. Keep transparent PNG or WebP cels in one directory and use `data-hf-sequence` for clip-local playback. Layer soft gradients, masks, and deterministic motion for fog and rain. Put localized bloom on the light source, then tune exposure, highlight rolloff, and the shadow toe on the composition root. In this checkout, `examples/cinematic-dystopia.html` shows all of these techniques together. `examples/cinematic-camera-rig-6s.html` adds a tracked character, a dolly-in, and a skyline reveal on one continuous camera rig.
 
 ## Validate and inspect
