@@ -206,10 +206,10 @@ fn demo_camera_is_continuous_unsnapping_and_lands_on_its_end_poses() {
     }
     // The pull-back ends at rest on its focus (0, 40): translation -1.2 * focus.
     // Velocity decays to zero at the last key (cubic ease into rest), never reversing.
-    for c in 0..2 {
+    for (c, end) in samples[6000].into_iter().enumerate() {
         assert!(speed(5999, c).abs() < 0.3, "end speed {}", speed(5999, c));
         // Any reversal in the follow-to-fixed blend stays far below a pixel.
-        let direction = (samples[6000][c] - samples[4000][c]).signum();
+        let direction = (end - samples[4000][c]).signum();
         let backwards: f64 = (4000..6000)
             .map(|i| ((samples[i + 1][c] - samples[i][c]) * -direction).max(0.0))
             .sum();

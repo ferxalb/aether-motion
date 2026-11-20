@@ -42,6 +42,10 @@ pub(super) fn level_size(size: [f32; 2], scale: f32, target: [u32; 2]) -> [u32; 
     [level(size[0], target[0]), level(size[1], target[1])]
 }
 
+/// Receives one source row: its index, its straight RGBA pixels, and the span `[first, last)`
+/// outside which it is fully transparent.
+pub(super) type RowSink<'a> = dyn FnMut(usize, &[u8], (usize, usize)) + 'a;
+
 /// Catmull-Rom cubic (B = 0, C = 1/2): interpolating, so an unscaled pass is the identity.
 fn catmull_rom(x: f64) -> f64 {
     let x = x.abs();
@@ -94,7 +98,12 @@ fn taps(source: u32, target: u32) -> Taps {
         }
         windows.push((first, fixed));
     }
-    let taps = windows.iter().map(|(_, w)| w.len()).max().unwrap_or(1).min(n);
+    let taps = windows
+        .iter()
+        .map(|(_, w)| w.len())
+        .max()
+        .unwrap_or(1)
+        .min(n);
     let mut starts = Vec::with_capacity(windows.len());
     let mut weights = vec![0; windows.len() * taps];
     for (i, (first, fixed)) in windows.into_iter().enumerate() {
@@ -118,7 +127,7 @@ fn taps(source: u32, target: u32) -> Taps {
 pub(super) fn resample_from_level(
     [sw, sh]: [u32; 2],
     [w, h]: [u32; 2],
-    for_each_row: impl FnOnce(&mut dyn FnMut(usize, &[u8], (usize, usize))),
+    for_each_row: impl FnOnce(&mut RowSink<'_>),
 ) -> RgbaImage {
     let columns = taps(sw, w);
     let rows = taps(sh, h);
@@ -261,7 +270,9 @@ mod tests {
         let (columns, rows) = (taps(sw as u32, w), taps(sh as u32, h));
         let premultiplied: Vec<i64> = image
             .as_raw()
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .flat_map(|p| {
                 let a = u32::from(p[3]);
                 let pm = |c: u8| i64::from((u32::from(c) * a + 127) / 255);
@@ -299,7 +310,12 @@ mod tests {
                 return Rgba([0; 4]);
             }
             let straight = |c: i64| ((c.clamp(0, a) * 255 + a / 2) / a).min(255) as u8;
-            Rgba([straight(sum(0)), straight(sum(1)), straight(sum(2)), a as u8])
+            Rgba([
+                straight(sum(0)),
+                straight(sum(1)),
+                straight(sum(2)),
+                a as u8,
+            ])
         })
     }
 
@@ -318,7 +334,9 @@ mod tests {
         });
         let spans: Vec<(usize, usize)> = image
             .as_raw()
-            .chunks_exact(211 * 4)
+            .as_chunks::<{ 211 * 4 }>()
+            .0
+            .iter()
             .map(|row| {
                 let row = row.as_chunks::<4>().0;
                 let first = row.iter().position(|p| p[3] != 0).unwrap_or(0);
@@ -328,8 +346,14 @@ mod tests {
             .collect();
         for (w, h) in [(211, 97), (200, 91), (194, 89), (1, 1), (37, 96)] {
             let streamed = resample_from_level([211, 97], [w, h], |f| {
-                for (y, row) in image.as_raw().chunks_exact(211 * 4).enumerate() {
-                    f(y, row, spans[y]);
+                for (y, row) in image
+                    .as_raw()
+                    .as_chunks::<{ 211 * 4 }>()
+                    .0
+                    .iter()
+                    .enumerate()
+                {
+                    f(y, row.as_slice(), spans[y]);
                 }
             });
             assert_eq!(streamed, reference(&image, w, h), "{w}x{h}");

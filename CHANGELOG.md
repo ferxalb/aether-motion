@@ -30,11 +30,36 @@ CLI/MCP output may still change between minor releases.
 - `tests/camera_rig.rs`: rendered anchor framing through zoom and parallax, the demo's
   velocity continuity and end poses, identical frames across render order, thread count, and
   segmented export, unchanged classic cameras, and rig diagnostics.
+- `tests/svg_zoom.rs`: zooming SVG frames match in any render order and from a cold renderer,
+  frames at rest equal a camera that never zooms, a resampled frame stays within a measured bound
+  of the exact raster without shifting, `contain` and `cover` stay exact while zooming, and a vector
+  fit beyond the 64 MiB per-image limit renders its visible part.
+- `svg::tests::a_region_matches_the_same_part_of_the_whole_raster` checks a region raster
+  against the whole raster: within 1 everywhere, except under a path clipped at the region edge,
+  which may differ by exactly one antialiasing step (16 of 255).
 
 ### Changed
 
 - Cameras that use no rig feature keep their exact classic zoom and pan tracks. `Motion` gains an
   optional `rig`, and the parallax pan is read through `Motion::camera_pan`.
+- Zoom-aware SVG reuse: while a camera or scale animation zooms `object-fit: fill` vector
+  artwork, each frame is resampled (fixed-point Catmull-Rom, premultiplied) from a shared
+  zoom-ladder raster at most one 2^(1/8) step above the drawn size, instead of being rasterized at
+  every passing size. Levels live in the existing 64 MiB fitted-image cache and its LZ4 packing;
+  frames at rest, `contain`/`cover` fits, and raster images are unchanged. On the Camera Rig demo
+  (1080p, 144 frames) SVG rasterizations fell from 1,683 to 128 and the export from 184.5 s to
+  57.0 s at one thread (58.9 s to 22.9 s at four); a 4K zoom window fell from 67.8 s to 23.6 s.
+  Zooming frames differ from exact rasters by antialiasing only (PSNR 38–43 dB, edge energy within
+  2%) and are temporally steadier: no shimmer or shift at level switches. SVG `<pattern>` fills
+  (resvg rounds the pattern tile to whole pixels) re-phase at each level switch rather than on
+  every zooming frame. `AETHER_PROFILE=1` reports `image-resample` time and `visible-region rasters`.
+  [Benchmark details](BENCHMARK.md#zoom-aware-svg-reuse-2026-11-19)
+
+### Fixed
+
+- A vector fit larger than the 64 MiB per-image limit (deep camera zooms at 4K) is rasterized for
+  its visible part instead of failing with `rasterized image exceeds 64 MiB`; a visible part above
+  64 MiB still asks for `--scale`.
 
 ## [0.1.7] - 2026-11-19
 

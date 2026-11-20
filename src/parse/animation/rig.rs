@@ -176,9 +176,9 @@ pub(in crate::parse) fn keys_from_frames(
     frames
         .iter()
         .map(|frame| {
-            for axis in 0..2 {
-                if let Some(value) = frame.anchor[axis] {
-                    anchor[axis] = value;
+            for (slot, value) in anchor.iter_mut().zip(frame.anchor) {
+                if let Some(value) = value {
+                    *slot = value;
                 }
             }
             follow = frame.follow.unwrap_or(follow);

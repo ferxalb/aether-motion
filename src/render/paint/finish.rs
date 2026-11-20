@@ -204,10 +204,10 @@ fn finish_row<const GRAIN: bool>(
     seed: u32,
     amplitude: i32,
 ) {
-    let mut blocks = row.chunks_exact_mut(BLOCK * 4);
-    let mut table = factors.chunks_exact(BLOCK);
+    let (blocks, rest) = row.as_chunks_mut::<{ BLOCK * 4 }>();
+    let (table, table_rest) = factors.as_chunks::<BLOCK>();
     let mut x0 = 0;
-    for (bytes, table) in (&mut blocks).zip(&mut table) {
+    for (bytes, table) in blocks.iter_mut().zip(table) {
         let mut f = [0_i32; BLOCK];
         for (f, &t) in f.iter_mut().zip(table) {
             *f = i32::from(t);
@@ -219,12 +219,11 @@ fn finish_row<const GRAIN: bool>(
         shade_block(bytes, &f, &n);
         x0 += BLOCK;
     }
-    for (i, (pixel, &factor)) in blocks
-        .into_remainder()
+    for (i, (pixel, &factor)) in rest
         .as_chunks_mut::<4>()
         .0
         .iter_mut()
-        .zip(table.remainder())
+        .zip(table_rest)
         .enumerate()
     {
         let noise = if GRAIN {
@@ -239,21 +238,15 @@ fn finish_row<const GRAIN: bool>(
 /// Grain alone over one row of pixels.
 #[inline(always)]
 fn grain_row(row: &mut [u8], y: usize, seed: u32, amplitude: i32) {
-    let mut blocks = row.chunks_exact_mut(BLOCK * 4);
+    let (blocks, rest) = row.as_chunks_mut::<{ BLOCK * 4 }>();
     let mut x0 = 0;
-    for bytes in &mut blocks {
+    for bytes in blocks.iter_mut() {
         let mut n = [0_i32; BLOCK];
         noise_block(x0, y, seed, amplitude, &mut n);
         shade_block(bytes, &[256; BLOCK], &n);
         x0 += BLOCK;
     }
-    for (i, pixel) in blocks
-        .into_remainder()
-        .as_chunks_mut::<4>()
-        .0
-        .iter_mut()
-        .enumerate()
-    {
+    for (i, pixel) in rest.as_chunks_mut::<4>().0.iter_mut().enumerate() {
         shade(pixel, 256, noise(x0 + i, y, seed, amplitude));
     }
 }
