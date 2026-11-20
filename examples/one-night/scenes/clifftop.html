@@ -22,13 +22,17 @@ img { position:absolute; object-fit:fill; }
   to { transform:translate(4px,0px); opacity:.74; }
 }
 #man { position:absolute; }
+.recede { position:absolute; left:0px; top:0px; width:195px; height:351.5px; animation: recede 5.6s ease-out forwards; }
+@keyframes recede { from { transform:scale(1.06); } to { transform:scale(1); } }
 .shadow { position:absolute; background:radial-gradient(ellipse farthest-side, #02060bbd, #05091060 42%, transparent 100%); }
 </style>
 <main data-composition-id="clifftop" data-width="1920" data-height="1080" data-duration="11" style="background:#070c15">
-  <!-- Follow close (zoom 2.1) while he walks, keep following as he stops, then reveal the clifftop. -->
+  <!-- Follow close (zoom 1.9) while he walks. The anchor drifts from lower left toward the centre, so he
+       visibly advances through the frame while the path slides under him; the camera keeps following as
+       he stops, then reveals the clifftop. -->
   <div id="world"
-       data-hf-shots='[{"preset":"follow","duration":6.3,"from":{"zoom":2.1,"anchor":[0.45,0.625]},"anchor":[0.5,0.6]},{"preset":"reveal","zoom":1,"to":[0,0]}]'
-       data-hf-camera-subject="man" data-hf-camera-anchor="0.45 0.625"
+       data-hf-shots='[{"preset":"follow","duration":6.3,"from":{"zoom":1.9,"anchor":[0.38,0.62]},"anchor":[0.52,0.57]},{"preset":"reveal","zoom":1,"to":[0,0]}]'
+       data-hf-camera-subject="man" data-hf-camera-anchor="0.38 0.62"
        data-hf-camera-lag="0.3" data-hf-camera-lookahead="0.15">
   <div class="plane" data-hf-parallax="0.12">
     <img src="../assets/sky.svg" style="left:-240px;top:-190px;width:2400px;height:700px" >
@@ -47,16 +51,19 @@ img { position:absolute; object-fit:fill; }
   <div class="plane" data-hf-parallax="1">
     <img src="../assets/cliff.svg" style="left:-250px;top:535px;width:2020px;height:745px" >
   </div>
-    <!-- He walks up the path at a steady pace, decelerates over the last stride, and stops at 5.6 s.
-         The cycle ends on a whole number of strides plus five cels (45 cels), matching the stance
-         of the standing cel. -->
-    <div id="man" style="left:1112px;top:491px;width:195.0px;height:351.5px" data-hf-keyframes='[{"at":0,"x":-110,"y":75},{"at":5.0,"x":-6.2,"y":4.2,"easing":"linear"},{"at":5.6,"x":0,"y":0,"easing":"ease-out"}]'>
+    <!-- He walks up the path at about 38 px/s (a full stride per two cels), decelerates over the last
+         stride, and stops at 5.6 s. He also recedes from 106% to 100% of his size as he walks away
+         from the camera. The cycle ends on a whole number of strides plus five cels (45 cels),
+         matching the stance of the standing cel. -->
+    <div id="man" style="left:1112px;top:491px;width:195.0px;height:351.5px" data-hf-keyframes='[{"at":0,"x":-200,"y":136},{"at":5.0,"x":-11.3,"y":7.7,"easing":"linear"},{"at":5.6,"x":0,"y":0,"easing":"ease-out"}]'>
+    <div class="recede">
     <div class="shadow" style="left:19.5px;top:330.0px;width:141.0px;height:27.5px"></div>
       <img data-hf-sequence="walker/walker-cel-{frame:02}.webp"
            data-hf-sequence-fps="8" data-hf-sequence-playback="loop" data-duration="5.625"
            style="left:0px;top:3px;width:185px;height:350px">
       <img src="walker/walker-cel-hold.webp" data-start="5.625" data-duration="5.375"
            style="left:0px;top:3px;width:185px;height:350px">
+    </div>
     </div>
   <div class="plane" data-hf-parallax="1.3">
     <img src="../assets/near-rocks.svg" style="left:-300px;top:740px;width:860px;height:400px" >

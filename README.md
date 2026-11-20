@@ -59,79 +59,6 @@ Try a prompt like:
 
 The agent reads the contract with `aether_guide`, writes the file, validates it with `aether_check` (which returns the exact error and a fix), looks at any moment with `aether_snapshot`, and exports with `aether_render`.
 
-### Motion Scenes
-
-Import reusable native HTML scenes with `data-composition-src`. Each instance has its own timeline position, track, scoped IDs, and variable overrides. [One Night](examples/one-night/index.html) combines two external scenes, joined by a dissolve, into a 15-second coastal short. Repeated instances compile once, scenes of another canvas size fit with `data-composition-fit`, and `preview --watch` re-renders when a scene or its assets change. See the [Motion Scenes v1.1 contract](docs/motion-scenes.md).
-
-### Cinematic compositing
-
-[The Morning Shift](examples/cinematic-dystopia.html) layers original SVG architecture, animated fog and rain, and a 12 FPS transparent character sequence. The native camera pans across independently weighted depth planes, and localized bloom and root filmic controls finish the shot.
-
-```bash
-aether-motion check examples/cinematic-dystopia.html
-aether-motion render examples/cinematic-dystopia.html --output out/cinematic-4k.png --size 4k --fps 24 --frame 72
-```
-
-[The Morning Shift — Into the Shadows](examples/cinematic-walk-15s.html) is a 15-second
-short with a wide city view, a loading-dock side elevation, and an oblique view of the
-lamp yard. The cameras pan at fixed scale. The 12 FPS gait pairs planted-sole pivots
-and contact shadows with stepped motion. The worker passes through stationary light
-masks and behind the overpass pillar. His reflected cels are masked to the wet pavement.
-The shot changes are hidden rather than cut: a near-lens steel column carries a linear
-`wipe-left` at 5 seconds, and a lamp-lit fog veil covers a short crossfade at 10 seconds.
-Every shot keeps the shared walk phase.
-The included [cel drawing script](examples/cinematic-walk-assets/draw-cels.py) regenerates
-PNGs on macOS, and the [set drawing script](examples/cinematic-walk-assets/draw-sets.py)
-regenerates the SVG plates.
-
-```bash
-aether-motion check examples/cinematic-walk-15s.html
-aether-motion render examples/cinematic-walk-15s.html --output out/cinematic-walk-1080p-v3.mp4 --size 1080p --fps 24 --quality high --threads 2
-# The validated 3840x2160 master (360 frames; --threads changes speed, not output)
-aether-motion render examples/cinematic-walk-15s.html --output out/cinematic-walk-4k-v3.mp4 --size 4k --fps 24 --quality max --threads 4
-```
-
-### Camera rig and shot composer
-
-A camera container can follow a character and move through a sequence of shots on one
-continuous camera. `data-hf-camera-subject` names the element to follow and
-`data-hf-camera-anchor` sets where it sits in the frame; `data-hf-shots` lists presets
-(`static`, `follow`, `pan`, `dolly-in`, `dolly-out`, `reveal`) played back to back:
-
-```html
-<section id="rig" data-hf-camera-subject="worker" data-hf-camera-anchor="0.4 0.6"
-    data-hf-camera-lag="0.45" data-hf-camera-lookahead="0.45"
-    data-hf-shots='[{"preset":"follow","duration":2,"from":{"zoom":1.35}},
-                    {"preset":"dolly-in","duration":2,"zoom":1.6},
-                    {"preset":"reveal","zoom":1.0,"to":[0,40]}]'>
-  <img class="plate" src="sky.svg" data-hf-parallax="0.3">
-  <div id="worker" data-hf-parallax="1.14">...</div>
-</section>
-```
-
-Shots use the `smooth` easing by default: zoom, focus, framing, and follow weight are cubic
-curves with automatic tangents, so velocity stays continuous across shots and the camera never
-overshoots a key. Classic `data-hf-camera` keyframes take `"easing":"smooth"`, `anchorX`,
-`anchorY`, and `follow` too. The camera pose is a pure function of time. The only stateful
-part of tracking, the dead zone and the lag, is baked once at load on a fixed 240 Hz grid.
-Frames therefore match in any order, at any thread count, and across segmented renders.
-Cameras that use no rig feature keep their exact classic tracks. Scene changes remain clips
-joined by `data-hf-transition`; shots never interpolate between unrelated scenes. The
-[six-second rig demo](examples/cinematic-camera-rig-6s.html) tracks the walker of The Morning
-Shift, dollies in, and reveals the skyline. It reuses the short's artwork and leaves the
-short unchanged.
-
-```bash
-aether-motion check examples/cinematic-camera-rig-6s.html      # lists the resolved keys under "cameras"
-aether-motion render examples/cinematic-camera-rig-6s.html --output out/camera-rig-1080p.mp4 --size 1080p --fps 24
-aether-motion render examples/cinematic-camera-rig-6s.html --output out/camera-rig-4k.png --size 4k --fps 24 --frame 96
-```
-
-Known limits: the subject is followed by translation (scale and rotation of the subject and its
-ancestors are not followed), rig cameras cannot roll, zoom is uniform across depth planes
-(parallax scales only the pan), and every zooming frame fits SVG plates at a new size, as a
-classic zoom does.
-
 ### Manually with the CLI
 
 ```bash
@@ -151,7 +78,7 @@ Download the binary for your system from [Releases](https://github.com/ferxalb/a
 cargo install --git https://github.com/ferxalb/aether-motion
 ```
 
-Earlier release archives use the executable name `aether-hyperframes`. From a local checkout, run `cargo install --path . --locked` to install `aether-motion` before the next release.
+From a local checkout, run `cargo install --path . --locked`.
 
 ## What You Can Build
 
@@ -236,24 +163,7 @@ aether-motion block theme-midnight
 - **Polished look:** flexbox, text wrapping, gradients, layered and inset shadows, blur, frosted glass, rotation, CSS color filters and `drop-shadow`, `mix-blend-mode`, a root color grade, localized bloom (`data-hf-bloom`, see `examples/bloom.html`), shutter motion blur for the whole frame or one element (`data-hf-motion-blur`, see `examples/layer-motion-blur.html`), vignette, and film grain.
 - **Easy on your machine:** renders at low priority on a quarter of your cores by default, with a live progress line and ETA (`--progress json` for scripts). `--threads N` goes faster; `--scale 0.5` gives quick drafts.
 - **Quality presets:** `--quality draft|standard|high|max` sets the H.264 quantizer (30, 26, 22, 18); `standard` is the default, and the other presets trade file size against fidelity at about the same CPU cost.
-- **Fast:** the 15-second premium promo (450 frames at 1080p/30) renders to MP4 in about 15 seconds with default settings on a laptop. See [BENCHMARK.md](BENCHMARK.md).
 - **Open source:** Apache 2.0.
-
-## AETHER Motion vs HyperFrames and Remotion
-
-AETHER Motion uses the [HyperFrames](https://github.com/heygen-com/hyperframes) composition format but replaces its browser pipeline with a native renderer. Remotion takes a React-first, frame-driven approach. Choose based on the source format, runtime, and agent workflow you need:
-
-| | **AETHER Motion** | **HyperFrames** | **Remotion** |
-| --- | --- | --- | --- |
-| Authoring model | HTML composition with clips and native `data-hf-*` attributes | HTML compositions with browser-based JavaScript timelines | React components and frame-indexed composition code |
-| Rendering | Native Rust renderer; no browser, Node.js, or FFmpeg required | Browser rendering through the CLI, plus hosted cloud rendering | Browser-based video rendering through the CLI; Player and Studio provide interactive previews |
-| Runtime and scope | One binary; documented HTML/CSS subset, with explicit errors outside it | Node.js 22+, Chrome, and FFmpeg for the local CLI; full browser HTML/CSS/JS | Node.js and a React project; supports frame-driven components and browser media |
-| Motion | Native keyframes, camera, kinetic type, transitions, and limited CSS `@keyframes` | GSAP, CSS, Lottie, Three.js, WAAPI, and browser adapters | `useCurrentFrame()`, `interpolate()`, `spring()`, React components, and transition primitives |
-| Audio and video | Local `<audio>` mixed sample-accurately into AAC; static images/SVG; local H.264 MP4 `<video>` (no other codecs) | Browser audio/video and other media elements | `<Audio>`, `<Video>`, images, and other React media components |
-| AI-agent integration | [Local stdio MCP server](#with-an-ai-coding-agent) **and** [Agent Skills](#agent-skills) | [Hosted MCP](https://hyperframes.heygen.com/tools/mcp-server-for-video); [CLI and Agent Skills](https://github.com/heygen-com/hyperframes#skills) for coding agents | [Agent Skills](https://www.remotion.dev/docs/ai/skills) and [Studio WebMCP](https://www.remotion.dev/docs/ai/webmcp) (agent support varies) |
-| Best fit | Reproducible native rendering with a small, explicit contract | Browser-powered HTML video projects and hosted agent rendering | Programmatic video built from React components and frame-based logic |
-
-Use AETHER Motion when you want a lightweight native renderer and its supported HTML contract. Use HyperFrames when you need browser features, other video formats, or its hosted MCP workflow. Use Remotion when the project is React-based or needs frame-driven React components. The agent integrations differ: AETHER Motion combines local MCP with installable skills, HyperFrames offers hosted MCP plus CLI skills, and Remotion offers Agent Skills plus Studio WebMCP.
 
 ## Output
 
@@ -268,8 +178,10 @@ Up to 60 fps, H.264 MP4 (yuv420p, constant frame rate), or a single PNG frame wi
 
 - [Composition reference](AGENTS.md): every supported attribute, CSS property, and motion feature
 - [Limits](limits.md): what is not supported
-- [Examples](examples): ready-to-render compositions
+- [Motion Scenes](docs/motion-scenes.md) explains how to import, fit, and reuse compositions. [One Night](examples/one-night/index.html) shows external scenes joined by a dissolve.
+- [Examples](examples) include a [subject-tracking camera rig](examples/cinematic-camera-rig-6s.html), a [three-shot cinematic short](examples/cinematic-walk-15s.html), and a [parallax and bloom demo](examples/cinematic-dystopia.html).
 - [Architecture](docs/architecture.md): source layout, memory limits, encoding
+- [Release process](docs/releasing.md)
 - [Benchmarks](BENCHMARK.md): measurements and method
 - [Changelog](CHANGELOG.md): releases (SemVer; while `0.x`, minor releases may break the contract, and every break is listed)
 
