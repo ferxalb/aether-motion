@@ -72,6 +72,7 @@ pub(in crate::parse) fn parse_video(
         bail!("only local video files are supported: {src}");
     }
     let path = base.join(src);
+    super::reads::note(&path);
     let index = VideoIndex::load(&path)?;
     let media_start = attr(node, "data-media-start")
         .map(|raw| number(&raw, "data-media-start"))

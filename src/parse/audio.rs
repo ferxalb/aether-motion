@@ -57,6 +57,7 @@ pub(in crate::parse) fn parse_audio(
         if duration.is_some_and(|d| fade_in + fade_out > d + 1e-9) {
             bail!("fade-in + fade-out exceeds the clip duration");
         }
+        super::reads::note(&base.join(&src));
         Ok(PendingAudio {
             clip: AudioClip {
                 id: id.clone(),

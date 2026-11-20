@@ -227,7 +227,12 @@ impl<'a> Renderer<'a> {
         };
         // Rasterize at the composition's output resolution, independent of animated zoom.
         // Re-rasterizing every zoom step changes glyph metrics discretely and makes type wobble.
-        let key = (idx, 1.0_f32.to_bits(), block.limit_key, width_px);
+        let key = (
+            self.text_keys[idx] as usize,
+            1.0_f32.to_bits(),
+            block.limit_key,
+            width_px,
+        );
         let uncached;
         let run = if let Some(run) = self.text_runs.get(&key) {
             run

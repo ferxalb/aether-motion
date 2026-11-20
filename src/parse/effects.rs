@@ -108,6 +108,7 @@ pub(in crate::parse) fn finish_effects(
     if root && element.effects.motion_blur.is_some() {
         bail!("data-hf-motion-blur cannot be on the root; use data-motion-blur on the root to blur the whole frame");
     }
+    let element: &mut crate::model::ElementBody = element;
     let track = &mut element.motion.fx.bloom;
     if track.0.is_empty() {
         return Ok(());

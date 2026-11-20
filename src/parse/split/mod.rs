@@ -26,7 +26,7 @@
 
 mod motion;
 
-use crate::model::{Content, Easing, Element, LayoutHints, Length, Motion, Style};
+use crate::model::{Content, Easing, Element, ElementBody, LayoutHints, Length, Motion, Style};
 use crate::parse::animation::timing::parse_keyframe_easing;
 use crate::parse::html::{attr, number, signed_number};
 use crate::parse::tree::Pending;
@@ -108,14 +108,13 @@ impl SplitPlan {
         self.next.set(self.next.get() + count);
     }
 
-    /// Whether the `count` elements starting at ordinal `at` get the same breaks as those starting
-    /// at `from` (always true on the first parse, which has no breaks yet).
-    pub(in crate::parse) fn same_breaks(&self, from: u32, at: u32, count: u32) -> bool {
-        self.breaks.as_ref().is_none_or(|all| {
-            (0..count).all(|k| {
-                let empty = Vec::new();
-                all.get(&(from + k)).unwrap_or(&empty) == all.get(&(at + k)).unwrap_or(&empty)
-            })
+    /// Breaks of the `count` wrapping elements starting at ordinal `at`, in order (an element
+    /// that does not wrap has none); `None` on the first parse, which has no breaks yet.
+    pub(in crate::parse) fn breaks_at(&self, at: u32, count: u32) -> Option<Vec<Vec<usize>>> {
+        self.breaks.as_ref().map(|all| {
+            (at..at + count)
+                .map(|ordinal| all.get(&ordinal).cloned().unwrap_or_default())
+                .collect()
         })
     }
 
@@ -606,23 +605,23 @@ pub(in crate::parse) fn push_piece(
 ) -> usize {
     let idx = out.len();
     out.push(Pending {
-        element: Element {
-            tag: tag.to_string(),
-            id: None,
-            parent: Some(parent),
-            children: Vec::new(),
-            content,
-            style,
-            start: 0.0,
-            end: f64::INFINITY,
-            fade_in: 0.0,
-            fade_out: 0.0,
-            track: 0,
-            motion,
-            layout: LayoutHints::default(),
-            spans: Vec::new(),
-            effects: Default::default(),
-        },
+        element: Element::new(
+            Some(parent),
+            0.0,
+            f64::INFINITY,
+            ElementBody {
+                tag: tag.to_string(),
+                content,
+                style,
+                fade_in: 0.0,
+                fade_out: 0.0,
+                track: 0,
+                motion,
+                layout: LayoutHints::default(),
+                spans: Vec::new(),
+                effects: Default::default(),
+            },
+        ),
         start_expr: None,
         duration: None,
         keyframes: Vec::new(),
@@ -709,23 +708,23 @@ mod tests {
     fn expanded(spec: &SplitSpec, text: &str) -> Vec<Pending> {
         let mut out = Vec::new();
         out.push(Pending {
-            element: Element {
-                tag: "h1".into(),
-                id: None,
-                parent: None,
-                children: Vec::new(),
-                content: Content::Container,
-                style: Style::default(),
-                start: 0.0,
-                end: 1.0,
-                fade_in: 0.0,
-                fade_out: 0.0,
-                track: 0,
-                motion: Motion::default(),
-                layout: LayoutHints::default(),
-                spans: Vec::new(),
-                effects: Default::default(),
-            },
+            element: Element::new(
+                None,
+                0.0,
+                1.0,
+                ElementBody {
+                    tag: "h1".into(),
+                    content: Content::Container,
+                    style: Style::default(),
+                    fade_in: 0.0,
+                    fade_out: 0.0,
+                    track: 0,
+                    motion: Motion::default(),
+                    layout: LayoutHints::default(),
+                    spans: Vec::new(),
+                    effects: Default::default(),
+                },
+            ),
             start_expr: None,
             duration: None,
             keyframes: Vec::new(),

@@ -132,6 +132,7 @@ pub(in crate::parse) fn parse_captions(
     });
     let gap = num("data-hf-captions-gap", (size * 0.28) as f64, (0.0, 1000.0))?;
 
+    super::reads::note(&base.join(&src));
     let transcript = load(&base.join(&src))?;
     let cues = match (&transcript.cues, preserve) {
         (_, true) => one_per_word(&transcript.words),
@@ -316,7 +317,7 @@ impl CaptionsSpec {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Element;
+    use crate::model::{Element, ElementBody};
 
     fn word(text: &str, start: f64, end: f64) -> Word {
         Word {
@@ -352,23 +353,23 @@ mod tests {
 
     fn expanded(mode: Mode) -> Vec<Pending> {
         let host = Pending {
-            element: Element {
-                tag: "div".to_string(),
-                id: None,
-                parent: None,
-                children: Vec::new(),
-                content: Content::Container,
-                style: Style::default(),
-                start: 0.0,
-                end: f64::INFINITY,
-                fade_in: 0.0,
-                fade_out: 0.0,
-                track: 0,
-                motion: Motion::default(),
-                layout: Default::default(),
-                spans: Vec::new(),
-                effects: Default::default(),
-            },
+            element: Element::new(
+                None,
+                0.0,
+                f64::INFINITY,
+                ElementBody {
+                    tag: "div".to_string(),
+                    content: Content::Container,
+                    style: Style::default(),
+                    fade_in: 0.0,
+                    fade_out: 0.0,
+                    track: 0,
+                    motion: Motion::default(),
+                    layout: Default::default(),
+                    spans: Vec::new(),
+                    effects: Default::default(),
+                },
+            ),
             start_expr: None,
             duration: None,
             keyframes: Vec::new(),

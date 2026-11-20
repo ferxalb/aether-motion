@@ -777,16 +777,30 @@ pub struct Bloom {
     pub tint: Option<Color>,
 }
 
+/// One element of the flattened tree: its place in this composition (id, tree links, and clip
+/// interval) and a shared, copy-on-write [`ElementBody`] with everything else.
+///
+/// Instances of a reused scene share the bodies of the scene compiled once: cloning an element
+/// only bumps a reference count. Reads reach the body's fields through `Deref`
+/// (`element.style`); writes go through `DerefMut`, which copies a shared body first
+/// (`Arc::make_mut`), so changing one instance never changes another.
 #[derive(Clone, Debug)]
 pub struct Element {
-    pub tag: String,
     pub id: Option<String>,
     pub parent: Option<usize>,
     pub children: Vec<usize>,
-    pub content: Content,
-    pub style: Style,
     pub start: f64,
     pub end: f64,
+    pub body: std::sync::Arc<ElementBody>,
+}
+
+/// The part of an [`Element`] that does not depend on where it is placed in the flattened tree
+/// (see [`Element`]): what it draws, how it is styled, and how it moves in its own clip time.
+#[derive(Clone, Debug)]
+pub struct ElementBody {
+    pub tag: String,
+    pub content: Content,
+    pub style: Style,
     pub fade_in: f64,
     pub fade_out: f64,
     pub track: i32,
@@ -795,6 +809,39 @@ pub struct Element {
     /// Inline runs of styled text (sorted, non-overlapping); empty for plain text.
     pub spans: Vec<TextSpan>,
     pub effects: ElementEffects,
+}
+
+impl std::ops::Deref for Element {
+    type Target = ElementBody;
+
+    fn deref(&self) -> &ElementBody {
+        &self.body
+    }
+}
+
+impl std::ops::DerefMut for Element {
+    fn deref_mut(&mut self) -> &mut ElementBody {
+        std::sync::Arc::make_mut(&mut self.body)
+    }
+}
+
+impl Element {
+    /// An element with no id, at `[start, end)`, under `parent`, with no children yet.
+    pub fn new(parent: Option<usize>, start: f64, end: f64, body: ElementBody) -> Self {
+        Self {
+            id: None,
+            parent,
+            children: Vec::new(),
+            start,
+            end,
+            body: std::sync::Arc::new(body),
+        }
+    }
+
+    /// Whether `self` and `other` share one body (instances of the same compiled element).
+    pub fn shares_body(&self, other: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.body, &other.body)
+    }
 }
 
 /// Opt-in root tone curve settings applied after the CSS color grade.
