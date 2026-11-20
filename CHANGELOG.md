@@ -37,9 +37,22 @@ CLI/MCP output may still change between minor releases.
 - `svg::tests::a_region_matches_the_same_part_of_the_whole_raster` checks a region raster
   against the whole raster: within 1 everywhere, except under a path clipped at the region edge,
   which may differ by exactly one antialiasing step (16 of 255).
+- Motion Scenes v1.2: `preview --watch` keeps compiled scenes between renders (`SceneCache`,
+  `parse_file_cached`) and recompiles only scenes whose files changed, appeared, or disappeared,
+  including every scene that imports a changed one. After a failed render it also watches the
+  paths the attempt tried to read, so creating a missing scene or asset triggers a new render.
+- `benchmarks/scene-reuse/`, the 144-instance scene reuse fixture, and `tests/scene_sharing.rs`.
 
 ### Changed
 
+- Motion Scenes v1.2: instances of a reused scene share its compiled elements. `model::Element`
+  keeps its id, tree links, and clip times and holds the rest in a shared copy-on-write
+  `ElementBody` (fields read through `Deref`, so `element.style` works as before). The renderer
+  shares text layouts and glyph rasters between instances, and skips everything drawn before a
+  scene that covers the frame with an opaque, directly drawn background. On the 144-instance
+  fixture, peak memory fell from 65 to 36 MB and overlapping frames render about 4x faster;
+  output is byte-identical. A scene without `data-hf-split-wrap` text compiles once for both
+  parses. [Benchmark details](BENCHMARK.md#motion-scenes-v12-shared-scenes-and-occlusion-2026-11-20)
 - Cameras that use no rig feature keep their exact classic zoom and pan tracks. `Motion` gains an
   optional `rig`, and the parallax pan is read through `Motion::camera_pan`.
 - Zoom-aware SVG reuse: while a camera or scale animation zooms `object-fit: fill` vector

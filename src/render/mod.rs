@@ -2,7 +2,7 @@
 //!
 //! Submodules: `draw` (scene traversal), `layout` (flex sizing and placement), `paint` (the `Surface`, fills, gradients, rotation and `overflow` layers,
 //! filters and blend modes), `text` (fonts, measurement, glyph painting), `shutter` (motion blur), `allocation` (checked buffer sizes),
-//! `geometry` and `frame_state` (shared small types). `paint/video.rs` draws `<video>` frames.
+//! `geometry` and `frame_state` (shared small types), `occlusion` (siblings hidden under an opaque full-frame scene are skipped). `paint/video.rs` draws `<video>` frames.
 //! A frame is drawn by `draw_scene` and finished by `finish_frame` (root color grade, filmic tone curve, vignette, grain).
 
 mod allocation;
@@ -11,6 +11,7 @@ mod frame_state;
 mod geometry;
 mod layer_blur;
 mod layout;
+mod occlusion;
 mod paint;
 pub mod probe;
 mod shutter;
@@ -29,7 +30,7 @@ use paint::{CachedImage, ImageKey, SequenceSources, Surface};
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::sync::Arc;
-use text::{FontStore, TextBlock, TextRun};
+use text::{shared_text_keys, FontStore, TextBlock, TextRun};
 
 /// Highest frame rate accepted for stills and renders (`--fps`, the MCP `fps` of `aether_snapshot`).
 pub const MAX_FPS: u32 = 240;
@@ -52,6 +53,9 @@ pub fn validate_fps(fps: u64, name: &str) -> Result<u32> {
 pub struct RenderStats {
     pub rasterized: usize,
     pub reused: usize,
+    /// Subtrees skipped because a later opaque full-frame scene covered them (see `occlusion.rs`),
+    /// counted once per drawing pass.
+    pub occluded: usize,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -103,6 +107,9 @@ pub struct Renderer<'a> {
     previous: Vec<FrameState>,
     current: Vec<FrameState>,
     children: Vec<Vec<usize>>,
+    /// Text cache key of each element: elements of reused scenes that render the same text share
+    /// one (see `text/shared.rs`).
+    text_keys: Vec<u32>,
     text_runs: HashMap<(usize, u32, i64, i32), TextRun>,
     text_blocks: HashMap<(usize, i64), Arc<TextBlock>>,
     text_cache_bytes: usize,
@@ -233,6 +240,7 @@ impl<'a> Renderer<'a> {
             previous: Vec::with_capacity(composition.elements.len()),
             current: Vec::with_capacity(composition.elements.len()),
             children,
+            text_keys: shared_text_keys(composition),
             text_runs: HashMap::new(),
             text_blocks: HashMap::new(),
             text_cache_bytes: 0,

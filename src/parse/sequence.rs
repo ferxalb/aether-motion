@@ -88,6 +88,7 @@ pub(super) fn parse(node: &NodeRef, tag: &str, base: &Path) -> Result<Option<Ima
         bail!("sequence filename must contain one placeholder and end in .png or .webp");
     }
     let folder = base.join(folder);
+    super::reads::note(&folder);
     let mut frames = BTreeMap::new();
     for entry in std::fs::read_dir(&folder)
         .with_context(|| format!("cannot list sequence directory {}", folder.display()))?
@@ -130,6 +131,7 @@ pub(super) fn parse(node: &NodeRef, tag: &str, base: &Path) -> Result<Option<Ima
         if u64::from(number) != expected {
             bail!("missing sequence frame {expected} in {pattern}");
         }
+        super::reads::note(&file);
         let format = image::ImageFormat::from_path(&file)?;
         let reader = image::ImageReader::open(&file)?.with_guessed_format()?;
         if reader.format() != Some(format) {

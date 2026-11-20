@@ -50,7 +50,7 @@ impl<'a> Renderer<'a> {
         let quantized = limit
             .filter(|_| !props.nowrap)
             .map(|limit| (limit.max(0.0) * 64.0).round() as i64);
-        let key = (idx, quantized.unwrap_or(NO_LIMIT));
+        let key = (self.text_keys[idx] as usize, quantized.unwrap_or(NO_LIMIT));
         if let Some(block) = self.text_blocks.get(&key) {
             return Ok(Arc::clone(block));
         }

@@ -1290,3 +1290,47 @@ now each scene compiles once per set of values.
 - **Determinism.** Tests check that reused instances compile to exactly the elements of separate
   copies and render the same frames, and that a fitted scene encodes byte-identically with one
   or two threads and from two assembled parts.
+
+## Motion Scenes v1.2 shared scenes and occlusion (2026-11-20)
+
+Same machine and session, release builds with LTO. The baseline binary was built from the tree
+before this change (`git archive HEAD`); the new one adds shared copy-on-write element bodies,
+shared text cache keys, occlusion of siblings under an opaque full-frame scene, and the
+persistent watch cache. Each command ran under `nice -n 10`, alternating binaries; wall time,
+user CPU, and max RSS were read from `getrusage` of the child process.
+
+Fixture: `benchmarks/scene-reuse/` (added here; recreated from the v1.1 description, whose
+fixture was not checked in): a 16 s 1920x1080 film importing a 4 s middle scene 16 times; each
+middle scene imports a 152-element leaf scene (50 gradient cards, 50 SVG badges, 50 animated
+labels) 8 times, staggered by 0.25 s: 144 instances and 19,617 flattened elements. The leaf root
+has an opaque background, so about 21 overlapping leaves are active at frame 120 and all but the
+newest are covered.
+
+| Command | Baseline wall / user / max RSS | v1.2 wall / user / max RSS |
+| --- | ---: | ---: |
+| `check --safe-zone off --samples 1` (5 runs) | 0.13–0.31 s / 0.06–0.12 s / 87 MB | 0.08–0.09 s / 0.04–0.07 s / 61 MB |
+| `bench --frame 0 --count 15 --threads 1` (3 runs) | 0.45–0.47 s / 0.42–0.43 s / 62–63 MB | 0.31–0.33 s / 0.30 s / 36 MB |
+| `bench --frame 120 --count 15 --threads 1` (3 runs) | 5.56–5.72 s / 5.42–5.60 s / 65 MB | 1.21–1.40 s / 1.19–1.37 s / 36 MB |
+| `bench --frame 240 --count 15 --threads 1` (3 runs) | 5.48–5.82 s / 5.39–5.69 s / 65 MB | 1.30–1.47 s / 1.28–1.44 s / 36 MB |
+| `render --fps 30 --threads 4` (480 frames, 1 run) | 36.85 s / 140.37 s / 310 MB | 10.25 s / 38.64 s / 220 MB |
+
+- **Memory.** Shared element bodies cut peak RSS by 26 MB for `check` and by 26–29 MB for
+  `bench` (65 to 36 MB), independent of occlusion.
+- **Raster time.** The 4.0–4.6x raster gain on overlapping frames comes from occlusion alone. With
+  the leaf background removed (nothing can be occluded), `bench --frame 120 --count 15
+  --threads 1` took 5.40–5.90 s before and 5.31–5.67 s after (3 runs each, within noise), at
+  65 MB against 36 MB. Shared text cache keys did not change raster time here: the per-element
+  cache (4,096 runs) already held every label of the active leaves; they avoid rasterizing each
+  instance's text again and keep one copy in memory.
+- **No-reuse film.** The One Night export (`--size 1080p --fps 30 --threads 2`, three distinct
+  scenes, nothing reused or occluded: its crossfade keeps both scenes translucent) took
+  52.26 / 54.60 / 56.25 s wall and 97.8 / 102.7 / 104.1 s user before, and 53.52 / 52.81 /
+  53.28 s wall and 100.1 / 98.0 / 99.5 s user after, at 349–396 MB and 349–365 MB: within
+  run-to-run noise.
+- **Determinism.** One Night encodes byte-identically (3,325,340 bytes) with the baseline and,
+  with the new binary, at `--threads 1`, `2`, and `4` and assembled from `--segments 0..6` and
+  `6..15`. The reuse film encodes byte-identically with the baseline and, with the new binary, at
+  one and four threads and from `--segments 0..5` and `5..16`. Tests compare occluded frames
+  with the same frames drawn in full (fades, translucent roots, pushes, `contain` and `cover`
+  fits, moving and filtered hosts, backdrop blur and blend modes inside the cover, and a
+  fractional `--scale`).

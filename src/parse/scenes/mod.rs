@@ -1,16 +1,24 @@
 //! Loads, validates, and flattens external scene instances into the native composition model.
 //!
-//! `SceneStack` compiles each imported document once per parse pass and per set of variable
-//! values: later instances reuse a clone of the compiled scene instead of re-reading and
-//! re-parsing it, with the same import-depth, instance, and cycle checks a fresh compilation
-//! would make. `load` validates the instance hosts of one document and `append` flattens their
-//! scenes into its element tree, timeline, ids, audio, and dependency list. A scene whose canvas
-//! differs from its host's is placed by `data-composition-fit` (`contain`, `cover`, or `none`).
+//! `cache` compiles each imported document once per set of variable values (and keeps it between
+//! `preview --watch` compiles, see `SceneCache`); `fingerprint` identifies the files a kept scene
+//! read. `load` validates the instance hosts of one document and `append` flattens their scenes
+//! into its element tree, timeline, ids, audio, and dependency list: each instance gets its own
+//! ids, tree links, and clip times, and shares the element bodies of the compiled scene. A scene
+//! whose canvas differs from its host's is placed by `data-composition-fit` (`contain`, `cover`,
+//! or `none`), which gives that instance its own copy of the scene root.
+
+mod cache;
+mod fingerprint;
+
+pub use cache::SceneCache;
+pub(super) use cache::SceneStack;
+pub(in crate::parse) use fingerprint::Fingerprint;
 
 use super::html::{attr, direct_text};
 use super::split::SplitPlan;
 use super::tree::Pending;
-use super::{parse_pass, values_from_json, VariableValues};
+use super::values_from_json;
 use crate::model::{AudioClip, Composition, Content, Element, Length};
 use anyhow::{anyhow, bail, Context, Result};
 use kuchiki::NodeRef;
@@ -18,148 +26,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-const MAX_DEPTH: usize = 8;
-const MAX_INSTANCES: usize = 256;
 /// Flattened elements a document may hold with its imported scenes; reuse makes scenes cheap to
-/// compile, so this bounds the memory of the expanded tree instead.
+/// compile, so this bounds the size of the expanded tree instead.
 pub(super) const MAX_ELEMENTS: usize = 200_000;
-
-/// A compiled scene kept for reuse within one parse pass.
-struct Compiled {
-    scene: Composition,
-    /// Import levels below the scene's own document.
-    depth: usize,
-    /// Instances compiled inside it (nested imports, counted each time they appear).
-    instances: usize,
-    /// Canonical paths of every document in its import tree, its own included.
-    files: Vec<PathBuf>,
-    /// First `data-hf-split-wrap` ordinal it claimed, and how many.
-    wraps: (u32, u32),
-}
-
-#[derive(Default)]
-pub(super) struct SceneStack {
-    active: Vec<PathBuf>,
-    instances: usize,
-    /// Deepest import level reached in the subtree being compiled.
-    deepest: usize,
-    /// Documents compiled under the scene being compiled (for the cache entry's cycle check).
-    files: Vec<PathBuf>,
-    cache: HashMap<(PathBuf, String), Compiled>,
-}
-
-impl SceneStack {
-    pub(super) fn parse(
-        &mut self,
-        path: &Path,
-        values: &VariableValues,
-        splits: &SplitPlan,
-    ) -> Result<Composition> {
-        let canonical = path
-            .canonicalize()
-            .with_context(|| format!("could not read {}", path.display()))?;
-        if self.active.contains(&canonical) {
-            bail!(
-                "cycle in data-composition-src: {} is already active",
-                path.display()
-            );
-        }
-        let level = self.active.len();
-        if level > MAX_DEPTH {
-            bail!("data-composition-src supports at most {MAX_DEPTH} nested levels");
-        }
-        let imported = level > 0;
-        if imported {
-            self.count_instances(1)?;
-        }
-        let key = (canonical.clone(), serde_json::to_string(values)?);
-        if let Some(hit) = imported.then(|| self.reuse(&key, level, splits)).flatten() {
-            return hit;
-        }
-        let (outer_deepest, outer_files) = (self.deepest, std::mem::take(&mut self.files));
-        let (instances, wrap_start) = (self.instances, splits.cursor());
-        self.deepest = level;
-        self.active.push(canonical.clone());
-        let result = parse_pass(path, values, splits, self, imported);
-        self.active.pop();
-        let depth = self.deepest - level;
-        self.deepest = outer_deepest.max(self.deepest);
-        let mut files = std::mem::replace(&mut self.files, outer_files);
-        files.push(canonical);
-        files.sort();
-        files.dedup();
-        self.files.extend(files.iter().cloned());
-        let scene = result?;
-        if imported {
-            let compiled = Compiled {
-                scene: scene.clone(),
-                depth,
-                instances: self.instances - instances,
-                files,
-                wraps: (wrap_start, splits.cursor() - wrap_start),
-            };
-            self.cache.insert(key, compiled);
-        }
-        Ok(scene)
-    }
-
-    fn count_instances(&mut self, count: usize) -> Result<()> {
-        self.instances += count;
-        if self.instances > MAX_INSTANCES {
-            bail!(
-                "data-composition-src supports at most {MAX_INSTANCES} instances per composition"
-            );
-        }
-        Ok(())
-    }
-
-    /// A clone of the scene compiled earlier with the same values, checked as a fresh compilation
-    /// would be; `None` when there is none, or when the second parse measured different
-    /// `data-hf-split-wrap` breaks for this instance (it is then compiled again).
-    fn reuse(
-        &mut self,
-        key: &(PathBuf, String),
-        level: usize,
-        splits: &SplitPlan,
-    ) -> Option<Result<Composition>> {
-        let cached = self.cache.get(key)?;
-        let at = splits.cursor();
-        let (from, count) = cached.wraps;
-        if !splits.same_breaks(from, at, count) {
-            return None;
-        }
-        if let Some(file) = cached.files.iter().find(|f| self.active.contains(f)) {
-            let error = anyhow!(
-                "cycle in data-composition-src: {} is already active",
-                file.display()
-            );
-            return Some(Err(error));
-        }
-        if level + cached.depth > MAX_DEPTH {
-            return Some(Err(anyhow!(
-                "data-composition-src supports at most {MAX_DEPTH} nested levels"
-            )));
-        }
-        let (depth, instances, files) = (cached.depth, cached.instances, cached.files.clone());
-        let mut scene = cached.scene.clone();
-        if let Err(error) = self.count_instances(instances) {
-            return Some(Err(error));
-        }
-        self.deepest = self.deepest.max(level + depth);
-        self.files.extend(files);
-        splits.skip(count);
-        // The first parse numbers wrapping elements in document order; renumber the clone as a
-        // fresh compilation at this position would have been.
-        if splits.unresolved() && at != from {
-            for element in &mut scene.elements {
-                if let Some(ordinal) = &mut element.layout.split_wrap {
-                    *ordinal = *ordinal - from + at;
-                }
-            }
-        }
-        Some(Ok(scene))
-    }
-}
 
 /// Where a scene root sits in its host when the canvases differ: its top-left offset at rest and
 /// its uniform scale around its center.
@@ -224,7 +93,9 @@ pub(super) fn load(
                 }
                 let src = src.trim();
                 let path = Path::new(src);
+                // `has_root` also rejects `/x.html` on Windows, where it is not absolute (no drive).
                 if path.is_absolute()
+                    || path.has_root()
                     || src.contains([':', '\\', '?', '#'])
                     || !path.extension().and_then(|ext| ext.to_str()).is_some_and(|ext| {
                         ext.eq_ignore_ascii_case("html") || ext.eq_ignore_ascii_case("htm")
@@ -283,7 +154,7 @@ fn placement(fit: Option<&str>, scene: (u32, u32), host: (u32, u32)) -> Result<O
     }))
 }
 
-fn fill_canvas(element: &mut Element, size: (u32, u32)) {
+pub(super) fn fill_canvas(element: &mut Element, size: (u32, u32)) {
     let style = &mut element.style;
     style.position = Some("absolute".into());
     style.left = None;
@@ -336,10 +207,9 @@ pub(super) fn append(
             instance.id.as_deref().expect("validated instance id")
         );
         dependencies.append(&mut scene.dependencies);
-        let root = &mut scene.elements[0];
-        fill_canvas(root, (scene.width, scene.height));
-        root.layout.scene_root = true;
+        // The compiled root already fills its own canvas; a fitted instance copies and places it.
         if let Some(Placement { left, top, scale }) = placement {
+            let root = &mut scene.elements[0];
             root.style.left = Some(Length::Px(left));
             root.style.top = Some(Length::Px(top));
             root.motion.base.scale = scale;
@@ -352,8 +222,14 @@ pub(super) fn append(
             for child in &mut element.children {
                 *child += offset;
             }
-            if let Some(rig) = &mut element.motion.rig {
-                if rig.subject().is_some() {
+            // A camera that follows a subject copies its body to point at this instance's subject.
+            if element
+                .motion
+                .rig
+                .as_ref()
+                .is_some_and(|rig| rig.subject().is_some())
+            {
+                if let Some(rig) = &mut element.motion.rig {
                     Arc::make_mut(rig).offset_subject(offset);
                 }
             }

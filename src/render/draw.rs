@@ -19,12 +19,32 @@ impl<'a> Renderer<'a> {
                 self.draw_layer_blurred(idx, parent, parent_scale, assigned)
             });
         }
-        let state = self.current[idx];
-        let alpha = state.alpha;
-        if alpha <= 0.0 {
+        if self.current[idx].alpha <= 0.0 {
             return Ok(());
         }
-        let ps = parent_scale;
+        let (rect, cumulative) = self.posed_rect(idx, parent, parent_scale, assigned);
+        let sigma = self.filter_blur(idx) * cumulative * self.scale;
+        if self.needs_mask(idx) {
+            return self.draw_masked(idx, rect, cumulative, sigma);
+        }
+        if self.has_effects(idx, sigma) {
+            return crate::profile::time(crate::profile::Phase::EffectLayer, || {
+                self.draw_with_effects(idx, rect, cumulative, sigma)
+            });
+        }
+        self.draw_posed(idx, rect, cumulative)
+    }
+
+    /// Border box of element `idx` in its current pose (offset and scale), and the scale its
+    /// descendants inherit.
+    pub(in crate::render) fn posed_rect(
+        &self,
+        idx: usize,
+        parent: Rect,
+        ps: f32,
+        assigned: Option<Rect>,
+    ) -> (Rect, f32) {
+        let state = self.current[idx];
         let mut rect = self.place(idx, parent, ps, assigned);
         rect.x += state.x * ps;
         rect.y += state.y * ps;
@@ -38,16 +58,7 @@ impl<'a> Renderer<'a> {
             rect.y = cy - rect.h / 2.0;
             cumulative *= state.scale;
         }
-        let sigma = self.filter_blur(idx) * cumulative * self.scale;
-        if self.needs_mask(idx) {
-            return self.draw_masked(idx, rect, cumulative, sigma);
-        }
-        if self.has_effects(idx, sigma) {
-            return crate::profile::time(crate::profile::Phase::EffectLayer, || {
-                self.draw_with_effects(idx, rect, cumulative, sigma)
-            });
-        }
-        self.draw_posed(idx, rect, cumulative)
+        (rect, cumulative)
     }
 
     /// Border box of element `idx` at rest (before its pose): the root fills `parent`, flex items
@@ -270,30 +281,50 @@ impl<'a> Renderer<'a> {
         } else {
             Vec::new()
         };
-        for i in 0..self.children[idx].len() {
+        let count = self.children[idx].len();
+        // Children painted before one that covers the frame with an opaque scene are not seen.
+        let first = (0..count)
+            .rev()
+            .find(|&i| self.covers_frame(idx, rect, cumulative, &layout, self.children[idx][i]))
+            .unwrap_or(0);
+        self.stats.occluded += first;
+        for i in first..count {
             let child = self.children[idx][i];
-            let slot = layout.iter().find(|(c, _)| *c == child).map(|(_, r)| *r);
-            let factor = self.composition.elements[child]
-                .layout
-                .parallax
-                .unwrap_or(1.0);
-            let mut parent = rect;
-            let mut slot = slot;
-            if factor != 1.0 {
-                let camera = self.current[idx];
-                let parent_scale = cumulative / camera.scale;
-                let [dx, dy] = camera
-                    .camera_pan
-                    .map(|pan| pan * parent_scale * (factor - 1.0));
-                parent.x += dx;
-                parent.y += dy;
-                if let Some(slot) = &mut slot {
-                    slot.x += dx;
-                    slot.y += dy;
-                }
-            }
+            let (parent, slot) = self.child_frame(idx, rect, cumulative, &layout, child);
             self.draw_node(child, parent, cumulative, slot)?;
         }
         Ok(())
+    }
+
+    /// The parent box (shifted by the camera pan of a parallax plane) and flex slot in which
+    /// `child` of element `idx` (placed at `rect`, with scale `cumulative`) is drawn.
+    pub(in crate::render) fn child_frame(
+        &self,
+        idx: usize,
+        rect: Rect,
+        cumulative: f32,
+        layout: &[(usize, Rect)],
+        child: usize,
+    ) -> (Rect, Option<Rect>) {
+        let mut slot = layout.iter().find(|(c, _)| *c == child).map(|(_, r)| *r);
+        let factor = self.composition.elements[child]
+            .layout
+            .parallax
+            .unwrap_or(1.0);
+        let mut parent = rect;
+        if factor != 1.0 {
+            let camera = self.current[idx];
+            let parent_scale = cumulative / camera.scale;
+            let [dx, dy] = camera
+                .camera_pan
+                .map(|pan| pan * parent_scale * (factor - 1.0));
+            parent.x += dx;
+            parent.y += dy;
+            if let Some(slot) = &mut slot {
+                slot.x += dx;
+                slot.y += dy;
+            }
+        }
+        (parent, slot)
     }
 }

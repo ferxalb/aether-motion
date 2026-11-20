@@ -13,6 +13,7 @@ mod css;
 mod effects;
 mod filmic;
 mod html;
+mod reads;
 mod rich_text;
 mod scenes;
 mod sequence;
@@ -27,6 +28,7 @@ mod variables;
 mod vector;
 mod video;
 
+pub use scenes::SceneCache;
 pub use values::color::parse_color;
 pub use variables::{read_values_file, values_from_json, VariableValues};
 
@@ -65,10 +67,32 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
 /// Camera rigs that follow a subject are bound last: the renderer measures the resting layout,
 /// and each subject's path is baked once (see `crate::camera::tracking`).
 pub fn parse_file_with(path: &Path, values: &VariableValues) -> Result<Composition> {
-    let first = scenes::SceneStack::default().parse(path, values, &SplitPlan::default())?;
+    compile(path, values, &mut SceneCache::default())
+}
+
+/// [`parse_file_with`], reusing the scenes `cache` kept from earlier compiles whose files are
+/// unchanged (see [`SceneCache`]); the result is identical to a fresh compile. Afterwards,
+/// [`SceneCache::last_reads`] lists the paths the compile read or tried to read, which a watcher
+/// needs when it failed (for example on an asset that does not exist yet).
+pub fn parse_file_cached(
+    path: &Path,
+    values: &VariableValues,
+    cache: &mut SceneCache,
+) -> Result<Composition> {
+    cache.begin();
+    let (result, observed) = reads::recording(|| compile(path, values, cache));
+    if result.is_ok() {
+        cache.finish(&observed);
+    }
+    cache.set_reads(observed.into_keys().collect());
+    result
+}
+
+fn compile(path: &Path, values: &VariableValues, cache: &mut SceneCache) -> Result<Composition> {
+    let first = scenes::SceneStack::new(cache).parse(path, values, &SplitPlan::default())?;
     let mut composition = if first.elements.iter().any(|e| e.layout.split_wrap.is_some()) {
         let breaks = crate::render::split_wrap_breaks(&first).context("data-hf-split-wrap")?;
-        scenes::SceneStack::default().parse(path, values, &SplitPlan::resolved(breaks))?
+        scenes::SceneStack::new(cache).parse(path, values, &SplitPlan::resolved(breaks))?
     } else {
         first
     };
@@ -81,9 +105,10 @@ fn parse_pass(
     path: &Path,
     values: &VariableValues,
     splits: &SplitPlan,
-    stack: &mut scenes::SceneStack,
+    stack: &mut scenes::SceneStack<'_>,
     imported: bool,
 ) -> Result<Composition> {
+    reads::note(path);
     let html =
         fs::read_to_string(path).with_context(|| format!("could not read {}", path.display()))?;
     let document = kuchiki::parse_html().one(html);
@@ -363,7 +388,8 @@ fn parse_pass(
         effects::finish_effects(&mut p.element, &p.keyframes, idx == 0)
             .with_context(|| format!("effects on {label}"))?;
         if idx == 0 {
-            let style = &mut p.element.style;
+            let body: &mut crate::model::ElementBody = &mut p.element;
+            let (style, motion) = (&mut body.style, &body.motion);
             if style.filter_blur > 0.0 {
                 bail!("filter: blur cannot be on the root; add a container inside it");
             }
@@ -384,9 +410,7 @@ fn parse_pass(
             if imported && !style.filter_colors.is_empty() {
                 bail!("root CSS color filters belong on the top-level composition; grade a container inside the scene instead");
             }
-            if imported
-                && (!p.element.motion.is_static() || rest.scale != 1.0 || rest.rotate != 0.0)
-            {
+            if imported && (!motion.is_static() || rest.scale != 1.0 || rest.rotate != 0.0) {
                 bail!("animate, scale, or rotate a container inside the scene instead of its composition root");
             }
             grade = std::mem::take(&mut style.filter_colors);
@@ -613,6 +637,7 @@ pub(in crate::parse) fn filter_base(style: &crate::model::Style) -> [f32; 8] {
 /// apply after the static functions, in `FilterChannel::ALL` order).
 fn order_animated_filters(element: &mut crate::model::Element, root: bool) -> Result<()> {
     use crate::model::FilterChannel;
+    let element: &mut crate::model::ElementBody = element;
     let filter = &mut element.motion.filter;
     filter.appended.clear();
     if filter.is_static() {

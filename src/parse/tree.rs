@@ -1,5 +1,5 @@
 //! DOM walk: validates elements, resolves styles, and collects clips in document order.
-use crate::model::{Content, Element, Keyframe, LayoutHints, Motion, Pose};
+use crate::model::{Content, Element, ElementBody, Keyframe, LayoutHints, Motion, Pose};
 use crate::parse::animation::camera::{parse_camera, uses_rig, CameraFrame};
 use crate::parse::animation::keyframes::parse_keyframes;
 use crate::parse::animation::reveal::{parse_reveal, RevealSpec};
@@ -230,6 +230,7 @@ pub(in crate::parse) fn walk(
         if src.starts_with("data:") || src.contains("://") {
             bail!("only local images are supported: {src}");
         }
+        super::reads::note(&base.join(&src));
         Content::Image(base.join(src))
     } else if tag == "video" {
         let parsed = parse_video(node, base, duration.is_some()).with_context(|| {
@@ -355,30 +356,33 @@ pub(in crate::parse) fn walk(
     };
     out.push(Pending {
         element: Element {
-            tag,
             id: attr(node, "id"),
-            parent,
-            children: Vec::new(),
-            content,
-            style,
-            start: 0.0,
-            end: f64::INFINITY,
-            fade_in,
-            fade_out,
-            track,
-            motion: Motion {
-                base: rest,
-                ..Motion::default()
-            },
-            spans,
-            layout: LayoutHints {
-                parallax: parallax.map(|value| value as f32),
-                allow_safe_zone: flag(node, "data-layout-allow-safe-zone")?,
-                allow_caption_zone: flag(node, "data-layout-allow-caption-zone")?,
-                split_wrap: split.as_ref().and_then(|spec| spec.unresolved_wrap()),
-                ..LayoutHints::default()
-            },
-            effects,
+            ..Element::new(
+                parent,
+                0.0,
+                f64::INFINITY,
+                ElementBody {
+                    tag,
+                    content,
+                    style,
+                    fade_in,
+                    fade_out,
+                    track,
+                    motion: Motion {
+                        base: rest,
+                        ..Motion::default()
+                    },
+                    spans,
+                    layout: LayoutHints {
+                        parallax: parallax.map(|value| value as f32),
+                        allow_safe_zone: flag(node, "data-layout-allow-safe-zone")?,
+                        allow_caption_zone: flag(node, "data-layout-allow-caption-zone")?,
+                        split_wrap: split.as_ref().and_then(|spec| spec.unresolved_wrap()),
+                        ..LayoutHints::default()
+                    },
+                    effects,
+                },
+            )
         },
         start_expr,
         duration,

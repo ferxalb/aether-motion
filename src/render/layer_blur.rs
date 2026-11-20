@@ -46,7 +46,7 @@ struct Blurred {
 pub(in crate::render) struct LayerBlur {
     elements: Vec<Blurred>,
     /// Set while a sample is being drawn, so the blurred element is drawn directly.
-    sampling: bool,
+    pub(in crate::render) sampling: bool,
     /// Copy of the frame before the first sample.
     backdrop: Vec<u8>,
     /// Sums of `sample - backdrop` per channel over `accum_rect`.
