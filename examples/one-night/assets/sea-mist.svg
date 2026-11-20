@@ -1,0 +1,11 @@
+<!-- Slow haze above the water and around the cliff. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2160 258">
+<defs><radialGradient id="spray"><stop stop-color="#819ba9" stop-opacity=".22"/><stop offset=".57" stop-color="#637e8d" stop-opacity=".11"/><stop offset="1" stop-color="#829aa9" stop-opacity="0"/></radialGradient></defs>
+<ellipse cx="275" cy="70" rx="270" ry="24" fill="url(#spray)"/>
+<ellipse cx="740" cy="55" rx="415" ry="34" fill="url(#spray)"/>
+<ellipse cx="1280" cy="48" rx="490" ry="24" fill="url(#spray)"/>
+<ellipse cx="1770" cy="70" rx="330" ry="43" fill="url(#spray)"/>
+<ellipse cx="1212" cy="139" rx="410" ry="42" fill="url(#spray)"/>
+<ellipse cx="1590" cy="156" rx="375" ry="41" fill="url(#spray)"/>
+<ellipse cx="1800" cy="195" rx="328" ry="50" fill="url(#spray)"/>
+</svg>

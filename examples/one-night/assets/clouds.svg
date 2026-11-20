@@ -1,0 +1,12 @@
+<!-- Thin cloud banks that drift independently from the stars. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-220 34 2480 290">
+<defs><linearGradient id="veils" x2="0" y2="1"><stop stop-color="#111d2c" stop-opacity="0"/><stop offset=".35" stop-color="#111c2b" stop-opacity=".69"/><stop offset=".58" stop-color="#344354" stop-opacity=".62"/><stop offset="1" stop-color="#63768b" stop-opacity="0"/></linearGradient>
+<radialGradient id="mist"><stop stop-color="#8395a5" stop-opacity=".21"/><stop offset="1" stop-color="#778a9c" stop-opacity="0"/></radialGradient></defs>
+<g fill="url(#veils)">
+<path d="M-110 86Q34 52 129 62T326 76Q416 59 477 82T660 88Q547 113 474 110T247 111Q86 126-110 118Z"/>
+<path d="M677 127Q818 119 917 105T1129 108Q1265 83 1377 116T1545 104Q1700 104 1865 127Q1773 136 1638 143T1442 145Q1326 152 1179 139T944 142Q778 151 677 127Z"/>
+<path d="M960 193Q1080 172 1205 178T1454 176Q1558 163 1690 178T2019 180Q2124 180 2250 199Q2078 215 1939 206T1704 205Q1520 210 1374 205T1110 214Q1013 207 960 193Z"/>
+<path d="M-180 200Q53 158 151 175T347 175Q501 159 681 182T979 177Q821 223 634 215T386 218Q183 250-180 230Z"/>
+</g>
+<g fill="url(#mist)"><ellipse cx="622" cy="270" rx="740" ry="30"/><ellipse cx="1550" cy="272" rx="610" ry="23"/><ellipse cx="1085" cy="299" rx="1000" ry="16"/></g>
+</svg>

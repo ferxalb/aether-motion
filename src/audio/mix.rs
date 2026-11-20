@@ -134,6 +134,12 @@ pub fn mix(composition: &Composition, total_frames: usize) -> Result<Mix> {
         let report = (|| -> Result<ClipReport> {
             let placement = place(clip, source, total_frames)?;
             let envelope = clip.effects.duck.as_ref().map(|d| {
+                if placement.length == 0 {
+                    return duck::Envelope {
+                        gains: Vec::new(),
+                        regions: Vec::new(),
+                    };
+                }
                 let sources: Vec<&Key> = d.sources.iter().map(|s| &keys[s]).collect();
                 d.envelope(&sources, placement.start, placement.length, total_frames)
             });
@@ -195,8 +201,9 @@ struct Placement {
 
 fn place(clip: &AudioClip, source: &Source, total: usize) -> Result<Placement> {
     let start = frames_for(clip.start);
+    let limit = clip.scene_end.map(|end| frames_for(end).min(total));
     let trim = frames_for(clip.trim);
-    if start >= total {
+    if start >= total && limit.is_none() {
         bail!("starts after the end of the audio timeline");
     }
     if trim >= source.frames() {
@@ -219,7 +226,7 @@ fn place(clip: &AudioClip, source: &Source, total: usize) -> Result<Placement> {
             }
         },
     }
-    .min(total - start);
+    .min(limit.unwrap_or(total).saturating_sub(start));
     Ok(Placement {
         start,
         trim,
@@ -404,6 +411,7 @@ mod tests {
             src: PathBuf::from("x.wav"),
             start: 0.0,
             duration: None,
+            scene_end: None,
             trim: 0.0,
             volume: 1.0,
             fade_in: 0.0,

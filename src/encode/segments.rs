@@ -6,12 +6,12 @@
 //! between processes (see `parts.rs`) encodes the same frames with the same settings.
 
 use super::progress::Tracker;
+use super::yuv::Yuv420;
 use super::{encode_one, make_encoder, Quality, Sample};
 use crate::profile::{self, Phase};
 use crate::render::Renderer;
 use anyhow::{anyhow, bail, Context, Result};
 use openh264::encoder::FrameType;
-use openh264::formats::{RgbaSliceU8, YUVBuffer};
 use std::collections::BTreeMap;
 use std::ops::Range;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -53,7 +53,7 @@ fn encode_segment(
     let (width, height) = renderer.dimensions();
     let dims = (width as usize, height as usize);
     let mut encoder = make_encoder(fps, 1, quality)?;
-    let mut yuv = YUVBuffer::new(dims.0, dims.1);
+    let mut yuv = Yuv420::new(dims.0, dims.1);
     let mut last_revision = None;
     let before = (renderer.stats().rasterized, renderer.stats().reused);
     let mut samples = Vec::with_capacity(range.len());
@@ -61,9 +61,7 @@ fn encode_segment(
     for frame in range {
         let (rgba, revision) = renderer.render_frame_with_revision(frame, fps)?;
         if last_revision != Some(revision) {
-            profile::time(Phase::Convert, || {
-                yuv.read_rgba8(RgbaSliceU8::new(rgba, dims))
-            });
+            profile::time(Phase::Convert, || yuv.read_rgba(rgba));
             last_revision = Some(revision);
         }
         let (nal, frame_type) =

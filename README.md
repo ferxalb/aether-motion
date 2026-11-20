@@ -59,6 +59,10 @@ Try a prompt like:
 
 The agent reads the contract with `aether_guide`, writes the file, validates it with `aether_check` (which returns the exact error and a fix), looks at any moment with `aether_snapshot`, and exports with `aether_render`.
 
+### Motion Scenes
+
+Import reusable native HTML scenes with `data-composition-src`. Each instance has its own timeline position, track, scoped IDs, and variable overrides. [One Night](examples/one-night/index.html) combines three external scenes into a 15-second coastal short. See the [Motion Scenes v1 contract](docs/motion-scenes.md).
+
 ### Cinematic compositing
 
 [The Morning Shift](examples/cinematic-dystopia.html) layers original SVG architecture, animated fog and rain, and a 12 FPS transparent character sequence. The native camera pans across independently weighted depth planes, and localized bloom and root filmic controls finish the shot.

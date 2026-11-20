@@ -63,6 +63,7 @@ pub(in crate::parse) fn parse_audio(
                 src: base.join(src),
                 start: 0.0,
                 duration,
+                scene_end: None,
                 trim: seconds("data-hf-trim-start")?.unwrap_or(0.0),
                 volume: volume as f32,
                 fade_in,

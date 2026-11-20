@@ -1,0 +1,14 @@
+<!doctype html>
+<!-- One Night. Three external scenes share a coast and a continuous sound bed. The ambience is
+     raised 12.2 dB (x4.07) to about -26 LUFS integrated; its own fade-out ends the film. -->
+<meta charset="utf-8">
+<main data-composition-id="one-night" data-width="1920" data-height="1080" data-duration="15"
+      style="background:#000" data-hf-vignette="0.24">
+  <section id="walk" class="clip" data-composition-src="scenes/walk.html"
+           data-start="0" data-duration="5" data-track-index="1"></section>
+  <section id="horizon" class="clip" data-composition-src="scenes/horizon.html"
+           data-start="walk" data-duration="5" data-track-index="2"></section>
+  <section id="night" class="clip" data-composition-src="scenes/night.html"
+           data-start="horizon" data-duration="5" data-track-index="3"></section>
+  <audio src="assets/coastal-air.wav" data-start="0" data-duration="15" data-volume="4.07"></audio>
+</main>

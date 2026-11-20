@@ -7,12 +7,24 @@ This is a portable summary for authoring compositions. In the repository, `AGENT
 The composition root declares `data-composition-id`, `data-width`, `data-height`, and `data-duration` on the root element or through supported `<meta>` declarations. A timed visual uses `class="clip"`, `data-start`, `data-duration`, and `data-track-index`. Starts may be seconds or another clip's ID with an optional `+` or `-` offset. Use IDs to make dependencies readable.
 
 ```html
-<div id="stage" data-composition-id="launch" data-width="1920" data-height="1080"
-     data-duration="4" style="position: relative; background: #101522">
-  <div id="title" class="clip" data-start="0" data-duration="4" data-track-index="0"
-       style="position: absolute; left: 160px; top: 360px; width: 1600px; height: 200px;
+<div
+  id="stage"
+  data-composition-id="launch"
+  data-width="1920"
+  data-height="1080"
+  data-duration="4"
+  style="position: relative; background: #101522"
+>
+  <div
+    id="title"
+    class="clip"
+    data-start="0"
+    data-duration="4"
+    data-track-index="0"
+    style="position: absolute; left: 160px; top: 360px; width: 1600px; height: 200px;
               display: flex; align-items: center; justify-content: center;
-              color: white; font-size: 96px; font-weight: bold">
+              color: white; font-size: 96px; font-weight: bold"
+  >
     Product launch
   </div>
 </div>
@@ -50,3 +62,7 @@ For the exact supported gradients, shadows, text layout, clipping, CSS propertie
 - Put `data-hf-parallax` (0–8, default 1) on a direct camera child. Zero cancels camera pan on that plane while preserving zoom. Values above 1 amplify pan. Keep moving artwork large enough to cover the edges.
 - To follow a character, put `data-hf-camera-subject="<id>"` on the camera (with `data-hf-camera-anchor="x y"` for where it sits, and equal `-lag` and `-lookahead`, about 0.3 to 0.5 s, for steady framing of a stepped walk). Compose camera moves with `data-hf-shots` presets (`static`, `follow`, `pan`, `dolly-in`, `dolly-out`, `reveal`) instead of hand-timed keyframes; shots share one continuous camera with the `smooth` easing. Use `"easing":"smooth"` in `data-hf-camera` keyframes for continuous velocity. Keep scene changes as clips with `data-hf-transition`, never as shots. Check the `cameras` entry of `check` and snapshot the start, middle, and end of every shot; leave overscan for the widest zoom and the farthest pan of each plane (`k * focus`).
 - Root `data-hf-exposure` (-4 to +4 stops), `data-hf-highlight-rolloff` (0–1), and `data-hf-shadow-toe` (0–1) are optional. They apply after the root CSS grade and before vignette and grain. Use `data-hf-bloom` on the individual light source and pass the export FPS when reviewing frame-based stills.
+
+## External scenes
+
+Place an empty `div`, `section`, `article`, or `main` directly inside a composition root. Set a unique `id`, relative HTML `data-composition-src`, `data-start`, and `data-track-index`. Set `data-duration` to cut the source shorter, or omit it to use the source duration. Set `data-variable-values` to a JSON object of the source's declared variable IDs and values. Match canvas dimensions, resolve assets relative to the file that uses them, and reference the host ID for transitions between files. Keep cameras inside the source root and composition-wide finishing on the outer root. Nesting supports eight levels and 256 instances. Validate the assembled composition and snapshot both sides of each cut.

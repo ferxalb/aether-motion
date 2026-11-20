@@ -5,11 +5,13 @@
 //! Submodules: `segments` (the parallel pipeline of fixed one-second segments used by every render
 //! longer than a segment) and `parts` (distributed rendering: segment ranges written to part files
 //! by separate processes, then assembled into the MP4 a single-process render writes), and
-//! `progress` (throttled frame counts, throughput, and ETA for a [`ProgressObserver`]).
+//! `progress` (throttled frame counts, throughput, and ETA for a [`ProgressObserver`]), and `yuv`
+//! (the fixed-point RGBA to limited-range BT.709 4:2:0 conversion the stream is tagged with).
 
 mod parts;
 mod progress;
 mod segments;
+mod yuv;
 
 pub use parts::{assemble_parts, render_part, render_part_with_progress, PART_EXTENSION};
 pub use progress::{ProgressObserver, ProgressUpdate, REPORT_INTERVAL};
@@ -23,11 +25,11 @@ use mp4::{AvcConfig, Bytes, Mp4Config, Mp4Sample, Mp4Writer, TrackConfig};
 use openh264::encoder::{
     Complexity, Encoder, EncoderConfig, FrameRate, FrameType, QpRange, RateControlMode, VuiConfig,
 };
-use openh264::formats::{RgbaSliceU8, YUVBuffer};
 use openh264::{OpenH264API, Timestamp};
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc};
+use yuv::Yuv420;
 
 #[derive(Default)]
 struct NalFrame {
@@ -65,7 +67,7 @@ impl NalFrame {
 pub enum Quality {
     /// QP 30: small files for quick previews.
     Draft,
-    /// QP 26: the default; OpenH264's own default, byte-identical to exports before presets existed.
+    /// QP 26: the default; OpenH264's own default, the quantizer of exports before presets existed.
     #[default]
     Standard,
     /// QP 22.
@@ -299,10 +301,10 @@ fn partial_path(output: &Path) -> Result<PathBuf> {
 fn video_frames<'a, 'composition>(
     renderer: &'a mut Renderer<'composition>,
     fps: u32,
-) -> impl Iterator<Item = Result<Arc<YUVBuffer>>> + use<'a, 'composition> {
+) -> impl Iterator<Item = Result<Arc<Yuv420>>> + use<'a, 'composition> {
     let (width, height) = renderer.dimensions();
     let dimensions = (width as usize, height as usize);
-    let mut pool: Vec<Arc<YUVBuffer>> = Vec::new();
+    let mut pool: Vec<Arc<Yuv420>> = Vec::new();
     let mut current = None;
     let mut last_rasterized = None;
     (0..renderer.frame_count(fps)).map(move |frame| {
@@ -315,14 +317,12 @@ fn video_frames<'a, 'composition>(
             {
                 Some(index) => index,
                 None => {
-                    pool.push(Arc::new(YUVBuffer::new(dimensions.0, dimensions.1)));
+                    pool.push(Arc::new(Yuv420::new(dimensions.0, dimensions.1)));
                     pool.len() - 1
                 }
             };
             let yuv = Arc::get_mut(&mut pool[index]).unwrap();
-            crate::profile::time(crate::profile::Phase::Convert, || {
-                yuv.read_rgba8(RgbaSliceU8::new(rgba, dimensions))
-            });
+            crate::profile::time(crate::profile::Phase::Convert, || yuv.read_rgba(rgba));
             current = Some(index);
             last_rasterized = Some(rasterized);
         }
@@ -341,8 +341,9 @@ fn make_encoder(fps: u32, threads: u32, quality: Quality) -> Result<Encoder> {
         .base_qp(quality.base_qp())
         .qp(quality.qp_range())
         .complexity(Complexity::Low)
-        // openh264::formats converts RGB to limited-range BT.601 YUV.
-        .vui(VuiConfig::bt601());
+        // `yuv::Yuv420` converts with the limited-range BT.709 matrix; the VUI states exactly that
+        // (BT.709 primaries, transfer, and matrix; video_full_range_flag 0).
+        .vui(VuiConfig::bt709());
     Encoder::with_api_config(OpenH264API::from_source(), config)
         .map_err(|e| anyhow!("OpenH264: {e}"))
 }
@@ -350,7 +351,7 @@ fn make_encoder(fps: u32, threads: u32, quality: Quality) -> Result<Encoder> {
 /// Encodes one frame into an MP4 sample (length-prefixed NAL units).
 fn encode_one(
     encoder: &mut Encoder,
-    yuv: &YUVBuffer,
+    yuv: &Yuv420,
     frame: usize,
     fps: u32,
 ) -> Result<(NalFrame, FrameType)> {
@@ -479,7 +480,7 @@ fn write_video(
     (fps, quality): (u32, Quality),
     threads: u32,
     frame_count: usize,
-    frames: impl IntoIterator<Item = Result<Arc<YUVBuffer>>>,
+    frames: impl IntoIterator<Item = Result<Arc<Yuv420>>>,
     (audio, tracker): (Option<&AacStream>, &progress::Tracker<'_>),
 ) -> Result<()> {
     let mut encoder = make_encoder(fps, threads, quality)?;

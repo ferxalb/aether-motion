@@ -24,6 +24,10 @@ Use this skill for compositions rendered by the `aether-motion` native renderer.
 6. Route SVG-heavy artwork through `aether-motion-svg` when available. For an explicit migration from an existing HyperFrames or Remotion project, use `aether-motion-import` and its source-specific reference.
 7. Use relative paths for local supported images (including static SVG), audio, and H.264 MP4 `<video>` clips (a source with B-frames is rejected; its `error` gives the exact `ffmpeg` re-encode command). Do not introduce network fetches, wall-clock time, unseeded randomness, scripts, SVG animation or text, remote or non-H.264 video, canvas, or unsupported CSS. If a requested effect is outside the renderer's contract, explain the limit and offer a supported representation; never silently approximate it as if it were equivalent.
 
+## Compose external scenes
+
+For independently authored or reusable shots, import each scene with `data-composition-src` on an empty full-canvas clip directly inside the composition root. Give each instance its own timing and track. Override the source's declared variables with `data-variable-values` and keep relative asset paths inside the source file. Validate the assembled timeline and both sides of each cut.
+
 ## Layer an illustrated shot
 
 Use independent, local artwork for each depth plane. Set `data-hf-parallax` on direct camera children and leave enough overscan for the pan. Keep transparent PNG or WebP cels in one directory and use `data-hf-sequence` for clip-local playback. Layer soft gradients, masks, and deterministic motion for fog and rain. Put localized bloom on the light source, then tune exposure, highlight rolloff, and the shadow toe on the composition root. In this checkout, `examples/cinematic-dystopia.html` shows all of these techniques together. `examples/cinematic-camera-rig-6s.html` adds a tracked character, a dolly-in, and a skyline reveal on one continuous camera rig.

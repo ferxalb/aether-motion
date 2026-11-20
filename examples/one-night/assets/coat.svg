@@ -1,0 +1,26 @@
+<!-- Rear view of the walker with a layered wool coat and moonlit rim. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 390 440">
+<defs>
+<linearGradient id="wool" x2=".92" y2=".35"><stop stop-color="#111820"/><stop offset=".34" stop-color="#10151d"/><stop offset=".69" stop-color="#1a232d"/><stop offset="1" stop-color="#394750"/></linearGradient>
+<linearGradient id="sleeve" x2="1" y2=".32"><stop stop-color="#111821"/><stop offset=".75" stop-color="#202c36"/><stop offset="1" stop-color="#42515b"/></linearGradient>
+<linearGradient id="hair" x2="1" y2=".4"><stop stop-color="#0a1017"/><stop offset=".6" stop-color="#151c24"/><stop offset="1" stop-color="#49535a"/></linearGradient>
+<linearGradient id="skin" x2="1" y2="0"><stop stop-color="#25252a"/><stop offset="1" stop-color="#777068"/></linearGradient>
+</defs>
+<path d="M161 70q-11 5-4 32l12 25 3 34 49-1-3-33 13-33-10-29z" fill="url(#skin)"/>
+<path d="M155 94q-9-10-5-23-8-20 6-44 13-22 43-23 24 2 37 20 12 18 4 45l-5 18-9 3-3 18-17 16-24-3-15-15-4-18-5-9z" fill="url(#hair)"/>
+<path d="M234 74q8-9 10 0l-4 14-9 6-2-6z" fill="#655f59"/>
+<path d="M166 25q20-29 48-15 16 7 22 24-28-28-65-3z" fill="#58606a" opacity=".64"/>
+<path d="M181 22q10-9 23-7m-7 10q15-10 25 3m-52 11q11-17 23-17m21 11 13 6 6 18m-8-5 3 14" fill="none" stroke="#606976" stroke-width="1.2" opacity=".43"/>
+<path d="M96 158Q116 144 144 137l17-16 22 7 25-1 21-9 14 19 38 9 31 24-16 94-10 62 18 68-21 42-176 4-27-44 14-69-4-67z" fill="url(#wool)"/>
+<path d="M149 139l16-19 20 9 25-1 19-10 16 20-20 32-24-6-32 5z" fill="#29353c"/>
+<path d="M163 139l9 16 32 3 23-5 10-13-9-14-22 10-23 1-17-8z" fill="#111a23"/>
+<path d="M145 141q-36 10-49 22L80 191 61 268 52 339l6 34 26 3 15-39 5-45 18-62 15-52z" fill="#161f28"/>
+<path d="M66 366l15 3-2 24-10 16-8-1-3-7 2-12-4 4-4-5 4-16z" fill="#2c2c31"/>
+<path d="M245 144q43-2 66 23l17 28 10 49 9 58-1 48-11 28-29-9 2-49-10-36-17-66-23-37z" fill="url(#sleeve)"/>
+<path d="M310 369l22 6 2 15-8 19-9 3-10-8-3-15z" fill="url(#skin)"/>
+<path d="M271 147q33 6 49 35l16 69 8 53-2 44-6 10 2-52-14-56-16-54q-13-33-37-49z" fill="#61717a" opacity=".57"/>
+<path d="M135 165q26 10 55 10l20-5q29-2 54-13l-4 12q-32 11-50 12l-21 5q-31-3-55-12z M197 187l8 5 1 112 8 104-7 14-13-119z M110 227l6-16-3 91-17 64 13-80z M281 215l9 15 12 53-5 42-8-40z" fill="#727a7d" opacity=".16"/>
+<path d="M95 336l21 25 38 16-23-1-26-14z M276 328l3 28 21 38-9 16-12-28-39 9 34-20z M127 283l12 37 44 20-43-10z" fill="#0c121b" opacity=".67"/>
+<path d="M103 402q50 15 89 13m37-2q42-3 66-17" fill="none" stroke="#515c62" stroke-width="2" opacity=".32"/>
+
+</svg>

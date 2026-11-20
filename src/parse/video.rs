@@ -119,6 +119,7 @@ pub(in crate::parse) fn parse_video(
             src: path.clone(),
             start: 0.0,
             duration: None,
+            scene_end: None,
             trim: media_start,
             volume: volume as f32,
             fade_in: seconds("data-hf-fade-in")?,

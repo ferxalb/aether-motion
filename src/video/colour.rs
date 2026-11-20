@@ -2,9 +2,9 @@
 //!
 //! The SPS carries optional VUI fields: `video_full_range_flag` and `matrix_coefficients`. Players
 //! honour them, and when the matrix is missing they assume BT.709 for HD pictures and BT.601
-//! otherwise. The decoder's built-in conversion is used for limited-range BT.601 (what this
-//! renderer's encoder writes); every other case goes through `to_rgba`, fixed-point integer math
-//! with nearest-neighbour chroma, so output is identical on every machine.
+//! otherwise. The decoder's built-in conversion is used for limited-range BT.601; every other case
+//! (including the limited-range BT.709 this renderer's encoder writes) goes through `to_rgba`,
+//! fixed-point integer math with nearest-neighbour chroma, so output is identical on every machine.
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Matrix {

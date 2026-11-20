@@ -1,0 +1,6 @@
+<!-- Lower coat panels that move independently in the wind. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 390 104">
+<defs><linearGradient id="wool" x2="1" y2=".4"><stop stop-color="#111821"/><stop offset=".57" stop-color="#1c2530"/><stop offset="1" stop-color="#39464f"/></linearGradient></defs>
+<path d="M106 0q48 11 92 8l8 50-11 37-85-8-28-27z M205 8q61-3 88-14l16 62-17 25-84 16 8-38z" fill="url(#wool)"/>
+<path d="M111 57l26 12 43 7-41-1z M230 82l62-20 11-16-4 23-12 10z" fill="#627279" opacity=".28"/>
+</svg>

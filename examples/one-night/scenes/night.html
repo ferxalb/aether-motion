@@ -1,0 +1,76 @@
+<!doctype html>
+<!-- One Night, shot 3. The reverse view from the water: the walker is a small figure on a tall sea cliff,
+     and the camera pulls back to reveal its scale. It opens on the walker at the screen position he
+     held at the end of shot 2, so the eye finds him across the reverse cut, then eases back.
+     All movement is evaluated on the local scene clock. -->
+<meta charset="utf-8">
+<style>
+/* Independent coastal plates and fixed-size character drawings. */
+#world, .plane { width:1920px; height:1080px; position:absolute; }
+img { position:absolute; object-fit:fill; }
+.shimmer-a { animation: sheen-a 2.5s ease-in-out infinite; }
+.shimmer-b { animation: sheen-b 2.5s ease-in-out infinite; }
+@keyframes sheen-a {
+  from { transform:translate(-5px,0px); opacity:.62; }
+  50% { transform:translate(5px,2px); opacity:.91; }
+  to { transform:translate(-5px,0px); opacity:.62; }
+}
+@keyframes sheen-b {
+  from { transform:translate(4px,0px); opacity:.74; }
+  50% { transform:translate(-4px,2px); opacity:.40; }
+  to { transform:translate(4px,0px); opacity:.74; }
+}
+#man { position:absolute; }
+.shadow { position:absolute; background:radial-gradient(ellipse farthest-side, #02060bbd, #05091060 42%, transparent 100%); }
+.hem { animation: gust 2.5s ease-in-out infinite; }
+@keyframes gust {
+  from { transform:translate(-4px,0px); }
+  40% { transform:translate(4px,-3px); }
+  74% { transform:translate(1px,0px); }
+  to { transform:translate(-4px,0px); }
+}
+.surf-a { animation: swell-a 3.2s ease-in-out infinite; }
+.surf-b { animation: swell-b 3.2s ease-in-out infinite; }
+@keyframes swell-a {
+  from { transform:translate(0px,0px); opacity:.85; }
+  50% { transform:translate(-8px,3px); opacity:.25; }
+  to { transform:translate(0px,0px); opacity:.85; }
+}
+@keyframes swell-b {
+  from { transform:translate(-6px,3px); opacity:.2; }
+  50% { transform:translate(2px,0px); opacity:.8; }
+  to { transform:translate(-6px,3px); opacity:.2; }
+}
+</style>
+<main data-composition-id="night" data-width="1920" data-height="1080" data-duration="5" style="background:#070c15">
+  <div id="world" data-hf-camera='[{"at":0,"zoom":1.55,"x":-236,"y":-346},{"at":4.6,"zoom":1,"x":0,"y":0,"easing":"ease-in-out-cubic"}]'>
+  <div class="plane" data-hf-parallax="0.15">
+    <div style="position:absolute;left:-300px;top:600px;width:2520px;height:400px;background:#445160"></div>
+    <img src="../assets/sky.svg" style="left:-300px;top:-260px;width:2520px;height:900px" >
+    <img src="../assets/clouds.svg" style="left:-260px;top:40px;width:2600px;height:320px" data-hf-keyframes='[{"at":0,"x":0,"y":0,"opacity":0.8},{"at":5,"x":-16,"y":2,"opacity":0.8,"easing":"linear"}]'>
+  </div>
+  <div class="plane" data-hf-parallax="0.4">
+    <img src="../assets/ocean.svg" style="left:-300px;top:600px;width:2520px;height:860px" >
+    <img src="../assets/far-coast.svg" style="left:1500px;top:590px;width:720px;height:50px" >
+    <img src="../assets/reflection-1.svg" style="left:1138px;top:634px;width:682px;height:530px" class="shimmer-a">
+    <img src="../assets/reflection-2.svg" style="left:1138px;top:634px;width:682px;height:530px" class="shimmer-b">
+    <img src="../assets/sea-mist.svg" style="left:-100px;top:560px;width:2300px;height:260px" data-hf-keyframes='[{"at":0,"x":0,"y":0,"opacity":0.7},{"at":5,"x":18,"y":1,"opacity":0.7,"easing":"linear"}]'>
+  </div>
+  <div class="plane" data-hf-parallax="1">
+    <img src="../assets/bluff.svg" style="left:-360px;top:220px;width:1560px;height:980px" >
+    <img src="../assets/surf-a.svg" style="left:-360px;top:780px;width:1460px;height:260px" class="surf-a">
+    <img src="../assets/surf-b.svg" style="left:-360px;top:780px;width:1460px;height:260px" class="surf-b">
+    <img src="../assets/sea-mist.svg" style="left:-300px;top:760px;width:1700px;height:200px" data-hf-keyframes='[{"at":0,"x":0,"y":0,"opacity":0.45},{"at":5,"x":30,"y":0,"opacity":0.45,"easing":"linear"}]'>
+  </div>
+    <div id="man" style="left:690px;top:257px;width:18.9px;height:34px" >
+    <div style="width:100%;height:100%">
+      <img src="../assets/legs-rest.svg" style="left:0.0px;top:18.6px;width:18.9px;height:17.4px" >
+    </div>
+    <img src="../assets/coat.svg" style="left:0.0px;top:0.0px;width:18.9px;height:21.3px" ><img src="../assets/coat-hem.svg" style="left:0.0px;top:20.1px;width:18.9px;height:5.0px" class="hem">
+    </div>
+  <div class="plane" data-hf-parallax="1.35">
+    <img src="../assets/shoal.svg" style="left:1200px;top:770px;width:1000px;height:360px" >
+  </div>
+  </div>
+  <div style="position:absolute;width:1920px;height:1080px;background:#000" data-track-index="10" data-hf-keyframes='[{"at":0,"opacity":0},{"at":3.6,"opacity":0},{"at":4.94,"opacity":1,"easing":"ease-in-out"}]'></div>
+</main>

@@ -202,8 +202,8 @@ pub(super) fn bind(
                     label(&node)
                 );
             }
-            if name == "data-variable-values" {
-                bail!("data-variable-values on {} is not supported: nested compositions do not exist here; pass values to the render instead", label(&node));
+            if name == "data-variable-values" && !attributes.contains("data-composition-src") {
+                bail!("data-variable-values on {} is not supported without data-composition-src; for root variables pass values to the render", label(&node));
             }
         }
         if let Some(style) = attributes.get("style") {

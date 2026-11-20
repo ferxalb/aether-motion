@@ -137,6 +137,12 @@ impl CameraRig {
         Ok(rig)
     }
 
+    pub(crate) fn offset_subject(&mut self, offset: usize) {
+        if let Some(subject) = &mut self.subject {
+            subject.element += offset;
+        }
+    }
+
     pub fn subject(&self) -> Option<&Subject> {
         self.subject.as_ref()
     }

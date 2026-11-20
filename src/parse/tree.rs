@@ -119,9 +119,6 @@ pub(in crate::parse) fn walk(
     ) {
         bail!("unsupported HTML element: <{tag}>");
     }
-    if attr(node, "data-composition-src").is_some() {
-        bail!("data-composition-src is not yet supported");
-    }
     let Resolved {
         mut style,
         vars,

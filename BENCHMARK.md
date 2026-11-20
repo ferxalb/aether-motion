@@ -1068,9 +1068,10 @@ raster time. Peak RSS does not grow with frame count: frames 122–123 alone pea
 working set of the blurred column at 4K. Fitted-image peaks stayed under the 64 MiB budget
 (56,655,136 and 56,950,556 bytes) with zero evictions.
 
-Known limitation: the native encoder converts with limited-range BT.601 and tags the
-stream accordingly (SMPTE C primaries, BT.709 transfer), which is consistent but not the
-BT.709 convention usual for UHD.
+Known limitation at the time of this measurement: the native encoder converted with
+limited-range BT.601 and tagged the stream accordingly (SMPTE C primaries), which was
+consistent but not the BT.709 convention usual for HD and UHD. Resolved by the BT.709
+conversion recorded under "Native BT.709 output" below.
 
 ## Camera Rig v1 (2026-11-19)
 
@@ -1231,3 +1232,32 @@ Measured on lossless 1080p PNG sequences from both binaries. The temporal second
 - **Reference check.** Against a 3× supersampled, box-downsampled reference of the same frames,
   both binaries score 34–41 dB and alternate which is closer. The rivet phase error belongs to
   resvg's pattern rasterization, not to the ladder; the ladder only makes it change less often.
+
+## Native BT.709 output (2026-11-19)
+
+`examples/one-night/index.html` (1920×1080, 24 fps, 360 frames), `--size 1080p --fps 24
+--threads 2 --quality high`, release build, desktop machine with 12 logical cores, measured
+with `/usr/bin/time -l` (peak memory footprint and maximum resident set size) and
+`AETHER_PROFILE=1`. The native encoder now converts frames itself (`src/encode/yuv.rs`,
+fixed-point limited-range BT.709 with 2x2-averaged chroma) instead of OpenH264's built-in
+limited-range BT.601 converter, and signals BT.709 in the SPS VUI.
+
+| Build and film | Wall | User CPU | Peak footprint | Max RSS | `convert` (thread s) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Before (BT.601), original film | 28.00 s | 48.41 s | 191,176,704 bytes | 374,329,344 bytes | 0.477 s (1.33 ms/frame) |
+| After (BT.709), original film | 29.45 s | 50.34 s | 189,190,144 bytes | 373,493,760 bytes | — |
+| After (BT.709), updated film (final) | 28.31 s | 49.20 s | 185,139,200 bytes | 391,880,704 bytes | 1.288 s (3.58 ms/frame) |
+
+- **Conversion cost.** The integer converter costs 3.3–3.6 ms per 1080p frame against 1.33 ms
+  for OpenH264's SIMD BT.601 path: about +0.8 thread seconds over 360 frames (under 2% of the
+  export's CPU). Splitting the luma and chroma loops did not change it measurably.
+- **Determinism.** The final export is byte-identical with `--threads 1`, `2`, and `4`, with
+  `AETHER_SIMD=off`, and when assembled from two parts (`--segments 0..6` and `6..15`).
+- **Stream.** `ffprobe` reports `color_range=tv`, `color_space=bt709`, `color_transfer=bt709`,
+  `color_primaries=bt709` (before: `smpte170m` for all three). Saturated bars decode through
+  FFmpeg to within 3 levels of the source RGB; reading the same stream as BT.601 moves pure red
+  to 232 and adds 20 to the red channel of pure green.
+- **Peak footprint variation.** Run-to-run peak footprint varied by about 6 MB for one input.
+  A 0.25 s crossfade between the first two shots raised it to 230–240 MB (two full scenes
+  composited at once), and a held zoom at the start of the night shot by about 30 MB (static
+  zoomed rasters cached); neither was kept.

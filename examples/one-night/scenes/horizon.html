@@ -1,0 +1,140 @@
+<!doctype html>
+<!-- One Night, shot 2. All movement is evaluated on the local scene clock. It opens with the
+     walker's coat where shot 1 left it on screen (an axial cut: the eye stays on him while the
+     frame widens), then tilts up to the sea as he stops. -->
+<meta charset="utf-8">
+<style>
+/* Independent coastal plates and fixed-size character drawings. */
+#world, .plane { width:1920px; height:1080px; position:absolute; }
+img { position:absolute; object-fit:fill; }
+.shimmer-a { animation: sheen-a 2.5s ease-in-out infinite; }
+.shimmer-b { animation: sheen-b 2.5s ease-in-out infinite; }
+@keyframes sheen-a {
+  from { transform:translate(-5px,0px); opacity:.62; }
+  50% { transform:translate(5px,2px); opacity:.91; }
+  to { transform:translate(-5px,0px); opacity:.62; }
+}
+@keyframes sheen-b {
+  from { transform:translate(4px,0px); opacity:.74; }
+  50% { transform:translate(-4px,2px); opacity:.40; }
+  to { transform:translate(4px,0px); opacity:.74; }
+}
+#man { position:absolute; }
+.shadow { position:absolute; background:radial-gradient(ellipse farthest-side, #02060bbd, #05091060 42%, transparent 100%); }
+.hem { animation: gust 2.5s ease-in-out infinite; }
+@keyframes gust {
+  from { transform:translate(-4px,0px); }
+  40% { transform:translate(4px,-3px); }
+  74% { transform:translate(1px,0px); }
+  to { transform:translate(-4px,0px); }
+}
+/* Weight follows the stance leg: lowest in double support, highest and
+   shifted over the planted foot at mid-stance. */
+ .weight { animation: shoulders .94s linear infinite; }
+@keyframes shoulders {
+  0% { transform:translate(-5.00px,-5.00px); }
+  6.25% { transform:translate(-4.62px,-3.97px); }
+  12.5% { transform:translate(-3.54px,-1.50px); }
+  18.75% { transform:translate(-1.91px,0.97px); }
+  25% { transform:translate(-0.00px,2.00px); }
+  31.25% { transform:translate(1.91px,0.97px); }
+  37.5% { transform:translate(3.54px,-1.50px); }
+  43.75% { transform:translate(4.62px,-3.97px); }
+  50% { transform:translate(5.00px,-5.00px); }
+  56.25% { transform:translate(4.62px,-3.97px); }
+  62.5% { transform:translate(3.54px,-1.50px); }
+  68.75% { transform:translate(1.91px,0.97px); }
+  75% { transform:translate(0.00px,2.00px); }
+  81.25% { transform:translate(-1.91px,0.97px); }
+  87.5% { transform:translate(-3.54px,-1.50px); }
+  93.75% { transform:translate(-4.62px,-3.97px); }
+  100% { transform:translate(-5.00px,-5.00px); }
+}
+/* On the last step the weight drops onto both feet and settles. */
+.settle { animation: settle .9s ease-out 1 forwards; }
+@keyframes settle {
+  from { transform:translate(1.50px,1.40px); }
+  35% { transform:translate(0.40px,3.20px); }
+  to { transform:translate(0px,0px); }
+}
+.leg0 { animation: stride0 .94s step-end infinite; }
+@keyframes stride0 { 0.0% { opacity:1; } 6.25% { opacity:0; } 100% { opacity:0; } }
+.leg1 { animation: stride1 .94s step-end infinite; }
+@keyframes stride1 { 0% { opacity:0; } 6.25% { opacity:1; } 12.5% { opacity:0; } 100% { opacity:0; } }
+.leg2 { animation: stride2 .94s step-end infinite; }
+@keyframes stride2 { 0% { opacity:0; } 12.5% { opacity:1; } 18.75% { opacity:0; } 100% { opacity:0; } }
+.leg3 { animation: stride3 .94s step-end infinite; }
+@keyframes stride3 { 0% { opacity:0; } 18.75% { opacity:1; } 25.0% { opacity:0; } 100% { opacity:0; } }
+.leg4 { animation: stride4 .94s step-end infinite; }
+@keyframes stride4 { 0% { opacity:0; } 25.0% { opacity:1; } 31.25% { opacity:0; } 100% { opacity:0; } }
+.leg5 { animation: stride5 .94s step-end infinite; }
+@keyframes stride5 { 0% { opacity:0; } 31.25% { opacity:1; } 37.5% { opacity:0; } 100% { opacity:0; } }
+.leg6 { animation: stride6 .94s step-end infinite; }
+@keyframes stride6 { 0% { opacity:0; } 37.5% { opacity:1; } 43.75% { opacity:0; } 100% { opacity:0; } }
+.leg7 { animation: stride7 .94s step-end infinite; }
+@keyframes stride7 { 0% { opacity:0; } 43.75% { opacity:1; } 50.0% { opacity:0; } 100% { opacity:0; } }
+.leg8 { animation: stride8 .94s step-end infinite; }
+@keyframes stride8 { 0% { opacity:0; } 50.0% { opacity:1; } 56.25% { opacity:0; } 100% { opacity:0; } }
+.leg9 { animation: stride9 .94s step-end infinite; }
+@keyframes stride9 { 0% { opacity:0; } 56.25% { opacity:1; } 62.5% { opacity:0; } 100% { opacity:0; } }
+.leg10 { animation: stride10 .94s step-end infinite; }
+@keyframes stride10 { 0% { opacity:0; } 62.5% { opacity:1; } 68.75% { opacity:0; } 100% { opacity:0; } }
+.leg11 { animation: stride11 .94s step-end infinite; }
+@keyframes stride11 { 0% { opacity:0; } 68.75% { opacity:1; } 75.0% { opacity:0; } 100% { opacity:0; } }
+.leg12 { animation: stride12 .94s step-end infinite; }
+@keyframes stride12 { 0% { opacity:0; } 75.0% { opacity:1; } 81.25% { opacity:0; } 100% { opacity:0; } }
+.leg13 { animation: stride13 .94s step-end infinite; }
+@keyframes stride13 { 0% { opacity:0; } 81.25% { opacity:1; } 87.5% { opacity:0; } 100% { opacity:0; } }
+.leg14 { animation: stride14 .94s step-end infinite; }
+@keyframes stride14 { 0% { opacity:0; } 87.5% { opacity:1; } 93.75% { opacity:0; } 100% { opacity:0; } }
+.leg15 { animation: stride15 .94s step-end infinite; }
+@keyframes stride15 { 0% { opacity:0; } 93.75% { opacity:1; } 100.0% { opacity:0; } }
+</style>
+<main data-composition-id="horizon" data-width="1920" data-height="1080" data-duration="5" style="background:#070c15">
+  <div id="world" data-hf-camera='[{"at":0,"zoom":1,"anchorX":0.5,"anchorY":0.486},{"at":0.3,"anchorX":0.5,"anchorY":0.49,"easing":"smooth"},{"at":2.3,"anchorX":0.51,"anchorY":0.61,"easing":"smooth"},{"at":5,"anchorX":0.48,"anchorY":0.615,"easing":"smooth"}]' data-hf-camera-subject="man" data-hf-camera-anchor="0.5 0.486" data-hf-camera-lag="0.16" data-hf-camera-lookahead="0.08">
+  <div class="plane" data-hf-parallax="0.12">
+    <img src="../assets/sky.svg" style="left:-240px;top:-190px;width:2400px;height:700px" >
+    <img src="../assets/clouds.svg" style="left:-220px;top:34px;width:2480px;height:290px" data-hf-keyframes='[{"at":0,"x":14,"y":2,"opacity":0.8},{"at":5,"x":28,"y":4,"opacity":0.8,"easing":"linear"}]'>
+  </div>
+  <div class="plane" data-hf-parallax="0.24">
+    <img src="../assets/ocean.svg" style="left:-240px;top:393px;width:2400px;height:817px" >
+    <img src="../assets/reflection-1.svg" style="left:1130px;top:425px;width:650px;height:505px" class="shimmer-a">
+    <img src="../assets/reflection-2.svg" style="left:1130px;top:425px;width:650px;height:505px" class="shimmer-b">
+    <img src="../assets/sea-mist.svg" style="left:-70px;top:414px;width:2160px;height:258px" data-hf-keyframes='[{"at":0,"x":17,"y":0,"opacity":0.78},{"at":5,"x":31,"y":2,"opacity":0.78,"easing":"linear"}]'>
+  </div>
+  <div class="plane" data-hf-parallax="0.32">
+    <img src="../assets/headlands.svg" style="left:-300px;top:380px;width:1400px;height:300px" >
+  </div>
+  <div class="plane" data-hf-parallax="1">
+    <img src="../assets/cliff.svg" style="left:-250px;top:535px;width:2020px;height:745px" >
+  </div>
+    <div id="man" style="left:1090px;top:506px;width:195.0px;height:351.5px" data-hf-keyframes='[{"at":0},{"at":1.34,"x":20,"y":-13.5},{"at":1.6,"x":22,"y":-15,"easing":"ease-out"},{"at":5,"x":22,"y":-15}]'>
+    <div class="shadow" style="left:19.5px;top:330.0px;width:141.0px;height:27.5px"></div>
+    <div data-duration="1.6" style="width:100%;height:100%">
+      <img src="../assets/legs-05.svg" style="left:0.0px;top:192.5px;width:195.0px;height:180.0px" class="leg0">
+      <img src="../assets/legs-06.svg" style="left:0.0px;top:192.5px;width:195.0px;height:180.0px" class="leg1">
+      <img src="../assets/legs-07.svg" style="left:0.0px;top:192.5px;width:195.0px;height:180.0px" class="leg2">
+      <img src="../assets/legs-08.svg" style="left:0.0px;top:192.5px;width:195.0px;height:180.0px" class="leg3">
+      <img src="../assets/legs-09.svg" style="left:0.0px;top:192.5px;width:195.0px;height:180.0px" class="leg4">
+      <img src="../assets/legs-10.svg" style="left:0.0px;top:192.5px;width:195.0px;height:180.0px" class="leg5">
+      <img src="../assets/legs-11.svg" style="left:0.0px;top:192.5px;width:195.0px;height:180.0px" class="leg6">
+      <img src="../assets/legs-12.svg" style="left:0.0px;top:192.5px;width:195.0px;height:180.0px" class="leg7">
+      <img src="../assets/legs-13.svg" style="left:0.0px;top:192.5px;width:195.0px;height:180.0px" class="leg8">
+      <img src="../assets/legs-14.svg" style="left:0.0px;top:192.5px;width:195.0px;height:180.0px" class="leg9">
+      <img src="../assets/legs-15.svg" style="left:0.0px;top:192.5px;width:195.0px;height:180.0px" class="leg10">
+      <img src="../assets/legs-00.svg" style="left:0.0px;top:192.5px;width:195.0px;height:180.0px" class="leg11">
+      <img src="../assets/legs-01.svg" style="left:0.0px;top:192.5px;width:195.0px;height:180.0px" class="leg12">
+      <img src="../assets/legs-02.svg" style="left:0.0px;top:192.5px;width:195.0px;height:180.0px" class="leg13">
+      <img src="../assets/legs-03.svg" style="left:0.0px;top:192.5px;width:195.0px;height:180.0px" class="leg14">
+      <img src="../assets/legs-04.svg" style="left:0.0px;top:192.5px;width:195.0px;height:180.0px" class="leg15">
+    </div><div data-start="1.6" style="width:100%;height:100%">
+      <img src="../assets/legs-rest.svg" style="left:0.0px;top:192.5px;width:195.0px;height:180.0px" >
+    </div>
+    <div class="weight" data-duration="1.6" style="width:100%;height:100%"><img src="../assets/coat.svg" style="left:0.0px;top:0.0px;width:195.0px;height:220.0px" ><img src="../assets/coat-hem.svg" style="left:0.0px;top:207.5px;width:195.0px;height:52.0px" class="hem"></div><div class="settle" data-start="1.6" style="width:100%;height:100%"><img src="../assets/coat.svg" style="left:0.0px;top:0.0px;width:195.0px;height:220.0px" ><img src="../assets/coat-hem.svg" style="left:0.0px;top:207.5px;width:195.0px;height:52.0px" class="hem"></div>
+    </div>
+  <div class="plane" data-hf-parallax="1.3">
+    <img src="../assets/near-rocks.svg" style="left:-300px;top:740px;width:860px;height:400px" >
+  </div>
+  </div>
+
+</main>

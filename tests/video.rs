@@ -280,13 +280,81 @@ fn rotation_metadata_turns_the_picture_upright() {
 
 #[test]
 fn colour_tags_are_read_from_the_stream() {
-    // This crate's encoder writes limited-range BT.601 and tags it in the SPS.
+    // This crate's encoder writes limited-range BT.709 and tags it in the SPS.
     let dir = source();
     let report = agent::check(&page(&dir, r#"data-duration="2""#, 2.0));
     let colour = &report["videos"][0]["colour"];
-    assert_eq!(colour["matrix"], "bt601", "{report}");
+    assert_eq!(colour["matrix"], "bt709", "{report}");
     assert_eq!(colour["range"], "limited");
     assert_eq!(colour["tagged"], true, "{report}");
+}
+
+#[test]
+fn native_exports_round_trip_reference_colors_through_bt709() {
+    // Saturated primaries and secondaries separate the matrices: decoding BT.709 codes with the
+    // BT.601 matrix (or the reverse) moves red, green, and blue by 20 or more levels. Each color is
+    // a flat 64x64 frame, so H.264 keeps it within a few levels.
+    const REFERENCE: [[u8; 3]; 10] = [
+        [0, 0, 0],
+        [255, 255, 255],
+        [128, 128, 128],
+        [255, 0, 0],
+        [0, 255, 0],
+        [0, 0, 255],
+        [255, 255, 0],
+        [0, 255, 255],
+        [255, 0, 255],
+        [200, 120, 40],
+    ];
+    let dir = scratch("video-bt709");
+    let clips: String = REFERENCE
+        .iter()
+        .enumerate()
+        .map(|(i, [r, g, b])| {
+            format!(
+                r#"<div class="clip" data-start="{i}" data-duration="1" data-track-index="0" style="left:0px;top:0px;width:64px;height:64px;background:rgb({r},{g},{b})"></div>"#
+            )
+        })
+        .collect();
+    let html = dir.join("source.html");
+    std::fs::write(
+        &html,
+        format!(r#"<div data-composition-id="s" data-width="64" data-height="64" data-duration="{}">{clips}</div>"#, REFERENCE.len()),
+    )
+    .unwrap();
+    let composition = parse_file(&html).unwrap();
+    let mut renderer = Renderer::new(&composition, 1.0).unwrap();
+    encode_native(&mut renderer, &dir.join("src.mp4"), 2, 1).unwrap();
+    let html = dir.join("index.html");
+    std::fs::write(
+        &html,
+        format!(
+            r#"<div data-composition-id="v" data-width="64" data-height="64" data-duration="{}" style="background:#000000">
+<video src="src.mp4" muted class="clip" data-start="0" data-track-index="0" style="left:0px;top:0px;width:64px;height:64px"></video></div>"#,
+            REFERENCE.len()
+        ),
+    )
+    .unwrap();
+    let report = agent::check(&html);
+    assert_eq!(report["videos"][0]["colour"]["matrix"], "bt709", "{report}");
+    assert_eq!(
+        report["videos"][0]["colour"]["range"], "limited",
+        "{report}"
+    );
+    let composition = parse_file(&html).unwrap();
+    let mut renderer = Renderer::new(&composition, 1.0).unwrap();
+    for (i, wanted) in REFERENCE.iter().enumerate() {
+        let frame = renderer.render_at(i as f64 + 0.75).unwrap();
+        let at = (32 * 64 + 32) * 4;
+        let got = [frame[at], frame[at + 1], frame[at + 2]];
+        let error = got
+            .iter()
+            .zip(wanted)
+            .map(|(&a, &w)| a.abs_diff(w))
+            .max()
+            .unwrap();
+        assert!(error <= 4, "rgb {wanted:?} decoded as {got:?}");
+    }
 }
 
 #[test]

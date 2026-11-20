@@ -12,7 +12,9 @@ pub mod zones;
 pub use mcp::serve;
 
 fn fix_hint(message: &str) -> &'static str {
-    if message.contains("data-composition-variables")
+    if message.contains("data-composition-src") {
+        "use an empty scene clip directly inside the composition root with a unique id, data-start, data-track-index, and a relative data-composition-src HTML path; match the canvas size and set data-variable-values to a JSON object of variables declared by that file"
+    } else if message.contains("data-composition-variables")
         || message.contains("data-var-")
         || message.contains("data-variable-values")
         || message.contains("variable values")

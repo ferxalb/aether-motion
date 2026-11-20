@@ -118,7 +118,11 @@ impl<'a> Renderer<'a> {
             fill_color = fill_color.or(node.style.text_fill_color);
             stroke_width = stroke_width.or(node.style.text_stroke_width);
             stroke_color = stroke_color.or(node.style.text_stroke_color);
-            current = node.parent;
+            current = if node.layout.scene_root {
+                None
+            } else {
+                node.parent
+            };
         }
         let size = font_size.unwrap_or(match composition.elements[idx].tag.as_str() {
             "h1" => 64.0,

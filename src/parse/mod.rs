@@ -2,7 +2,7 @@
 //!
 //! `parse_file` (and `parse_file_with`, which takes variable values) is the facade. Submodules: `html` (node helpers), `css` (stylesheet, selectors, cascade,
 //! variables), `values` (value parsers), `style` (property groups into `Style`), `animation`
-//! (CSS animation, `data-hf-keyframes`, and `data-hf-camera` into motion tracks), `split/` (`data-hf-split` kinetic text: pieces, entrance motion, line rows, and the wrap plan of the two-pass parse), `effects` (`data-hf-bloom` and per-element `data-hf-motion-blur`), `audio` (`<audio>` clips for the mixer), `speed` (`data-hf-speed` and `data-hf-speed-ramp` on `<video>` and `<audio>`), `captions` (`data-hf-captions` timed captions from a transcript), `counter` (`data-hf-counter` animated numbers; `data-hf-reveal` lives in `animation/reveal.rs`), `transition` (`data-hf-transition` scene transitions), `variables` (`data-composition-variables` declarations and their `data-var-*` bindings, applied to the DOM first), `sequence` (image-sequence indexing), `filmic` (root tone controls), `tree` (DOM walk), `timeline` (`data-start`).
+//! (CSS animation, `data-hf-keyframes`, and `data-hf-camera` into motion tracks), `split/` (`data-hf-split` kinetic text: pieces, entrance motion, line rows, and the wrap plan of the two-pass parse), `effects` (`data-hf-bloom` and per-element `data-hf-motion-blur`), `audio` (`<audio>` clips for the mixer), `speed` (`data-hf-speed` and `data-hf-speed-ramp` on `<video>` and `<audio>`), `captions` (`data-hf-captions` timed captions from a transcript), `counter` (`data-hf-counter` animated numbers; `data-hf-reveal` lives in `animation/reveal.rs`), `transition` (`data-hf-transition` scene transitions), `scenes` (external scene instances), `variables` (`data-composition-variables` declarations and their `data-var-*` bindings, applied to the DOM first), `sequence` (image-sequence indexing), `filmic` (root tone controls), `tree` (DOM walk), `timeline` (`data-start`).
 
 mod animation;
 mod audio;
@@ -14,6 +14,7 @@ mod effects;
 mod filmic;
 mod html;
 mod rich_text;
+mod scenes;
 mod sequence;
 mod speed;
 mod split;
@@ -64,10 +65,10 @@ pub fn parse_file(path: &Path) -> Result<Composition> {
 /// Camera rigs that follow a subject are bound last: the renderer measures the resting layout,
 /// and each subject's path is baked once (see `crate::camera::tracking`).
 pub fn parse_file_with(path: &Path, values: &VariableValues) -> Result<Composition> {
-    let first = parse_pass(path, values, &SplitPlan::default())?;
+    let first = scenes::SceneStack::default().parse(path, values, &SplitPlan::default())?;
     let mut composition = if first.elements.iter().any(|e| e.layout.split_wrap.is_some()) {
         let breaks = crate::render::split_wrap_breaks(&first).context("data-hf-split-wrap")?;
-        parse_pass(path, values, &SplitPlan::resolved(breaks))?
+        scenes::SceneStack::default().parse(path, values, &SplitPlan::resolved(breaks))?
     } else {
         first
     };
@@ -76,7 +77,13 @@ pub fn parse_file_with(path: &Path, values: &VariableValues) -> Result<Compositi
 }
 
 /// One parse of the composition, with the wrap breaks of `splits` (empty on the first parse).
-fn parse_pass(path: &Path, values: &VariableValues, splits: &SplitPlan) -> Result<Composition> {
+fn parse_pass(
+    path: &Path,
+    values: &VariableValues,
+    splits: &SplitPlan,
+    stack: &mut scenes::SceneStack,
+    imported: bool,
+) -> Result<Composition> {
     let html =
         fs::read_to_string(path).with_context(|| format!("could not read {}", path.display()))?;
     let document = kuchiki::parse_html().one(html);
@@ -162,6 +169,13 @@ fn parse_pass(path: &Path, values: &VariableValues, splits: &SplitPlan) -> Resul
             }
         }
     }
+    let host = scenes::Host {
+        document: &document,
+        root: &root,
+        base,
+        size: (width, height),
+    };
+    let instances = scenes::load(&host, &mut pending, &ids, splits, stack)?;
     let mut memo = vec![None; pending.len()];
     let mut visiting = vec![false; pending.len()];
     for idx in 0..pending.len() {
@@ -198,6 +212,9 @@ fn parse_pass(path: &Path, values: &VariableValues, splits: &SplitPlan) -> Resul
     let grain = effect("data-hf-grain")?;
     let filmic = filmic::parse(metadata.as_node())?;
     let motion_blur = parse_motion_blur(metadata.as_node())?;
+    if imported && (vignette != 0.0 || grain != 0.0 || filmic.is_some() || motion_blur.is_some()) {
+        bail!("frame-wide finishing and shutter settings belong on the top-level composition");
+    }
     let mut grade = Vec::new();
     let inferred_duration = pending
         .iter()
@@ -242,6 +259,9 @@ fn parse_pass(path: &Path, values: &VariableValues, splits: &SplitPlan) -> Resul
         {
             bail!("audio clip {label} exceeds composition duration");
         }
+    }
+    if imported && (memo[0] != Some(0.0) || pending[0].duration.is_some_and(|d| d != duration)) {
+        bail!("an imported scene root must cover its entire local timeline starting at 0");
     }
     let mut elements = Vec::with_capacity(pending.len());
     let mut transitions = Vec::new();
@@ -361,6 +381,14 @@ fn parse_pass(path: &Path, values: &VariableValues, splits: &SplitPlan) -> Resul
                 bail!("filter: opacity() cannot be on the root; use it on a container inside it");
             }
             // Color functions on the root grade every finished frame instead of a layer.
+            if imported && !style.filter_colors.is_empty() {
+                bail!("root CSS color filters belong on the top-level composition; grade a container inside the scene instead");
+            }
+            if imported
+                && (!p.element.motion.is_static() || rest.scale != 1.0 || rest.rotate != 0.0)
+            {
+                bail!("animate, scale, or rotate a container inside the scene instead of its composition root");
+            }
             grade = std::mem::take(&mut style.filter_colors);
         }
         if p.element.style.background_clip_text && !matches!(p.element.content, Content::Text(_)) {
@@ -399,6 +427,7 @@ fn parse_pass(path: &Path, values: &VariableValues, splits: &SplitPlan) -> Resul
         order_animated_filters(element, false)
             .with_context(|| format!("animated filter on {label}"))?;
     }
+    scenes::append(instances, &mut elements, &mut ids, &mut audio)?;
     check_blend_isolation(&elements)?;
     effects::check_layer_blur(&elements, motion_blur)?;
     let background = match elements[0].style.background {

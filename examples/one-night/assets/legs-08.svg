@@ -1,0 +1,17 @@
+<!-- Walking pose 08 with distinct stance and swing legs. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -26 390 360">
+<defs><linearGradient id="left" x2="1" y2="0"><stop stop-color="#101822"/><stop offset=".66" stop-color="#242d36"/><stop offset="1" stop-color="#36414a"/></linearGradient>
+<linearGradient id="right" x2="1" y2="0"><stop stop-color="#0d141e"/><stop offset=".63" stop-color="#29323c"/><stop offset="1" stop-color="#45525a"/></linearGradient></defs>
+<path d="M181 7Q204 -12 264 9L268.8 126.2Q264.8 165.2 253.8 239.0L215.8 245.0Q218.8 150.2 212.8 117.2z" fill="url(#right)"/>
+<path d="M248 16L260.8 119.2 251.8 226.0 255.8 130.2z" fill="#67747b" opacity=".24"/>
+<path d="M218.8 115.2l22 10 12 23-26-16z" fill="#0c131c" opacity=".54"/>
+<path d="M215.8 234.0l36-3 5 19 4.0 17-4 10-36 1-14-7-1-17z" fill="#10151b"/>
+<path d="M219.8 245.0l33-5 3 14-30 5z" fill="#313941"/>
+<path d="M214.8 267.0l17 5 35-3-4 8-35 1-13-7z" fill="#060a11"/>
+<path d="M86 7Q109 -12 169 9L144.9 132.2Q140.9 171.2 136.8 248.5L98.8 254.5Q94.9 156.2 88.9 123.2z" fill="url(#left)"/>
+<path d="M153 16L136.9 125.2 134.8 235.5 131.9 136.2z" fill="#67747b" opacity=".24"/>
+<path d="M94.9 121.2l22 10 12 23-26-16z" fill="#0c131c" opacity=".54"/>
+<path d="M98.8 243.5l36-3 5 19 4.0 17-4 10-36 1-14-7-1-17z" fill="#10151b"/>
+<path d="M102.8 254.5l33-5 3 14-30 5z" fill="#313941"/>
+<path d="M97.8 276.5l17 5 35-3-4 8-35 1-13-7z" fill="#060a11"/>
+</svg>
