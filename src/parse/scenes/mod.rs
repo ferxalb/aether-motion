@@ -93,7 +93,9 @@ pub(super) fn load(
                 }
                 let src = src.trim();
                 let path = Path::new(src);
+                // `has_root` also rejects `/x.html` on Windows, where it is not absolute (no drive).
                 if path.is_absolute()
+                    || path.has_root()
                     || src.contains([':', '\\', '?', '#'])
                     || !path.extension().and_then(|ext| ext.to_str()).is_some_and(|ext| {
                         ext.eq_ignore_ascii_case("html") || ext.eq_ignore_ascii_case("htm")
