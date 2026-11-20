@@ -270,7 +270,9 @@ mod tests {
         let (columns, rows) = (taps(sw as u32, w), taps(sh as u32, h));
         let premultiplied: Vec<i64> = image
             .as_raw()
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .flat_map(|p| {
                 let a = u32::from(p[3]);
                 let pm = |c: u8| i64::from((u32::from(c) * a + 127) / 255);
@@ -332,7 +334,9 @@ mod tests {
         });
         let spans: Vec<(usize, usize)> = image
             .as_raw()
-            .chunks_exact(211 * 4)
+            .as_chunks::<{ 211 * 4 }>()
+            .0
+            .iter()
             .map(|row| {
                 let row = row.as_chunks::<4>().0;
                 let first = row.iter().position(|p| p[3] != 0).unwrap_or(0);
@@ -342,8 +346,14 @@ mod tests {
             .collect();
         for (w, h) in [(211, 97), (200, 91), (194, 89), (1, 1), (37, 96)] {
             let streamed = resample_from_level([211, 97], [w, h], |f| {
-                for (y, row) in image.as_raw().chunks_exact(211 * 4).enumerate() {
-                    f(y, row, spans[y]);
+                for (y, row) in image
+                    .as_raw()
+                    .as_chunks::<{ 211 * 4 }>()
+                    .0
+                    .iter()
+                    .enumerate()
+                {
+                    f(y, row.as_slice(), spans[y]);
                 }
             });
             assert_eq!(streamed, reference(&image, w, h), "{w}x{h}");

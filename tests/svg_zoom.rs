@@ -79,7 +79,13 @@ fn frames_at_rest_use_the_exact_raster() {
 fn compare(a: &[u8], b: &[u8], width: usize) -> (f64, u8, f64) {
     let (mut sum, mut max) = (0_u64, 0_u8);
     let mut moments = [[0.0_f64; 3]; 2];
-    for (i, (p, q)) in a.chunks_exact(4).zip(b.chunks_exact(4)).enumerate() {
+    for (i, (p, q)) in a
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(b.as_chunks::<4>().0)
+        .enumerate()
+    {
         for c in 0..3 {
             let d = p[c].abs_diff(q[c]);
             sum += u64::from(d);

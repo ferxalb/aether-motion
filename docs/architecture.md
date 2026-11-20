@@ -44,7 +44,10 @@ While an element's scale (or an ancestor's) is changing, `FrameState::zooming` i
 1 ms look-ahead of the pose, a pure function of time. Vector images with `object-fit: fill` are
 then drawn from a zoom-ladder level (`paint/svg_levels.rs`): an exact raster at
 `2^(k/8)` times the unscaled box, never smaller than the frame's fit, resampled down by at most
-one ladder step (≈9%) with a separable fixed-point Catmull-Rom filter on premultiplied samples.
+one ladder step (≈9%, plus up to one pixel of per-axis rounding) with a separable fixed-point
+Catmull-Rom filter on premultiplied samples. The ladder applies only while that level raster fits
+the 64 MiB per-image limit; a fit within the limit whose level would exceed it (up to about 19%
+more pixels) is rasterized exactly at every new size, as before the ladder.
 Levels are ordinary exact entries of the fitted-image cache (keyed by `Fitting::Exact`, packed
 under pressure as above), and resampled fits are keyed by `Fitting::Level`, so the pixels never
 depend on what is cached. Resampled fits are evicted first and never push out an exact raster;
