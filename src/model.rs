@@ -805,7 +805,7 @@ pub struct Filmic {
     pub shadows: f64,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Composition {
     pub width: u32,
     pub height: u32,
@@ -826,6 +826,10 @@ pub struct Composition {
     pub audio: Vec<AudioClip>,
     /// `data-composition-variables`: the declared variables and the values this parse used.
     pub variables: Variables,
+    /// Local files this composition reads, sorted and without duplicates: its HTML documents
+    /// (the entry and every imported scene), images, image-sequence frames and their folders,
+    /// videos, audio sources, and caption transcripts. Paths are as resolved from each document.
+    pub dependencies: Vec<PathBuf>,
 }
 
 /// Declared composition variables, already applied to the document before it was parsed.

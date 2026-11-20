@@ -22,13 +22,6 @@ img { position:absolute; object-fit:fill; }
 }
 #man { position:absolute; }
 .shadow { position:absolute; background:radial-gradient(ellipse farthest-side, #02060bbd, #05091060 42%, transparent 100%); }
-.hem { animation: gust 2.5s ease-in-out infinite; }
-@keyframes gust {
-  from { transform:translate(-4px,0px); }
-  40% { transform:translate(4px,-3px); }
-  74% { transform:translate(1px,0px); }
-  to { transform:translate(-4px,0px); }
-}
 .surf-a { animation: swell-a 3.2s ease-in-out infinite; }
 .surf-b { animation: swell-b 3.2s ease-in-out infinite; }
 @keyframes swell-a {
@@ -43,7 +36,7 @@ img { position:absolute; object-fit:fill; }
 }
 </style>
 <main data-composition-id="night" data-width="1920" data-height="1080" data-duration="5" style="background:#070c15">
-  <div id="world" data-hf-camera='[{"at":0,"zoom":1.55,"x":-236,"y":-346},{"at":4.6,"zoom":1,"x":0,"y":0,"easing":"ease-in-out-cubic"}]'>
+  <div id="world" data-hf-shots='[{"preset":"reveal","duration":4.6,"zoom":1,"to":[0,0],"from":{"zoom":1.55,"x":-236,"y":-346}},{"preset":"static"}]'>
   <div class="plane" data-hf-parallax="0.15">
     <div style="position:absolute;left:-300px;top:600px;width:2520px;height:400px;background:#445160"></div>
     <img src="../assets/sky.svg" style="left:-300px;top:-260px;width:2520px;height:900px" >
@@ -63,10 +56,7 @@ img { position:absolute; object-fit:fill; }
     <img src="../assets/sea-mist.svg" style="left:-300px;top:760px;width:1700px;height:200px" data-hf-keyframes='[{"at":0,"x":0,"y":0,"opacity":0.45},{"at":5,"x":30,"y":0,"opacity":0.45,"easing":"linear"}]'>
   </div>
     <div id="man" style="left:690px;top:257px;width:18.9px;height:34px" >
-    <div style="width:100%;height:100%">
-      <img src="../assets/legs-rest.svg" style="left:0.0px;top:18.6px;width:18.9px;height:17.4px" >
-    </div>
-    <img src="../assets/coat.svg" style="left:0.0px;top:0.0px;width:18.9px;height:21.3px" ><img src="../assets/coat-hem.svg" style="left:0.0px;top:20.1px;width:18.9px;height:5.0px" class="hem">
+      <img src="walker/walker-cel-hold.webp" style="left:0px;top:0px;width:18.3px;height:34.6px;object-fit:contain">
     </div>
   <div class="plane" data-hf-parallax="1.35">
     <img src="../assets/shoal.svg" style="left:1200px;top:770px;width:1000px;height:360px" >

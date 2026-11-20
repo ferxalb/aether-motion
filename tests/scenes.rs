@@ -130,7 +130,7 @@ fn rejects_invalid_imports_with_scene_context() {
     check("/tmp/leaf.html", valid, "relative local");
     check("leaf.html#part", valid, "relative local");
     check("missing.html", valid, "could not read");
-    check("small.html", valid, "dimensions must match");
+    check("small.html", valid, "set data-composition-fit");
     check("finished.html", valid, "top-level composition");
     check("./index.html", valid, "cycle");
     check("leaf.html", "", "set data-start and data-track-index");

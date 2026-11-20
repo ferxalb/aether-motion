@@ -2,7 +2,7 @@
 //!
 //! `parse_file` (and `parse_file_with`, which takes variable values) is the facade. Submodules: `html` (node helpers), `css` (stylesheet, selectors, cascade,
 //! variables), `values` (value parsers), `style` (property groups into `Style`), `animation`
-//! (CSS animation, `data-hf-keyframes`, and `data-hf-camera` into motion tracks), `split/` (`data-hf-split` kinetic text: pieces, entrance motion, line rows, and the wrap plan of the two-pass parse), `effects` (`data-hf-bloom` and per-element `data-hf-motion-blur`), `audio` (`<audio>` clips for the mixer), `speed` (`data-hf-speed` and `data-hf-speed-ramp` on `<video>` and `<audio>`), `captions` (`data-hf-captions` timed captions from a transcript), `counter` (`data-hf-counter` animated numbers; `data-hf-reveal` lives in `animation/reveal.rs`), `transition` (`data-hf-transition` scene transitions), `scenes` (external scene instances), `variables` (`data-composition-variables` declarations and their `data-var-*` bindings, applied to the DOM first), `sequence` (image-sequence indexing), `filmic` (root tone controls), `tree` (DOM walk), `timeline` (`data-start`).
+//! (CSS animation, `data-hf-keyframes`, and `data-hf-camera` into motion tracks), `split/` (`data-hf-split` kinetic text: pieces, entrance motion, line rows, and the wrap plan of the two-pass parse), `effects` (`data-hf-bloom` and per-element `data-hf-motion-blur`), `audio` (`<audio>` clips for the mixer), `speed` (`data-hf-speed` and `data-hf-speed-ramp` on `<video>` and `<audio>`), `captions` (`data-hf-captions` timed captions from a transcript), `counter` (`data-hf-counter` animated numbers; `data-hf-reveal` lives in `animation/reveal.rs`), `transition` (`data-hf-transition` scene transitions), `scenes` (external scene instances: reuse of compiled scenes, canvas fit, dependency lists), `variables` (`data-composition-variables` declarations and their `data-var-*` bindings, applied to the DOM first), `sequence` (image-sequence indexing), `filmic` (root tone controls), `tree` (DOM walk), `timeline` (`data-start`).
 
 mod animation;
 mod audio;
@@ -427,7 +427,22 @@ fn parse_pass(
         order_animated_filters(element, false)
             .with_context(|| format!("animated filter on {label}"))?;
     }
-    scenes::append(instances, &mut elements, &mut ids, &mut audio)?;
+    let mut dependencies = scenes::asset_dependencies(&elements, &audio);
+    dependencies.push(path.to_path_buf());
+    dependencies.extend(
+        root.inclusive_descendants()
+            .filter_map(|node| attr(&node, "data-hf-captions"))
+            .map(|src| base.join(src)),
+    );
+    scenes::append(
+        instances,
+        &mut elements,
+        &mut ids,
+        &mut audio,
+        &mut dependencies,
+    )?;
+    dependencies.sort();
+    dependencies.dedup();
     check_blend_isolation(&elements)?;
     effects::check_layer_blur(&elements, motion_blur)?;
     let background = match elements[0].style.background {
@@ -448,6 +463,7 @@ fn parse_pass(
         ids,
         audio,
         variables: applied.report,
+        dependencies,
     })
 }
 

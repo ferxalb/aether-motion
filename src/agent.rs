@@ -325,7 +325,7 @@ pub fn check_with(path: &Path, values: &VariableValues) -> Value {
             })
             .collect();
         Ok(
-            json!({"animations": animations, "cameras": cameras, "ok": true, "width": c.width, "height": c.height, "duration": c.duration, "elements": c.elements.len(), "clips": clips, "audio": audio, "videos": videos, "effects": effects, "variables": variables_json(&c)}),
+            json!({"animations": animations, "cameras": cameras, "ok": true, "width": c.width, "height": c.height, "duration": c.duration, "elements": c.elements.len(), "clips": clips, "audio": audio, "videos": videos, "effects": effects, "variables": variables_json(&c), "dependencies": c.dependencies.iter().map(|p| p.display().to_string()).collect::<Vec<_>>()}),
         )
     };
     match run() {

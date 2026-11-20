@@ -61,7 +61,7 @@ The agent reads the contract with `aether_guide`, writes the file, validates it 
 
 ### Motion Scenes
 
-Import reusable native HTML scenes with `data-composition-src`. Each instance has its own timeline position, track, scoped IDs, and variable overrides. [One Night](examples/one-night/index.html) combines three external scenes into a 15-second coastal short. See the [Motion Scenes v1 contract](docs/motion-scenes.md).
+Import reusable native HTML scenes with `data-composition-src`. Each instance has its own timeline position, track, scoped IDs, and variable overrides. [One Night](examples/one-night/index.html) combines three external scenes into a 15-second coastal short. Repeated instances compile once, scenes of another canvas size fit with `data-composition-fit`, and `preview --watch` re-renders when a scene or its assets change. See the [Motion Scenes v1.1 contract](docs/motion-scenes.md).
 
 ### Cinematic compositing
 

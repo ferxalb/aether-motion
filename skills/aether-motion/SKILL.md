@@ -26,7 +26,7 @@ Use this skill for compositions rendered by the `aether-motion` native renderer.
 
 ## Compose external scenes
 
-For independently authored or reusable shots, import each scene with `data-composition-src` on an empty full-canvas clip directly inside the composition root. Give each instance its own timing and track. Override the source's declared variables with `data-variable-values` and keep relative asset paths inside the source file. Validate the assembled timeline and both sides of each cut.
+For independently authored or reusable shots, import each scene with `data-composition-src` on an empty full-canvas clip directly inside the composition root. Give each instance its own timing and track; reuse is cheap because each scene compiles once per set of values. Set `data-composition-fit="contain|cover|none"` for a scene of another canvas size. Override the source's declared variables with `data-variable-values` and keep relative asset paths inside the source file. Validate the assembled timeline and both sides of each cut.
 
 ## Layer an illustrated shot
 

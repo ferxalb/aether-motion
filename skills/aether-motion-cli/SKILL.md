@@ -22,6 +22,10 @@ Inside a project created by `aether-motion init`, `aether.json` supplies the ent
 3. Export video with `aether-motion render <composition.html> --output video.mp4 --fps 30`. Set `--size 1080p` or `--size 4k` for 16:9 or 9:16 outputs; these map to the matching landscape or portrait dimensions. `--size` and `--scale` are alternatives. The native encoder is the default. `--quality draft|standard|high|max` picks the H.264 quantizer (30, 26, 22, 18); the default `standard` suits most deliveries. Higher presets cost about the same CPU and give larger files; use them only when the user asks for it. Use `--quality draft` for small review exports. Native MP4s are limited-range BT.709 yuv420p, converted and tagged as such, so players show the rendered sRGB colors without a matrix guess.
 4. Check that the output exists and is non-empty, then inspect the result before reporting completion. Long exports print a progress line with an ETA on a terminal; when a script or job runner needs progress, pass `--progress json` (one JSON object per update on stderr) or `--progress off`. Through MCP, send `_meta.progressToken` with the `aether_render` call to receive `notifications/progress`.
 
+## Visual review before export
+
+Batch the opening, strongest motion or effect, both sides and peak of important transitions, and the final pose at delivery size and FPS. Inspect the frames for stretched artwork, clipped subjects, exposed layer edges, inconsistent lighting, and unreadable text. Review a short motion preview when stills cannot verify gait, contact, or timing. After a fix, resample the affected moments before the full export.
+
 ## Templates with variables
 
 For `<video>` or `<audio>` with `data-hf-speed` or `data-hf-speed-ramp`, read `videos[].speed` and `mediaEnd` and `audio.clips[].speed`, `end`, and `mediaSeconds` in the `check` report to confirm how much source each clip consumes, then snapshot before, inside, and after each ramp segment (`aether-motion preview --at T` or `aether_snapshot` with `t`). A ramp that ends at speed 0 without `data-duration` fails with a `fix`.

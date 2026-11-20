@@ -3,7 +3,7 @@
      walker's advance, so he climbs and moves right in frame while the path slides under him. -->
 <meta charset="utf-8">
 <style>
-/* Independent coastal plates and fixed-size character drawings. */
+/* Independent coastal planes and full-body character cels. */
 #world, .plane { width:1920px; height:1080px; position:absolute; }
 img { position:absolute; object-fit:fill; }
 .shimmer-a { animation: sheen-a 2.5s ease-in-out infinite; }
@@ -20,70 +20,9 @@ img { position:absolute; object-fit:fill; }
 }
 #man { position:absolute; }
 .shadow { position:absolute; background:radial-gradient(ellipse farthest-side, #02060bbd, #05091060 42%, transparent 100%); }
-.hem { animation: gust 2.5s ease-in-out infinite; }
-@keyframes gust {
-  from { transform:translate(-4px,0px); }
-  40% { transform:translate(4px,-3px); }
-  74% { transform:translate(1px,0px); }
-  to { transform:translate(-4px,0px); }
-}
-/* Weight follows the stance leg: lowest in double support, highest and
-   shifted over the planted foot at mid-stance. */
- .weight { animation: shoulders .94s linear infinite; }
-@keyframes shoulders {
-  0% { transform:translate(1.91px,0.97px); }
-  6.25% { transform:translate(-0.00px,2.00px); }
-  12.5% { transform:translate(-1.91px,0.97px); }
-  18.75% { transform:translate(-3.54px,-1.50px); }
-  25% { transform:translate(-4.62px,-3.97px); }
-  31.25% { transform:translate(-5.00px,-5.00px); }
-  37.5% { transform:translate(-4.62px,-3.97px); }
-  43.75% { transform:translate(-3.54px,-1.50px); }
-  50% { transform:translate(-1.91px,0.97px); }
-  56.25% { transform:translate(-0.00px,2.00px); }
-  62.5% { transform:translate(1.91px,0.97px); }
-  68.75% { transform:translate(3.54px,-1.50px); }
-  75% { transform:translate(4.62px,-3.97px); }
-  81.25% { transform:translate(5.00px,-5.00px); }
-  87.5% { transform:translate(4.62px,-3.97px); }
-  93.75% { transform:translate(3.54px,-1.50px); }
-  100% { transform:translate(1.91px,0.97px); }
-}
-.leg0 { animation: stride0 .94s step-end infinite; }
-@keyframes stride0 { 0.0% { opacity:1; } 6.25% { opacity:0; } 100% { opacity:0; } }
-.leg1 { animation: stride1 .94s step-end infinite; }
-@keyframes stride1 { 0% { opacity:0; } 6.25% { opacity:1; } 12.5% { opacity:0; } 100% { opacity:0; } }
-.leg2 { animation: stride2 .94s step-end infinite; }
-@keyframes stride2 { 0% { opacity:0; } 12.5% { opacity:1; } 18.75% { opacity:0; } 100% { opacity:0; } }
-.leg3 { animation: stride3 .94s step-end infinite; }
-@keyframes stride3 { 0% { opacity:0; } 18.75% { opacity:1; } 25.0% { opacity:0; } 100% { opacity:0; } }
-.leg4 { animation: stride4 .94s step-end infinite; }
-@keyframes stride4 { 0% { opacity:0; } 25.0% { opacity:1; } 31.25% { opacity:0; } 100% { opacity:0; } }
-.leg5 { animation: stride5 .94s step-end infinite; }
-@keyframes stride5 { 0% { opacity:0; } 31.25% { opacity:1; } 37.5% { opacity:0; } 100% { opacity:0; } }
-.leg6 { animation: stride6 .94s step-end infinite; }
-@keyframes stride6 { 0% { opacity:0; } 37.5% { opacity:1; } 43.75% { opacity:0; } 100% { opacity:0; } }
-.leg7 { animation: stride7 .94s step-end infinite; }
-@keyframes stride7 { 0% { opacity:0; } 43.75% { opacity:1; } 50.0% { opacity:0; } 100% { opacity:0; } }
-.leg8 { animation: stride8 .94s step-end infinite; }
-@keyframes stride8 { 0% { opacity:0; } 50.0% { opacity:1; } 56.25% { opacity:0; } 100% { opacity:0; } }
-.leg9 { animation: stride9 .94s step-end infinite; }
-@keyframes stride9 { 0% { opacity:0; } 56.25% { opacity:1; } 62.5% { opacity:0; } 100% { opacity:0; } }
-.leg10 { animation: stride10 .94s step-end infinite; }
-@keyframes stride10 { 0% { opacity:0; } 62.5% { opacity:1; } 68.75% { opacity:0; } 100% { opacity:0; } }
-.leg11 { animation: stride11 .94s step-end infinite; }
-@keyframes stride11 { 0% { opacity:0; } 68.75% { opacity:1; } 75.0% { opacity:0; } 100% { opacity:0; } }
-.leg12 { animation: stride12 .94s step-end infinite; }
-@keyframes stride12 { 0% { opacity:0; } 75.0% { opacity:1; } 81.25% { opacity:0; } 100% { opacity:0; } }
-.leg13 { animation: stride13 .94s step-end infinite; }
-@keyframes stride13 { 0% { opacity:0; } 81.25% { opacity:1; } 87.5% { opacity:0; } 100% { opacity:0; } }
-.leg14 { animation: stride14 .94s step-end infinite; }
-@keyframes stride14 { 0% { opacity:0; } 87.5% { opacity:1; } 93.75% { opacity:0; } 100% { opacity:0; } }
-.leg15 { animation: stride15 .94s step-end infinite; }
-@keyframes stride15 { 0% { opacity:0; } 93.75% { opacity:1; } 100.0% { opacity:0; } }
 </style>
 <main data-composition-id="walk" data-width="1920" data-height="1080" data-duration="5" style="background:#070c15">
-  <div id="world" data-hf-camera='[{"at":0,"zoom":1,"anchorX":0.45,"anchorY":0.625},{"at":5,"anchorX":0.5,"anchorY":0.555,"easing":"linear"}]' data-hf-camera-subject="man" data-hf-camera-anchor="0.45 0.625" data-hf-camera-lag="0.16" data-hf-camera-lookahead="0.08">
+  <div id="world" data-hf-shots='[{"preset":"follow","from":{"anchor":[0.45,0.625]},"anchor":[0.5,0.555],"easing":"linear"}]' data-hf-camera-subject="man" data-hf-camera-anchor="0.45 0.625" data-hf-camera-lag="0.16" data-hf-camera-lookahead="0.08">
   <div class="plane" data-hf-parallax="0.12">
     <img src="../assets/sky.svg" style="left:-240px;top:-190px;width:2400px;height:700px" >
     <img src="../assets/clouds.svg" style="left:-220px;top:34px;width:2480px;height:290px" data-hf-keyframes='[{"at":0,"x":0,"y":0,"opacity":0.8},{"at":5,"x":14,"y":2,"opacity":0.8,"easing":"linear"}]'>
@@ -93,6 +32,7 @@ img { position:absolute; object-fit:fill; }
     <img src="../assets/reflection-1.svg" style="left:1130px;top:425px;width:650px;height:505px" class="shimmer-a">
     <img src="../assets/reflection-2.svg" style="left:1130px;top:425px;width:650px;height:505px" class="shimmer-b">
     <img src="../assets/sea-mist.svg" style="left:-70px;top:414px;width:2160px;height:258px" data-hf-keyframes='[{"at":0,"x":0,"y":0,"opacity":0.78},{"at":5,"x":14,"y":2,"opacity":0.78,"easing":"linear"}]'>
+    <div style="position:absolute;left:1090px;top:376px;width:700px;height:284px;background:radial-gradient(ellipse farthest-side at 50% 42%,#b2cce426,#92aed116 42%,transparent)"></div>
   </div>
   <div class="plane" data-hf-parallax="0.32">
     <img src="../assets/headlands.svg" style="left:-300px;top:380px;width:1400px;height:300px" >
@@ -102,25 +42,9 @@ img { position:absolute; object-fit:fill; }
   </div>
     <div id="man" style="left:817px;top:244px;width:413.4px;height:745.18px" data-hf-keyframes='[{"at":0},{"at":5,"x":158,"y":-107,"easing":"linear"}]'>
     <div class="shadow" style="left:41.34px;top:699.6px;width:298.92px;height:58.3px"></div>
-    <div style="width:100%;height:100%">
-      <img src="../assets/legs-00.svg" style="left:0.0px;top:408.1px;width:413.4px;height:381.6px" class="leg0">
-      <img src="../assets/legs-01.svg" style="left:0.0px;top:408.1px;width:413.4px;height:381.6px" class="leg1">
-      <img src="../assets/legs-02.svg" style="left:0.0px;top:408.1px;width:413.4px;height:381.6px" class="leg2">
-      <img src="../assets/legs-03.svg" style="left:0.0px;top:408.1px;width:413.4px;height:381.6px" class="leg3">
-      <img src="../assets/legs-04.svg" style="left:0.0px;top:408.1px;width:413.4px;height:381.6px" class="leg4">
-      <img src="../assets/legs-05.svg" style="left:0.0px;top:408.1px;width:413.4px;height:381.6px" class="leg5">
-      <img src="../assets/legs-06.svg" style="left:0.0px;top:408.1px;width:413.4px;height:381.6px" class="leg6">
-      <img src="../assets/legs-07.svg" style="left:0.0px;top:408.1px;width:413.4px;height:381.6px" class="leg7">
-      <img src="../assets/legs-08.svg" style="left:0.0px;top:408.1px;width:413.4px;height:381.6px" class="leg8">
-      <img src="../assets/legs-09.svg" style="left:0.0px;top:408.1px;width:413.4px;height:381.6px" class="leg9">
-      <img src="../assets/legs-10.svg" style="left:0.0px;top:408.1px;width:413.4px;height:381.6px" class="leg10">
-      <img src="../assets/legs-11.svg" style="left:0.0px;top:408.1px;width:413.4px;height:381.6px" class="leg11">
-      <img src="../assets/legs-12.svg" style="left:0.0px;top:408.1px;width:413.4px;height:381.6px" class="leg12">
-      <img src="../assets/legs-13.svg" style="left:0.0px;top:408.1px;width:413.4px;height:381.6px" class="leg13">
-      <img src="../assets/legs-14.svg" style="left:0.0px;top:408.1px;width:413.4px;height:381.6px" class="leg14">
-      <img src="../assets/legs-15.svg" style="left:0.0px;top:408.1px;width:413.4px;height:381.6px" class="leg15">
-    </div>
-    <div class="weight" style="width:100%;height:100%"><img src="../assets/coat.svg" style="left:0.0px;top:0.0px;width:413.4px;height:466.4px" ><img src="../assets/coat-hem.svg" style="left:0.0px;top:439.9px;width:413.4px;height:110.24px" class="hem"></div>
+      <img data-hf-sequence="walker/walker-cel-{frame:02}.webp"
+           data-hf-sequence-fps="8" data-hf-sequence-playback="loop"
+           style="left:0px;top:7px;width:391px;height:740px">
     </div>
   <div class="plane" data-hf-parallax="1.3">
     <img src="../assets/near-rocks.svg" style="left:-300px;top:740px;width:860px;height:400px" >

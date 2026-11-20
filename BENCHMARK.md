@@ -1235,7 +1235,7 @@ Measured on lossless 1080p PNG sequences from both binaries. The temporal second
 
 ## Native BT.709 output (2026-11-19)
 
-`examples/one-night/index.html` (1920×1080, 24 fps, 360 frames), `--size 1080p --fps 24
+The coastal film before the character artwork update, `examples/one-night/index.html` (1920×1080, 24 fps, 360 frames), `--size 1080p --fps 24
 --threads 2 --quality high`, release build, desktop machine with 12 logical cores, measured
 with `/usr/bin/time -l` (peak memory footprint and maximum resident set size) and
 `AETHER_PROFILE=1`. The native encoder now converts frames itself (`src/encode/yuv.rs`,
@@ -1261,3 +1261,32 @@ limited-range BT.601 converter, and signals BT.709 in the SPS VUI.
   A 0.25 s crossfade between the first two shots raised it to 230–240 MB (two full scenes
   composited at once), and a held zoom at the start of the night shot by about 30 MB (static
   zoomed rasters cached); neither was kept.
+
+## Motion Scenes v1.1 scene reuse (2026-11-20)
+
+Same machine, same session, release builds with LTO: the baseline is the binary built from the
+tree before this change, the new one includes compiled-scene reuse, dependency lists, and
+`data-composition-fit`. Each command ran under `nice -n 10`, alternating binaries, measured with
+`/usr/bin/time -l`.
+
+Fixture: a 16 s 1920x1080 film importing one 4 s middle scene 16 times; each middle scene imports
+one 150-element leaf scene (text with keyframes, gradient boxes, SVG badges) 8 times: 144
+instances and 19,617 flattened elements. Before, every instance re-read and re-parsed its file;
+now each scene compiles once per set of values.
+
+| Command | Baseline wall / user CPU / max RSS | v1.1 wall / user CPU / max RSS |
+| --- | ---: | ---: |
+| `check --safe-zone off --samples 1` (5 runs) | 0.92–0.96 s / 0.55–0.56 s / 114–115 MB | 0.54–0.56 s / 0.18 s / 111–112 MB |
+| `bench --frame 120 --count 15 --threads 1` (3 runs) | 3.91–4.02 s / 3.82–3.87 s / 91 MB | 3.52–3.63 s / 3.45–3.52 s / 90 MB |
+
+- **Compile.** User CPU for the compile-dominated `check` falls about 3x (0.55 s to 0.18 s). The
+  `bench` wall time falls by the same ~0.4 s because it compiles first; its reported raster time
+  (3.36–3.40 s against 3.35–3.46 s) is unchanged, as expected: rendering already shared decoded
+  images across instances.
+- **No-reuse film.** The full One Night export (`--size 1080p --fps 30 --threads 2`, one run
+  each, three distinct scenes, so nothing is reused) took 32.56 s wall / 57.57 s user / 361 MB
+  before and 33.36 s / 58.52 s / 363 MB after, within run-to-run noise, and the MP4 is
+  byte-identical (2,295,659 bytes).
+- **Determinism.** Tests check that reused instances compile to exactly the elements of separate
+  copies and render the same frames, and that a fitted scene encodes byte-identically with one
+  or two threads and from two assembled parts.

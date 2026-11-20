@@ -92,6 +92,33 @@ impl SplitPlan {
         }
     }
 
+    /// Ordinal the next wrapping element will claim.
+    pub(in crate::parse) fn cursor(&self) -> u32 {
+        self.next.get()
+    }
+
+    /// Whether this parse still measures breaks (the first parse).
+    pub(in crate::parse) fn unresolved(&self) -> bool {
+        self.breaks.is_none()
+    }
+
+    /// Claims `count` ordinals at once, for a reused scene whose wrapping elements were numbered
+    /// when it was first compiled.
+    pub(in crate::parse) fn skip(&self, count: u32) {
+        self.next.set(self.next.get() + count);
+    }
+
+    /// Whether the `count` elements starting at ordinal `at` get the same breaks as those starting
+    /// at `from` (always true on the first parse, which has no breaks yet).
+    pub(in crate::parse) fn same_breaks(&self, from: u32, at: u32, count: u32) -> bool {
+        self.breaks.as_ref().is_none_or(|all| {
+            (0..count).all(|k| {
+                let empty = Vec::new();
+                all.get(&(from + k)).unwrap_or(&empty) == all.get(&(at + k)).unwrap_or(&empty)
+            })
+        })
+    }
+
     /// Ordinal of the next wrapping element, and its breaks when they are already measured.
     fn claim(&self) -> (u32, Option<Vec<usize>>) {
         let ordinal = self.next.get();
