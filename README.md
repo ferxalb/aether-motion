@@ -80,14 +80,6 @@ cargo install --git https://github.com/ferxalb/aether-motion
 
 From a local checkout, run `cargo install --path . --locked`.
 
-## What You Can Build
-
-- Product launch videos and feature announcements
-- Metric and milestone videos with animated counters and stat cards
-- Kinetic title cards and lower thirds
-- Vertical (9:16) social videos at 1080p or 4K
-- Automated video in CI and content pipelines, with output identical on every run
-
 ## How It Works
 
 Define a video as HTML. Data attributes set timing and tracks; `data-hf-*` attributes and CSS `@keyframes` add motion.
@@ -135,35 +127,20 @@ aether-motion block hero-title --set title="Launch day" --set id=intro
 aether-motion block theme-midnight
 ```
 
-| Block | What it is |
+The [premium promo](examples/premium-promo.html) combines titles, feature cards, counters, and a closing call to action. Use `aether-motion block list` for the current catalog and parameter defaults.
+
+## Examples by feature
+
+| Feature | Composition |
 | --- | --- |
-| `hero-title` | Full-screen hero: kicker, word-by-word headline, subtitle |
-| `feature-card` | Glass card with accent dot, title, and body |
-| `stat-card` | Big value that pops in letter by letter, with a label |
-| `counter-card` | Number that counts up, with prefix or suffix and a label |
-| `cta` | Closing headline, gradient button, and URL |
-| `glow` | Two soft, slowly drifting background glows |
-| `theme-midnight`, `theme-sunrise`, `theme-paper` | Recolor every block at once |
-
-[`examples/premium-promo.html`](examples/premium-promo.html) is a 15-second promo built from blocks.
-
-## Why AETHER Motion?
-
-- **One binary:** no browser, no Node.js, no FFmpeg. Runs on macOS, Linux, and Windows, including CI runners and servers.
-- **Deterministic:** same input, same frames, same output, byte for byte for any `--threads` value, render split, or CPU (vectorized paths produce the same bits as scalar ones). Generic families (`sans-serif`, `serif`, `monospace`, and the fallback) always use the embedded Roboto, italic included (synthesized), so their text matches across machines; a named family matches only where the same font file is installed.
-- **Honest errors:** unsupported HTML or CSS returns the exact problem and a suggested fix, never a silently wrong video.
-- **Native motion:** keyframes with expo, back, spring (`spring(overshoot, oscillations)`), and `cubic-bezier` easing, CSS `@keyframes`, camera zoom and pan with subject tracking and shot presets, kinetic text, reveals, counters, and crossfade, push, cover, wipe, and zoom transitions.
-- **Captions:** `data-hf-captions` turns a transcript (`transcript.json`, OpenAI Whisper or whisper.cpp JSON, SRT, VTT) into word-highlighted captions; `aether-motion captions` converts transcripts to SRT or VTT. See `examples/captions.html`.
-- **Typography:** wrapping, rich inline runs (`<span>`, `<strong>`, `<em>`, `<code>`), italics (synthesized when no italic face is installed), pair kerning with `font-kerning: normal`, outline and gradient text, and kinetic text with `data-hf-split`: combined position, scale, rotation, and opacity entrances, stagger orders, per-word or per-line masks, `<br>` lines, and automatic wrapping (`data-hf-split-wrap`) with animated lines; see `examples/kinetic-wrap.html`.
-- **Video clips:** local H.264 MP4 `<video>` without B-frames (its sound included) with trim (`data-media-start`), loop, `object-fit`, and the usual fades, transforms, and clipping; see `examples/video.html`.
-- **Slow motion and speed ramps:** `data-hf-speed` (constant rate) and `data-hf-speed-ramp` (eased keyframes, down to a freeze at 0) on `<video>` and `<audio>`; picture and sound stay in sync; see `examples/speed.html`.
-- **Sample-accurate audio:** `<audio>` clips (WAV, FLAC, Ogg Vorbis, MP3) with volume, fades, trim, and loop are mixed and encoded to AAC with no FFmpeg; see `examples/audio.html`.
-- **Audio effects:** volume automation (`data-hf-volume-ramp`), music ducking under the voice with look-ahead (`data-hf-duck`), and a parametric equalizer with presets (`data-hf-eq`), all reported by `check`; see `examples/audio-effects.html`.
-- **Templates:** declare typed variables (`string`, `number`, `color`, `boolean`, `enum`, `image`, `font`) on the root with `data-composition-variables`, use them through `var(--id)`, `data-var-text`, `data-var-src`, and `data-var-if`, and render one composition many times with `--variables`, `aether.json`, or the MCP `variables` argument. Wrong ids and wrong types are errors. See `examples/variables.html`.
-- **Polished look:** flexbox, text wrapping, gradients, layered and inset shadows, blur, frosted glass, rotation, CSS color filters and `drop-shadow`, `mix-blend-mode`, a root color grade, localized bloom (`data-hf-bloom`, see `examples/bloom.html`), shutter motion blur for the whole frame or one element (`data-hf-motion-blur`, see `examples/layer-motion-blur.html`), vignette, and film grain.
-- **Easy on your machine:** renders at low priority on a quarter of your cores by default, with a live progress line and ETA (`--progress json` for scripts). `--threads N` goes faster; `--scale 0.5` gives quick drafts.
-- **Quality presets:** `--quality draft|standard|high|max` sets the H.264 quantizer (30, 26, 22, 18); `standard` is the default, and the other presets trade file size against fidelity at about the same CPU cost.
-- **Open source:** Apache 2.0.
+| Reusable scenes and a match dissolve | [One Night](examples/one-night/index.html) |
+| Subject tracking and shot presets | [Camera rig](examples/cinematic-camera-rig-6s.html) |
+| Parallax, image sequences, and bloom | [The Morning Shift](examples/cinematic-dystopia.html) |
+| Wrapped kinetic typography | [Kinetic text](examples/kinetic-wrap.html) |
+| Word-highlighted captions | [Captions](examples/captions.html) |
+| Video and audio speed ramps | [Speed ramps](examples/speed.html) |
+| Volume automation, EQ, and ducking | [Audio effects](examples/audio-effects.html) |
+| Reusable templates with typed inputs | [Variables](examples/variables.html) |
 
 ## Output
 
@@ -172,18 +149,15 @@ aether-motion block theme-midnight
 | Landscape (16:9) | 1920 × 1080 | 3840 × 2160 |
 | Vertical (9:16) | 1080 × 1920 | 2160 × 3840 |
 
-Up to 60 fps, H.264 MP4 (yuv420p, constant frame rate), or a single PNG frame with `--frame N`.
+Native MP4 exports use H.264 at up to 60 fps with limited-range BT.709 yuv420p. Use `--quality draft|standard|high|max` to set compression. Use `--frame N` for a PNG still.
 
 ## Documentation
 
-- [Composition reference](AGENTS.md): every supported attribute, CSS property, and motion feature
-- [Limits](limits.md): what is not supported
-- [Motion Scenes](docs/motion-scenes.md) explains how to import, fit, and reuse compositions. [One Night](examples/one-night/index.html) shows external scenes joined by a dissolve.
-- [Examples](examples) include a [subject-tracking camera rig](examples/cinematic-camera-rig-6s.html), a [three-shot cinematic short](examples/cinematic-walk-15s.html), and a [parallax and bloom demo](examples/cinematic-dystopia.html).
-- [Architecture](docs/architecture.md): source layout, memory limits, encoding
-- [Release process](docs/releasing.md)
-- [Benchmarks](BENCHMARK.md): measurements and method
-- [Changelog](CHANGELOG.md): releases (SemVer; while `0.x`, minor releases may break the contract, and every break is listed)
+- Supported HTML, CSS, and motion attributes ([Composition reference](AGENTS.md), [Limits](limits.md))
+- Importing, fitting, and reusing scenes ([Motion Scenes](docs/motion-scenes.md))
+- Source layout, resource limits, and rendering internals ([Architecture](docs/architecture.md))
+- Performance measurements and methods ([Benchmarks](BENCHMARK.md))
+- Release history and publishing workflow ([Changelog](CHANGELOG.md), [Release process](docs/releasing.md))
 
 ## Agent skills
 
