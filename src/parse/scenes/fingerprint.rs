@@ -2,7 +2,8 @@
 //! (`preview --watch`) is reused only while none of them changed, appeared, or disappeared.
 //!
 //! A file is identified by its size and modification time, plus a hash of its bytes when it is
-//! small (documents, transcripts, SVG artwork); a directory (an image-sequence folder) by its
+//! small (transcripts, SVG artwork) or an HTML document of any size, since documents decide what
+//! a scene compiles to; a directory (an image-sequence folder) by its
 //! modification time and the sorted names it lists; a missing path by its absence, so a missing
 //! asset that appears invalidates every scene that referred to it.
 
@@ -22,7 +23,7 @@ const HASHED_BYTES: u64 = 1 << 20;
 pub(super) const SETTLE: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) enum Fingerprint {
+pub(in crate::parse) enum Fingerprint {
     Missing,
     File {
         len: u64,
@@ -36,7 +37,7 @@ pub(super) enum Fingerprint {
 }
 
 impl Fingerprint {
-    pub(super) fn of(path: &Path) -> Self {
+    pub(in crate::parse) fn of(path: &Path) -> Self {
         let Ok(meta) = fs::metadata(path) else {
             return Self::Missing;
         };
@@ -58,7 +59,10 @@ impl Fingerprint {
             };
         }
         let len = meta.len();
-        let hash = (len <= HASHED_BYTES)
+        let document = path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("html") || ext.eq_ignore_ascii_case("htm"));
+        let hash = (len <= HASHED_BYTES || document)
             .then(|| fs::read(path).ok())
             .flatten()
             .map(|bytes| {

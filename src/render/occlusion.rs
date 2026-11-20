@@ -56,9 +56,15 @@ impl<'a> Renderer<'a> {
         }
         let (parent, slot) = self.child_frame(idx, rect, ps, layout, child);
         let (host_rect, host_scale) = self.posed_rect(child, parent, ps, slot);
+        // An empty host draws nothing, its scene root included.
+        if host_rect.w <= 0.0 || host_rect.h <= 0.0 {
+            return false;
+        }
         let (rect, _) = self.posed_rect(root, host_rect, host_scale, None);
         let k = self.scale;
-        rect.x * k <= 0.0
+        rect.w > 0.0
+            && rect.h > 0.0
+            && rect.x * k <= 0.0
             && rect.y * k <= 0.0
             && (rect.x + rect.w) * k >= self.surface.width as f32
             && (rect.y + rect.h) * k >= self.surface.height as f32

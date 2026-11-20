@@ -272,9 +272,28 @@ fn opaque_scenes_skip_what_they_cover_without_changing_pixels() {
 /// Moves the modification time of `path` a minute back, so a persistent cache may keep scenes
 /// that read it (files modified within two seconds of a compile are never trusted).
 fn settle(path: &Path) {
-    let file = fs::File::open(path).unwrap();
     let past = SystemTime::now() - Duration::from_secs(60);
-    file.set_modified(past).unwrap();
+    writable_handle(path).set_modified(past).unwrap();
+}
+
+/// A handle that may change the timestamps of a file or directory.
+#[cfg(windows)]
+fn writable_handle(path: &Path) -> fs::File {
+    use std::os::windows::fs::OpenOptionsExt;
+    const FILE_WRITE_ATTRIBUTES: u32 = 0x100;
+    const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+    fs::OpenOptions::new()
+        .access_mode(FILE_WRITE_ATTRIBUTES)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)
+        .unwrap()
+}
+
+/// A handle that may change the timestamps of a file or directory (the owner may set them
+/// through a read-only descriptor).
+#[cfg(not(windows))]
+fn writable_handle(path: &Path) -> fs::File {
+    fs::File::open(path).unwrap()
 }
 
 fn settle_all(dir: &Path) {

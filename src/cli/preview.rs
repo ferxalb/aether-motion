@@ -13,6 +13,7 @@ use super::render_cmd::write_png;
 use crate::parse::{parse_file_cached, SceneCache, VariableValues};
 use crate::render::Renderer;
 use anyhow::{bail, Result};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -53,6 +54,24 @@ fn after_failure(good: &[PathBuf], attempted: Vec<PathBuf>) -> Vec<PathBuf> {
     files.sort();
     files.dedup();
     files
+}
+
+/// The times to compare the next poll of `next` against, after a render that started when the
+/// paths `before` (the entry, then `before`, then the variables file, as `watched` lists them)
+/// had the times `now`: a path watched before keeps its time from before the render, so an edit
+/// made during the render is noticed; a newly listed path has no earlier time and gets `None`, so
+/// it triggers one follow-up render if it exists (or appears) by the next poll.
+fn baseline(
+    before: &[PathBuf],
+    now: &[Option<SystemTime>],
+    next: &[PathBuf],
+) -> Vec<Option<SystemTime>> {
+    let earlier: HashMap<&PathBuf, Option<SystemTime>> =
+        before.iter().zip(&now[1..]).map(|(p, t)| (p, *t)).collect();
+    std::iter::once(now[0])
+        .chain(next.iter().map(|path| earlier.get(path).copied().flatten()))
+        .chain(now.get(1 + before.len()).copied())
+        .collect()
 }
 
 /// Opens `path` with the platform's default viewer; failures are reported, not fatal.
@@ -161,7 +180,35 @@ pub fn run(raw: &[String]) -> Result<()> {
             }
         };
         // Edits made while rendering are compared against the times read before it.
-        seen = if read == files { now } else { watched(&read) };
+        seen = if read == files {
+            now
+        } else {
+            baseline(&files, &now, &read)
+        };
         files = read;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{after_failure, baseline};
+    use std::path::PathBuf;
+    use std::time::{Duration, SystemTime};
+
+    #[test]
+    fn a_changed_file_list_keeps_earlier_times_and_marks_new_paths() {
+        let t = |s| Some(SystemTime::UNIX_EPOCH + Duration::from_secs(s));
+        let [a, b, c] = ["a.html", "b.png", "c.png"].map(PathBuf::from);
+        // Entry, a, b, then the variables file.
+        let now = [t(1), t(2), t(3), t(4)];
+        let next = baseline(&[a.clone(), b.clone()], &now, &[a.clone(), c.clone()]);
+        assert_eq!(next, vec![t(1), t(2), None, t(4)]);
+        // Without a variables file the list ends with the files.
+        let next = baseline(std::slice::from_ref(&a), &now[..2], &[b.clone(), a.clone()]);
+        assert_eq!(next, vec![t(1), None, t(2)]);
+        assert_eq!(
+            after_failure(&[b.clone(), a.clone()], vec![c.clone(), a.clone()]),
+            [a, b, c]
+        );
     }
 }

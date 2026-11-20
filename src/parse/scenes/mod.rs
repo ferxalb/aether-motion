@@ -13,6 +13,7 @@ mod fingerprint;
 
 pub use cache::SceneCache;
 pub(super) use cache::SceneStack;
+pub(in crate::parse) use fingerprint::Fingerprint;
 
 use super::html::{attr, direct_text};
 use super::split::SplitPlan;

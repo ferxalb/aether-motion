@@ -28,9 +28,11 @@ use std::time::SystemTime;
 const MAX_DEPTH: usize = 8;
 const MAX_INSTANCES: usize = 256;
 
-/// Canonical document path, resolved variable values (as JSON), and whether the parse still
-/// measures `data-hf-split-wrap` breaks (the first of the two parses).
-type Key = (PathBuf, String, bool);
+/// Canonical document path, the canonical directory its relative assets resolve from (the
+/// directory of the path as imported, which differs from the target's for a symlinked scene),
+/// resolved variable values (as JSON), and whether the parse still measures `data-hf-split-wrap`
+/// breaks (the first of the two parses).
+type Key = (PathBuf, PathBuf, String, bool);
 
 /// A compiled scene kept for reuse.
 struct Compiled {
@@ -109,10 +111,12 @@ impl SceneCache {
         });
     }
 
-    /// After a successful compile: keeps only the scenes it used, fingerprinting the new ones.
-    /// A scene that read a file modified shortly before the compile began (or during it) is not
-    /// kept, because the file may have changed after it was read.
-    pub(in crate::parse) fn finish(&mut self) {
+    /// After a successful compile: keeps only the scenes it used. A new scene takes the
+    /// fingerprints its files had when the compile first noted them (`observed`, taken just
+    /// before reading) and is kept only if every file was noted and still matches them, so a file
+    /// replaced while it was compiled is never trusted. A scene that read a file modified shortly
+    /// before the compile began (or during it) is not kept either, since timestamps can be coarse.
+    pub(in crate::parse) fn finish(&mut self, observed: &crate::parse::reads::Reads) {
         let Some(started) = self.started.filter(|_| self.persistent) else {
             self.entries.clear();
             return;
@@ -124,12 +128,17 @@ impl SceneCache {
                 return false;
             }
             if compiled.seen.len() != compiled.scene.dependencies.len() {
-                compiled.seen = compiled
+                let read: Option<Vec<Fingerprint>> = compiled
                     .scene
                     .dependencies
                     .iter()
-                    .map(|path| memo.get(path).clone())
+                    .map(|path| observed.get(path).filter(|seen| memo.get(path) == *seen))
+                    .map(|seen| seen.cloned())
                     .collect();
+                let Some(read) = read else {
+                    return false;
+                };
+                compiled.seen = read;
             }
             !compiled.seen.iter().any(|seen| seen.recent(since))
         });
@@ -181,13 +190,25 @@ impl<'c> SceneStack<'c> {
         if imported {
             self.count_instances(1)?;
         }
+        let base = path
+            .parent()
+            .and_then(|dir| dir.canonicalize().ok())
+            .unwrap_or_default();
         let key = (
             canonical.clone(),
+            base,
             serde_json::to_string(values)?,
             splits.unresolved(),
         );
         if let Some(hit) = imported.then(|| self.reuse(&key, level, splits)).flatten() {
-            return hit;
+            // Another name for the same document (a symlink or relative alias in the same
+            // directory) is a file of this composition too.
+            return hit.map(|mut scene| {
+                if !scene.dependencies.iter().any(|p| p == path) {
+                    scene.dependencies.push(path.to_path_buf());
+                }
+                scene
+            });
         }
         let (outer_deepest, outer_files) = (self.deepest, std::mem::take(&mut self.files));
         let (instances, wrap_start) = (self.instances, splits.cursor());
@@ -296,7 +317,7 @@ fn lookup<'m>(entries: &'m mut HashMap<Key, Compiled>, key: &Key) -> Option<&'m 
     if entries.contains_key(key) {
         return entries.get_mut(key);
     }
-    let other = (key.0.clone(), key.1.clone(), !key.2);
+    let other = (key.0.clone(), key.1.clone(), key.2.clone(), !key.3);
     entries
         .get_mut(&other)
         .filter(|compiled| compiled.wraps.1 == 0)

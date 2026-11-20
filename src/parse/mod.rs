@@ -80,11 +80,11 @@ pub fn parse_file_cached(
     cache: &mut SceneCache,
 ) -> Result<Composition> {
     cache.begin();
-    let (result, reads) = reads::recording(|| compile(path, values, cache));
-    cache.set_reads(reads);
+    let (result, observed) = reads::recording(|| compile(path, values, cache));
     if result.is_ok() {
-        cache.finish();
+        cache.finish(&observed);
     }
+    cache.set_reads(observed.into_keys().collect());
     result
 }
 
