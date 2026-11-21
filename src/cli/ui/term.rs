@@ -69,7 +69,10 @@ mod tests {
         assert_eq!(wrap("averyverylongword x", 5), ["averyverylongword", "x"]);
         assert_eq!(wrap("", 10), [""]);
         assert_eq!(display_path(Path::new("./index.html")), "index.html");
-        assert_eq!(display_path(Path::new("./out/a.mp4")), "out/a.mp4");
+        assert_eq!(
+            display_path(Path::new("./out/a.mp4")),
+            Path::new("out").join("a.mp4").display().to_string()
+        );
         assert_eq!(display_path(Path::new(".")), ".");
     }
 }

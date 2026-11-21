@@ -249,7 +249,9 @@ impl Workspace {
         _: &Region,
         _: &mut RowSink,
     ) -> bool {
-        fall_back("this build has no GPU backend (reinstall with Cargo default features enabled)".into());
+        fall_back(
+            "this build has no GPU backend (reinstall with Cargo default features enabled)".into(),
+        );
         false
     }
 }
