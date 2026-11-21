@@ -148,6 +148,23 @@ impl<'a> Renderer<'a> {
         any
     }
 
+    /// Whether blurred element `idx` moves inside this frame's shutter window (it is then drawn
+    /// once per planned sample).
+    pub(in crate::render) fn blur_moves(&self, idx: usize) -> bool {
+        self.layer_blur
+            .elements
+            .iter()
+            .any(|b| b.idx == idx && !b.times.is_empty())
+    }
+
+    /// Whether blurred element `idx` is visible at any of this frame's planned samples.
+    pub(in crate::render) fn blur_visible(&self, idx: usize) -> bool {
+        self.layer_blur
+            .elements
+            .iter()
+            .any(|b| b.idx == idx && b.samples.iter().any(|s| s[0].alpha > 0.0))
+    }
+
     /// Whether `idx` must be drawn through [`Self::draw_layer_blurred`].
     pub(in crate::render) fn is_layer_blurred(&self, idx: usize) -> bool {
         !self.layer_blur.sampling
@@ -164,11 +181,24 @@ impl<'a> Renderer<'a> {
         parent_scale: f32,
         assigned: Option<Rect>,
     ) -> Result<()> {
+        self.blur_samples(idx, &mut |r: &mut Self| {
+            r.draw_node(idx, parent, parent_scale, assigned)
+        })
+    }
+
+    /// Averages blurred element `idx` over its planned samples, drawing each one with `draw` while
+    /// the subtree holds that sample's states (or once, sharp, when it does not move). `draw` places
+    /// the element itself, so a plane of a 2.5D space is placed again at every sample.
+    pub(in crate::render) fn blur_samples(
+        &mut self,
+        idx: usize,
+        draw: &mut dyn FnMut(&mut Self) -> Result<()>,
+    ) -> Result<()> {
         let Some(slot) = self.layer_blur.elements.iter().position(|b| b.idx == idx) else {
-            return self.draw_sample(idx, parent, parent_scale, assigned);
+            return self.draw_sample(draw);
         };
         if self.layer_blur.elements[slot].times.is_empty() {
-            return self.draw_sample(idx, parent, parent_scale, assigned);
+            return self.draw_sample(draw);
         }
         let times = std::mem::take(&mut self.layer_blur.elements[slot].times);
         let samples = std::mem::take(&mut self.layer_blur.elements[slot].samples);
@@ -191,8 +221,12 @@ impl<'a> Renderer<'a> {
                 self.current[k] = state;
             }
             self.time = t;
-            outcome = self.draw_sample(idx, parent, parent_scale, assigned);
+            outcome = self.draw_sample(draw);
             if outcome.is_err() {
+                // The failed sample stays out of the average; undo what it painted.
+                if let Some(touched) = self.surface.painted.take() {
+                    self.restore(&backdrop, touched);
+                }
                 break;
             }
             let Some(touched) = self.surface.painted.take() else {
@@ -232,16 +266,10 @@ impl<'a> Renderer<'a> {
         outcome
     }
 
-    /// Draws `idx` once at its `current` state, bypassing the blur.
-    fn draw_sample(
-        &mut self,
-        idx: usize,
-        parent: Rect,
-        parent_scale: f32,
-        assigned: Option<Rect>,
-    ) -> Result<()> {
+    /// Draws one sample through `draw` at the subtree's `current` states, bypassing the blur.
+    fn draw_sample(&mut self, draw: &mut dyn FnMut(&mut Self) -> Result<()>) -> Result<()> {
         self.layer_blur.sampling = true;
-        let outcome = self.draw_node(idx, parent, parent_scale, assigned);
+        let outcome = draw(self);
         self.layer_blur.sampling = false;
         outcome
     }

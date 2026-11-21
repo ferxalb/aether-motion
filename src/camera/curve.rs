@@ -20,7 +20,7 @@ pub enum Interp {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub(crate) struct Curve {
+pub struct Curve {
     at: Vec<f64>,
     value: Vec<f64>,
     /// Tangent (value per second) at each key.
@@ -31,7 +31,7 @@ pub(crate) struct Curve {
 
 impl Curve {
     /// `points` are `(at, value, interp)` with strictly increasing `at`.
-    pub(crate) fn new(points: &[(f64, f64, Interp)]) -> Self {
+    pub fn new(points: &[(f64, f64, Interp)]) -> Self {
         let at: Vec<f64> = points.iter().map(|p| p.0).collect();
         let value: Vec<f64> = points.iter().map(|p| p.1).collect();
         let interp: Vec<Interp> = points.iter().map(|p| p.2).collect();
@@ -62,11 +62,11 @@ impl Curve {
     }
 
     /// A curve that holds `value` at all times.
-    pub(crate) fn constant(value: f64) -> Self {
+    pub fn constant(value: f64) -> Self {
         Self::new(&[(0.0, value, Interp::Smooth)])
     }
 
-    pub(crate) fn eval(&self, t: f64) -> f64 {
+    pub fn eval(&self, t: f64) -> f64 {
         let n = self.at.len();
         if n == 0 {
             return 0.0;

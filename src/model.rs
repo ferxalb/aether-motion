@@ -734,6 +734,8 @@ pub struct Keyframe {
     pub effects: [Option<f32>; 3],
     /// `clipPath` given explicitly at this keyframe.
     pub clip: Option<ClipPath>,
+    /// `z`, `rotateX`, and `rotateY` given explicitly at this keyframe (planes of a 2.5D space).
+    pub depth: [Option<f32>; 3],
 }
 
 /// Layout-check opt-outs from `data-layout-allow-*` attributes; descendants inherit them when checked.
@@ -809,6 +811,8 @@ pub struct ElementBody {
     /// Inline runs of styled text (sorted, non-overlapping); empty for plain text.
     pub spans: Vec<TextSpan>,
     pub effects: ElementEffects,
+    /// `data-hf-space` stage or 3D plane values (see `crate::space`); empty for 2D elements.
+    pub depth: crate::space::Depth,
 }
 
 impl std::ops::Deref for Element {

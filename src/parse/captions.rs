@@ -368,6 +368,7 @@ mod tests {
                     layout: Default::default(),
                     spans: Vec::new(),
                     effects: Default::default(),
+                    depth: Default::default(),
                 },
             ),
             start_expr: None,

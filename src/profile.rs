@@ -2,7 +2,8 @@
 //! thread time spent in each [`Phase`] and print a summary on stderr when they finish.
 //!
 //! Phases are summed across worker threads, so with several threads their total exceeds the wall
-//! time. `Raster` covers drawing a frame; `Bloom`, `LayerBlur`, and `EffectLayer` are parts of it
+//! time. `Raster` covers drawing a frame; `Bloom`, `LayerBlur`, `EffectLayer`, `PlaneLayer`, and
+//! `PlaneWarp` are parts of it
 //! (`EffectLayer` is every element drawn through an offscreen effect layer, bloom included). When
 //! the variable is not set, a phase costs one relaxed atomic load; profiling never changes output.
 
@@ -34,9 +35,13 @@ pub enum Phase {
     /// Resampling zoom-ladder levels of vector artwork to a frame's fitted size (`svg_levels.rs`).
     ImageResample,
     Finish,
+    /// Projected planes of 2.5D spaces drawn on their offscreen layer (part of `Raster`).
+    PlaneLayer,
+    /// Projected planes warped onto the frame (part of `Raster`).
+    PlaneWarp,
 }
 
-const PHASES: [Phase; 13] = [
+const PHASES: [Phase; 15] = [
     Phase::Raster,
     Phase::Convert,
     Phase::Encode,
@@ -50,6 +55,8 @@ const PHASES: [Phase; 13] = [
     Phase::ImagePack,
     Phase::ImageResample,
     Phase::Finish,
+    Phase::PlaneLayer,
+    Phase::PlaneWarp,
 ];
 
 static NANOS: [AtomicU64; PHASES.len()] = [const { AtomicU64::new(0) }; PHASES.len()];
@@ -75,6 +82,8 @@ impl Phase {
             Self::ImagePack => "image-pack",
             Self::ImageResample => "image-resample",
             Self::Finish => "finish",
+            Self::PlaneLayer => "plane-layer",
+            Self::PlaneWarp => "plane-warp",
         }
     }
 }
@@ -98,6 +107,13 @@ pub fn time<T>(phase: Phase, f: impl FnOnce() -> T) -> T {
     NANOS[i].fetch_add(start.elapsed().as_nanos() as u64, Ordering::Relaxed);
     CALLS[i].fetch_add(1, Ordering::Relaxed);
     out
+}
+
+/// Adds `elapsed` to `phase` (for work timed by hand around code that borrows mutably).
+pub fn add(phase: Phase, elapsed: std::time::Duration) {
+    let i = phase.index();
+    NANOS[i].fetch_add(elapsed.as_nanos() as u64, Ordering::Relaxed);
+    CALLS[i].fetch_add(1, Ordering::Relaxed);
 }
 
 /// Fitted image residency and raster sizes, recorded only in profiling runs.

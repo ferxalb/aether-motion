@@ -12,7 +12,13 @@ pub mod zones;
 pub use mcp::serve;
 
 fn fix_hint(message: &str) -> &'static str {
-    if message.contains("data-composition-src") {
+    if message.contains("2.5D values")
+        || message.contains("data-hf-space")
+        || message.contains("3D plane values")
+        || message.contains("the plane ")
+    {
+        "put data-hf-space=\"perspective|orthographic\" (optional data-hf-perspective, 50 to 100000 px) on a non-root container; give its planes data-hf-z, data-hf-rotate-x, data-hf-rotate-y, and data-hf-backface=\"hidden\", or keyframe z, rotateX, and rotateY; move its camera with data-hf-camera keyframes or data-hf-shots (x, y, zoom, z, rotateX, rotateY, rotate); planes need a data-hf-space ancestor, and a followed subject needs a camera that does not turn"
+    } else if message.contains("data-composition-src") {
         "use an empty scene clip directly inside the composition root with a unique id, data-start, data-track-index, and a relative data-composition-src HTML path; match the canvas size and set data-variable-values to a JSON object of variables declared by that file"
     } else if message.contains("data-composition-variables")
         || message.contains("data-var-")

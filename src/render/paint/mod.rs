@@ -16,6 +16,8 @@ mod inset;
 mod kernels;
 mod masked;
 mod packed_image;
+mod project;
+pub(in crate::render) use project::{PlaneLayer, PlaneSetup};
 mod resample;
 mod reveal;
 mod rotate;

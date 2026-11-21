@@ -135,6 +135,7 @@ The [premium promo](examples/premium-promo.html) combines titles, feature cards,
 | --- | --- |
 | Reusable scenes and a match dissolve | [One Night](examples/one-night/index.html) |
 | Subject tracking and shot presets | [Camera rig](examples/cinematic-camera-rig-6s.html) |
+| 2.5D planes and a perspective camera | [Lantern Valley](examples/depth-lantern-valley.html) |
 | Parallax, image sequences, and bloom | [The Morning Shift](examples/cinematic-dystopia.html) |
 | Wrapped kinetic typography | [Kinetic text](examples/kinetic-wrap.html) |
 | Word-highlighted captions | [Captions](examples/captions.html) |

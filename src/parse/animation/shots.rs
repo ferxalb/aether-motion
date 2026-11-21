@@ -17,7 +17,7 @@
 //! (seconds, default 0.75), and, on the first shot only, `from` (`{zoom, x, y, anchor}`).
 use crate::camera::curve::Interp;
 use crate::camera::{FocusValue, RigKey, MAX_ZOOM, MIN_ZOOM};
-use crate::parse::animation::camera::parse_camera_easing;
+use crate::parse::animation::camera::{parse_camera_easing, DEPTH_FIELDS};
 use crate::parse::animation::rig::RigOptions;
 use anyhow::{anyhow, bail, Context, Result};
 use serde_json::{Map, Value};
@@ -60,6 +60,8 @@ pub(in crate::parse) struct Opening {
     zoom: Option<f64>,
     focus: [Option<f64>; 2],
     anchor: Option<[f64; 2]>,
+    /// 3D camera values of a `data-hf-space` camera (`z`, `rotateX`, `rotateY`, `rotate`).
+    depth: [Option<f64>; 4],
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -73,6 +75,8 @@ pub(in crate::parse) struct ShotSpec {
     easing: Option<Interp>,
     blend: Option<f64>,
     from: Option<Opening>,
+    /// 3D camera values reached at the end of the shot (`z`, `rotateX`, `rotateY`, `rotate`).
+    depth: [Option<f64>; 4],
 }
 
 fn reject_unknown(object: &Map<String, Value>, allowed: &[&str]) -> Result<()> {
@@ -114,6 +118,60 @@ fn point(value: &Value, name: &str, fractions: bool) -> Result<[f64; 2]> {
     Ok(xy)
 }
 
+/// The 3D camera fields of a shot or opening, each at most 1,000,000 (px or degrees).
+fn depth_fields(object: &Map<String, Value>) -> Result<[Option<f64>; 4]> {
+    let mut out = [None; 4];
+    for (slot, key) in out.iter_mut().zip(DEPTH_FIELDS) {
+        if let Some(value) = object.get(key) {
+            let n = finite(value, key)?;
+            if n.abs() > 1_000_000.0 {
+                bail!("{key} must be at most 1,000,000 (px or degrees)");
+            }
+            *slot = Some(n);
+        }
+    }
+    Ok(out)
+}
+
+impl ShotSpec {
+    /// Whether any shot or the opening sets a 3D camera value (only valid in a `data-hf-space`).
+    pub(in crate::parse) fn has_depth(shots: &[ShotSpec]) -> bool {
+        shots.iter().any(|shot| {
+            shot.depth.iter().any(Option::is_some)
+                || shot
+                    .from
+                    .is_some_and(|from| from.depth.iter().any(Option::is_some))
+        })
+    }
+
+    /// Keys of each 3D camera channel (`z`, `rotateX`, `rotateY`, `rotate`): the opening value at
+    /// 0 and the value reached at the end of every shot (held when a shot does not set it), with
+    /// each shot's easing (default `default_interp`). `None` for a channel no shot sets.
+    pub(in crate::parse) fn depth_keys(
+        shots: &[ShotSpec],
+        default_interp: Interp,
+        clip_len: f64,
+    ) -> [Option<Vec<(f64, f64, Interp)>>; 4] {
+        std::array::from_fn(|channel| {
+            let opening = shots[0].from.and_then(|from| from.depth[channel]);
+            if opening.is_none() && shots.iter().all(|shot| shot.depth[channel].is_none()) {
+                return None;
+            }
+            let mut value = opening.unwrap_or(0.0);
+            let interp = shots[0].easing.unwrap_or(default_interp);
+            let mut keys = vec![(0.0, value, interp)];
+            let mut t = 0.0;
+            for shot in shots {
+                t += shot.duration.unwrap_or(clip_len - t);
+                value = shot.depth[channel].unwrap_or(value);
+                keys.push((t, value, shot.easing.unwrap_or(default_interp)));
+            }
+            keys.dedup_by(|b, a| b.0 <= a.0);
+            Some(keys)
+        })
+    }
+}
+
 pub(in crate::parse) fn parse_shots(raw: &str) -> Result<Vec<ShotSpec>> {
     let list: Vec<Map<String, Value>> =
         serde_json::from_str(raw).context("expected a JSON array of shot objects")?;
@@ -132,7 +190,7 @@ pub(in crate::parse) fn parse_shots(raw: &str) -> Result<Vec<ShotSpec>> {
                     shot,
                     &[
                         "preset", "duration", "zoom", "to", "anchor", "follow", "easing", "blend",
-                        "from",
+                        "from", "z", "rotateX", "rotateY", "rotate",
                     ],
                 )?;
                 let preset = Preset::parse(
@@ -173,7 +231,10 @@ pub(in crate::parse) fn parse_shots(raw: &str) -> Result<Vec<ShotSpec>> {
                         bail!("from is only allowed on the first shot (later shots start where the previous one ends)")
                     }
                     Some(Value::Object(from)) => {
-                        reject_unknown(from, &["zoom", "x", "y", "anchor"])?;
+                        reject_unknown(
+                            from,
+                            &["zoom", "x", "y", "anchor", "z", "rotateX", "rotateY", "rotate"],
+                        )?;
                         Some(Opening {
                             zoom: from.get("zoom").map(zoom).transpose()?,
                             focus: [
@@ -184,6 +245,7 @@ pub(in crate::parse) fn parse_shots(raw: &str) -> Result<Vec<ShotSpec>> {
                                 .get("anchor")
                                 .map(|v| point(v, "anchor", true))
                                 .transpose()?,
+                            depth: depth_fields(from)?,
                         })
                     }
                     Some(_) => bail!("from must be an object {{zoom, x, y, anchor}}"),
@@ -201,6 +263,7 @@ pub(in crate::parse) fn parse_shots(raw: &str) -> Result<Vec<ShotSpec>> {
                     easing,
                     blend,
                     from,
+                    depth: depth_fields(shot)?,
                 })
             })()
             .with_context(|| format!("shot {}", index + 1))

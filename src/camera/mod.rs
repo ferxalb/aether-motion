@@ -76,6 +76,33 @@ struct Framing {
     path: SubjectTrack,
     /// Camera box size (camera px).
     frame: [f64; 2],
+    /// Depth magnification of the subject over time, for a camera of a 2.5D space.
+    gain: Option<Gain>,
+}
+
+/// A positive factor sampled on a fixed grid from the camera clip start and read back with linear
+/// interpolation (the ends hold): how much depth magnifies a followed subject in a 2.5D space.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Gain {
+    rate: f64,
+    samples: Vec<f64>,
+}
+
+impl Gain {
+    /// Samples `value` every `1 / rate` seconds over `[0, length]`.
+    pub fn bake(rate: f64, length: f64, value: impl Fn(f64) -> f64) -> Self {
+        let count = (length.max(0.0) * rate).ceil() as usize + 1;
+        let samples = (0..count).map(|i| value(i as f64 / rate)).collect();
+        Self { rate, samples }
+    }
+
+    pub fn at(&self, t: f64) -> f64 {
+        let x = (t * self.rate).clamp(0.0, (self.samples.len() - 1) as f64);
+        let i = (x.floor() as usize).min(self.samples.len().saturating_sub(2));
+        let next = self.samples.get(i + 1).copied().unwrap_or(self.samples[i]);
+        let f = x - i as f64;
+        self.samples[i] + (next - self.samples[i]) * f
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -158,8 +185,8 @@ impl CameraRig {
 
     /// Attaches the baked subject path and the camera box size, then resolves the keys whose
     /// focus depends on the framing.
-    pub fn bind(&mut self, path: SubjectTrack, frame: [f64; 2]) {
-        self.framing = Some(Framing { path, frame });
+    pub fn bind(&mut self, path: SubjectTrack, frame: [f64; 2], gain: Option<Gain>) {
+        self.framing = Some(Framing { path, frame, gain });
         self.resolve_focus();
     }
 
@@ -168,7 +195,8 @@ impl CameraRig {
         let framing = self.framing.as_ref()?;
         let subject = self.subject.as_ref()?;
         let (axis, depth) = (subject.settings.axis, subject.depth);
-        let zoom = self.log_zoom.eval(t).exp();
+        let gain = framing.gain.as_ref().map_or(1.0, |g| g.at(t));
+        let zoom = self.log_zoom.eval(t).exp() * gain;
         let point = framing.path.at(t);
         Some(std::array::from_fn(|i| {
             axis[i].then(|| {
@@ -294,7 +322,7 @@ mod tests {
             1.2,
         )
         .unwrap();
-        rig.bind(path, [1600.0, 900.0]);
+        rig.bind(path, [1600.0, 900.0], None);
         for t in [0.0, 1.1, 2.5, 4.0] {
             let pose = rig.pose(t);
             let subject = -300.0 + 40.0 * t;
@@ -328,7 +356,7 @@ mod tests {
             1.0,
         )
         .unwrap();
-        rig.bind(path, [100.0, 100.0]);
+        rig.bind(path, [100.0, 100.0], None);
         let dt = 1e-4;
         let speed = |t: f64| (rig.pose(t + dt).focus[0] - rig.pose(t - dt).focus[0]) / (2.0 * dt);
         assert!((speed(1.0) - 50.0).abs() < 0.1);

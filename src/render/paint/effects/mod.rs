@@ -175,6 +175,12 @@ impl<'a> Renderer<'a> {
     ) -> Result<()> {
         let style = &self.composition.elements[idx].style;
         let blend = style.blend;
+        if blend != BlendMode::Normal && self.projecting > 0 {
+            bail!(
+                "mix-blend-mode on {} cannot be drawn on a projected plane of a 2.5D space (tilted, seen by a camera that turns, or split where planes intersect); keep blended elements on planes that face the camera and do not intersect others",
+                self.label(idx)
+            );
+        }
         if blend != BlendMode::Normal && self.isolated > 0 {
             bail!(
                 "mix-blend-mode on {} cannot be drawn inside overflow: hidden, rotation, a reveal, a wipe, or a filter; move it out of that element",

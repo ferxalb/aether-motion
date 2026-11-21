@@ -1,4 +1,4 @@
-//! Per-element visual state (alpha, pose, image-sequence or video frame, animated filter, pixel-effect, and clip-path values) sampled at one
+//! Per-element visual state (alpha, pose, 2.5D depth, image-sequence or video frame, animated filter, pixel-effect, and clip-path values) sampled at one
 //! instant; compared across frames to reuse pixels.
 
 use crate::model::{Content, Element};
@@ -25,6 +25,11 @@ pub(in crate::render) struct FrameState {
     /// Whether the scale of this element or an ancestor is changing at this instant (set by
     /// `states_at`), so vector artwork drawn at a passing size can reuse a zoom-ladder raster.
     pub(in crate::render) zooming: bool,
+    /// A plane's `[z, rotateX, rotateY]` (see `crate::space::Depth::at`); zero for 2D elements.
+    pub(in crate::render) depth: [f32; 3],
+    /// A space camera's `[dolly, rotateX, rotateY, rotate]` (see `crate::space::Depth::camera_at`);
+    /// zero for every other element.
+    pub(in crate::render) camera_3d: [f32; 4],
 }
 
 /// How far ahead (seconds) a scale is compared to decide that it is changing. Comparing values at
@@ -86,14 +91,20 @@ impl FrameState {
             fx_seed,
             clip_key,
             zooming: scale_changes(element, elapsed, pose.scale),
+            depth: element.depth.at(elapsed),
+            camera_3d: element.depth.camera_at(elapsed),
         }
     }
 }
 
-/// Whether the element's own scale (keyframes, CSS animation, or camera zoom) differs between
-/// `elapsed` and a moment later.
+/// Whether the element's own scale (keyframes, CSS animation, or camera zoom) or its 2.5D depth
+/// (plane depth and tilt, or a space camera's dolly) differs between `elapsed` and a moment later.
 fn scale_changes(element: &Element, elapsed: f64, scale: f32) -> bool {
     let motion = &element.motion;
-    (!motion.scale.0.is_empty() || motion.rig.is_some())
-        && motion.pose(elapsed + ZOOM_PROBE).scale != scale
+    ((!motion.scale.0.is_empty() || motion.rig.is_some())
+        && motion.pose(elapsed + ZOOM_PROBE).scale != scale)
+        || (element.depth.is_animated()
+            && (element.depth.at(elapsed + ZOOM_PROBE) != element.depth.at(elapsed)
+                || element.depth.camera_at(elapsed + ZOOM_PROBE)
+                    != element.depth.camera_at(elapsed)))
 }

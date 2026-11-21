@@ -344,6 +344,8 @@ pub(in crate::parse) fn walk(
             attr(node, "id").as_deref().unwrap_or("no id")
         )
     })?;
+    let depth =
+        super::space::parse_depth(node).with_context(|| format!("2.5D values on {}", label()))?;
     let host_style = captions.as_ref().map(|_| style.clone());
     let idx = out.len();
     let rest = Pose {
@@ -381,6 +383,7 @@ pub(in crate::parse) fn walk(
                         ..LayoutHints::default()
                     },
                     effects,
+                    depth,
                 },
             )
         },

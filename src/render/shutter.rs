@@ -5,8 +5,8 @@
 //! channel with rounding. Without `data-motion-blur-samples`, the count follows the largest travel
 //! of any element across the window: about one sample per 2 output px, from 8 to 64. Sample times depend only on the frame time and fps, so output stays
 //! deterministic. The root's color grade, filmic curve, vignette, and grain run once on the averaged frame.
-//! When nothing moves inside the window (no visible element changes position, scale, rotation, or
-//! reveal; fades, filters, and video frames do not count as movement) the frame is drawn once at the
+//! When nothing moves inside the window (no visible element changes position, scale, rotation,
+//! reveal, or 2.5D depth and tilt; fades, filters, and video frames do not count as movement) the frame is drawn once at the
 //! frame time, and the identical-frame shortcut still applies.
 //!
 //! Sums are kept in 16-bit channels (at most 64 samples of 255), so a 4K frame needs 66 MiB.
@@ -36,15 +36,25 @@ pub(in crate::render) fn moves(samples: &[Vec<FrameState>], center: &[FrameState
             return false;
         };
         visible.any(|s| {
-            (s.x, s.y, s.scale, s.rotate, s.reveal, s.camera_pan)
-                != (
-                    reference.x,
-                    reference.y,
-                    reference.scale,
-                    reference.rotate,
-                    reference.reveal,
-                    reference.camera_pan,
-                )
+            (
+                s.x,
+                s.y,
+                s.scale,
+                s.rotate,
+                s.reveal,
+                s.camera_pan,
+                s.depth,
+                s.camera_3d,
+            ) != (
+                reference.x,
+                reference.y,
+                reference.scale,
+                reference.rotate,
+                reference.reveal,
+                reference.camera_pan,
+                reference.depth,
+                reference.camera_3d,
+            )
         })
     })
 }
@@ -61,7 +71,17 @@ pub(in crate::render) fn travel(from: &[FrameState], to: &[FrameState], short_si
             let turn = (a.rotate - b.rotate).to_radians().abs() * reach;
             let zoom = (a.scale - b.scale).abs() * reach;
             let pan = (a.camera_pan[0] - b.camera_pan[0]).hypot(a.camera_pan[1] - b.camera_pan[1]);
-            shift.max(pan) + turn + zoom
+            // Depth moves a plane (or a space camera) toward the viewer; tilts turn it.
+            let depth =
+                ((a.depth[0] - b.depth[0]).abs() + (a.camera_3d[0] - b.camera_3d[0]).abs()) / 2.0;
+            let tilt = ((a.depth[1] - b.depth[1]).abs()
+                + (a.depth[2] - b.depth[2]).abs()
+                + (a.camera_3d[1] - b.camera_3d[1]).abs()
+                + (a.camera_3d[2] - b.camera_3d[2]).abs()
+                + (a.camera_3d[3] - b.camera_3d[3]).abs())
+            .to_radians()
+                * reach;
+            shift.max(pan) + turn + zoom + depth + tilt
         })
         .fold(0.0, f32::max)
 }
@@ -107,8 +127,10 @@ impl<'a> Renderer<'a> {
         self.shutter_sums.clear();
         self.shutter_sums.resize(len, 0);
         let mut drawn = Ok(());
-        for states in samples {
+        for (states, &t) in samples.into_iter().zip(&times) {
+            // Clip paths and drawn strokes read the composition time of the states being drawn.
             self.current = states;
+            self.time = t;
             drawn = self.draw_scene();
             if drawn.is_err() {
                 break;
@@ -117,6 +139,7 @@ impl<'a> Renderer<'a> {
                 *sum += u16::from(value);
             }
         }
+        self.time = time;
         // The surface no longer matches any single state, so the next frame must redraw.
         self.previous.clear();
         drawn?;
