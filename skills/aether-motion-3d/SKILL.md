@@ -34,7 +34,7 @@ Use this skill for `data-hf-3d` viewports. The authoritative contract is the `da
 
 1. Run `aether-motion check`. Read `scenes3d` (triangles, meshes, lights, camera, `animated`, `backend`).
 2. Render stills at the start, the middle and end of every camera move, the moments where the camera passes close to geometry, and the final hold: `--output 'f-{frame}.png' --frames ...` at delivery size. Look for clipped subjects, a tilted or exposed horizon, geometry crossing the near plane, z-fighting on coplanar faces (offset them by a pixel or two), missing faces (wrong winding or `cull`), and light that disagrees with the 2D plates.
-3. Export with the CPU backend (the default) for deterministic, byte-identical results. `--3d-backend gpu` exists only in builds with `--features gpu`. Its output matches the CPU within a small edge tolerance, and it falls back to the CPU when no GPU works.
+3. Export with the CPU backend (the default) for deterministic, byte-identical results. Standard builds include GPU support. Use `--3d-backend gpu` to request it. Its output matches the CPU within a small edge tolerance, and it falls back to the CPU when no GPU works.
 4. Budget time: at 1080p a full-frame scene costs roughly 27, 37, 61, and 95 ms per frame at `antialias` 1, 2, 3, and 4 (single thread), and effect layers such as bloom draw it twice (the second draw is replayed from a memo).
 
 ## Do not

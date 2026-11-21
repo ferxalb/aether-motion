@@ -239,7 +239,7 @@ pub const COMMANDS: &[Command] = &[
                     opt(
                         "--3d-backend",
                         "cpu|gpu|auto",
-                        "Backend for data-hf-3d scenes (default cpu, the deterministic reference; gpu needs a build with --features gpu).",
+                        "Backend for data-hf-3d scenes. Defaults to cpu for deterministic output. Standard builds include GPU support.",
                     ),
                     opt(
                         "--progress",

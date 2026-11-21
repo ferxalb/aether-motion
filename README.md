@@ -78,7 +78,14 @@ Download the binary for your system from [Releases](https://github.com/ferxalb/a
 cargo install --git https://github.com/ferxalb/aether-motion
 ```
 
-From a local checkout, run `cargo install --path . --locked`.
+From a local checkout, run `cargo install --path . --locked`. Add `--force` to replace an existing installation of the same version.
+
+Standard builds include GPU support for native `data-hf-3d` scenes. Rendering defaults to CPU. Select
+`--3d-backend gpu` to request the GPU or `--3d-backend auto` to use it when available.
+
+```bash
+aether-motion render examples/lighthouse-isle-3d.html --3d-backend gpu -o lighthouse-isle.mp4
+```
 
 ## How It Works
 

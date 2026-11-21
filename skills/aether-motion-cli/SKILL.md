@@ -41,7 +41,7 @@ When the composition declares `data-composition-variables`, pass values as a JSO
 ## Operational constraints
 
 - The renderer defaults to low process priority and a limited thread count. Preserve those defaults for ordinary exports; use `--threads` when the user requests a different tradeoff.
-- Output is byte-identical for any `--threads` value, any distributed split, and any CPU, so a different worker count never changes the video. This holds for `data-hf-3d` scenes on the default CPU backend; `--3d-backend gpu|auto` (only in builds with `--features gpu`) matches the CPU within a small edge tolerance and falls back to the CPU, with a stderr note, when no GPU works.
+- Output is byte-identical for any `--threads` value, any distributed split, and any CPU, so a different worker count never changes the video. This holds for `data-hf-3d` scenes on the default CPU backend; `--3d-backend gpu|auto` (available in standard builds) matches the CPU within a small edge tolerance and falls back to the CPU, with a stderr note, when no GPU works.
 - Native MP4 output supports the documented audio formats and encodes AAC. `--encoder ffmpeg` rejects compositions containing `<audio>`.
 - Long exports can be split across processes or machines: `inspect <file> --fps N` prints the number of one-second segments, `render <file> --output part.aseg --segments A..B` renders one range with the same options on each worker, and `render <file> --output video.mp4 --parts a.aseg,b.aseg,...` (same `--variables`, `--audio-bitrate`) assembles them. Use it only when the user asks for distributed rendering; one process is simpler.
 - `aether-motion inspect <composition.html>` can provide parsed composition details. Use it when timing or resolved structure is unclear.

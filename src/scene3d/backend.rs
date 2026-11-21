@@ -2,7 +2,7 @@
 //!
 //! The CPU rasterizer ([`super::raster`]) is the default and the reference: it is deterministic
 //! across threads, render segments, and CPUs. `AETHER_3D_BACKEND=gpu` (or `--3d-backend gpu`)
-//! asks for the wgpu backend of builds with the `gpu` feature. When that build feature is
+//! asks for the wgpu backend, included by default. When the `gpu` feature is
 //! missing, no adapter is found, or any GPU call fails, the scene is drawn on the CPU instead and
 //! the reason is kept in [`status`]; after a GPU failure the whole process stays on the CPU so a
 //! render never mixes backends from one frame to the next. `auto` uses the GPU when one
@@ -249,7 +249,7 @@ impl Workspace {
         _: &Region,
         _: &mut RowSink,
     ) -> bool {
-        fall_back("this build has no GPU backend (build with --features gpu)".into());
+        fall_back("this build has no GPU backend (reinstall with Cargo default features enabled)".into());
         false
     }
 }

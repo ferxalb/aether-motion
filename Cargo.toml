@@ -22,12 +22,12 @@ symphonia = { version = "0.6.1", default-features = false, features = ["wav", "f
 resvg = { version = "0.45", default-features = false }
 ttf-parser = { version = "0.25", default-features = false, features = ["std", "opentype-layout", "apple-layout", "variable-fonts", "glyph-names"] }
 lz4_flex = { version = "0.13", default-features = false, features = ["std", "safe-encode", "safe-decode"] }
-# Optional GPU backend for `data-hf-3d` scenes (`--features gpu`); the default build is CPU-only.
+# GPU backend for `data-hf-3d` scenes, included by default.
 wgpu = { version = "30", optional = true, default-features = false, features = ["vulkan", "metal", "dx12", "wgsl", "std"] }
 pollster = { version = "1.0", optional = true }
 
 [features]
-default = []
+default = ["gpu"]
 # wgpu backend for `data-hf-3d` scenes, selected with `--3d-backend gpu` or `AETHER_3D_BACKEND=gpu`.
 gpu = ["dep:wgpu", "dep:pollster"]
 
