@@ -2,8 +2,8 @@
 //! thread time spent in each [`Phase`] and print a summary on stderr when they finish.
 //!
 //! Phases are summed across worker threads, so with several threads their total exceeds the wall
-//! time. `Raster` covers drawing a frame; `Bloom`, `LayerBlur`, `EffectLayer`, `PlaneLayer`, and
-//! `PlaneWarp` are parts of it
+//! time. `Raster` covers drawing a frame; `Bloom`, `LayerBlur`, `EffectLayer`, `PlaneLayer`,
+//! `PlaneWarp`, and `Scene3d` are parts of it
 //! (`EffectLayer` is every element drawn through an offscreen effect layer, bloom included). When
 //! the variable is not set, a phase costs one relaxed atomic load; profiling never changes output.
 
@@ -39,9 +39,12 @@ pub enum Phase {
     PlaneLayer,
     /// Projected planes warped onto the frame (part of `Raster`).
     PlaneWarp,
+    /// `data-hf-3d` scenes: evaluation, rasterization (CPU or GPU), and compositing (part of
+    /// `Raster`).
+    Scene3d,
 }
 
-const PHASES: [Phase; 15] = [
+const PHASES: [Phase; 16] = [
     Phase::Raster,
     Phase::Convert,
     Phase::Encode,
@@ -57,6 +60,7 @@ const PHASES: [Phase; 15] = [
     Phase::Finish,
     Phase::PlaneLayer,
     Phase::PlaneWarp,
+    Phase::Scene3d,
 ];
 
 static NANOS: [AtomicU64; PHASES.len()] = [const { AtomicU64::new(0) }; PHASES.len()];
@@ -84,6 +88,7 @@ impl Phase {
             Self::Finish => "finish",
             Self::PlaneLayer => "plane-layer",
             Self::PlaneWarp => "plane-warp",
+            Self::Scene3d => "scene-3d",
         }
     }
 }

@@ -15,6 +15,7 @@ mod filmic;
 mod html;
 mod reads;
 mod rich_text;
+mod scene3d;
 mod scenes;
 mod sequence;
 mod space;

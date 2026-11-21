@@ -32,7 +32,7 @@ Quick start:\n\
 `file` defaults to aether.json \"entry\", then index.html.\n\
 Advanced:\n\
   aether-motion inspect <composition.html>\n\
-  aether-motion render <composition.html> --output <video.mp4|frame.png> [--fps 30] [--scale 1 | --size 1080p|4k] [--threads N (default: cores/4, 1 to 4)] [--priority low|normal (default: low)] [--encoder native|ffmpeg] [--quality draft|standard|high|max (default: standard)] [--audio-bitrate 192] [--frame N | --frames N,N,... with {frame} in the PNG name] [--progress auto|json|off (stderr; auto: a status line on a terminal)]\n\
+  aether-motion render <composition.html> --output <video.mp4|frame.png> [--fps 30] [--scale 1 | --size 1080p|4k] [--threads N (default: cores/4, 1 to 4)] [--priority low|normal (default: low)] [--encoder native|ffmpeg] [--quality draft|standard|high|max (default: standard)] [--audio-bitrate 192] [--frame N | --frames N,N,... with {frame} in the PNG name] [--progress auto|json|off (stderr; auto: a status line on a terminal)] [--3d-backend cpu|gpu|auto (data-hf-3d scenes; default cpu)]\n\
   aether-motion render <composition.html> --output <part.aseg> --segments A..B [render options]   (distributed render: encode one-second segments A..B; `inspect --fps N` prints the segment count)\n\
   aether-motion render <composition.html> --output <video.mp4> --parts a.aseg,b.aseg,... [--variables ...] [--audio-bitrate 192]   (assemble parts into the MP4 a single render would write)\n\
   aether-motion bench <composition.html> [--fps 30] [--scale 1 | --size 1080p|4k] [--frame START --count N]\n\
@@ -182,6 +182,7 @@ fn options() -> Result<Option<Options>> {
             "--segments" => opts.segments = Some(parse_range(&value)?),
             "--parts" => opts.parts = Some(parse_list(&value, "--parts")?),
             "--progress" => opts.progress = value.parse()?,
+            "--3d-backend" => aether_motion::scene3d::backend::set_request(value.parse()?),
             _ => bail!("unknown option: {arg}"),
         }
     }
@@ -498,6 +499,9 @@ fn main() -> Result<()> {
     }
     let elapsed = start.elapsed().as_secs_f64();
     aether_motion::profile::report();
+    if let (_, Some(reason)) = aether_motion::scene3d::backend::status() {
+        eprintln!("note: 3D scenes were drawn on the CPU: {reason}");
+    }
     let stats = renderer.stats();
     println!(
         "{}x{} | {frames} frames | {:.3} s | rasterized {} | reused {}",

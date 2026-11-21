@@ -7,8 +7,39 @@ CLI/MCP output may still change between minor releases.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-21
+
 ### Added
 
+- Native low-poly 3D (`data-hf-3d`, [docs/3d.md](docs/3d.md)): a sized `<div>` clip becomes a
+  viewport whose padding box shows a scene graph of `<hf-node>` groups, `<hf-mesh>` geometry,
+  `<hf-light>` lights, and one `<hf-camera>`, rasterized at output resolution and composited like
+  any content (fades, filters, bloom, masks, motion blur, transitions, 2D cameras, and 2.5D planes
+  apply). Coordinates follow CSS and 2.5D spaces (x right, y down, z toward the viewer; nodes
+  compose as `translate3d rotateY rotateX rotate scale3d`).
+  - Geometry: indexed triangle meshes (`shape="custom"` with `vertices` and `indices`) and
+    procedural `plane`, `box`, `pyramid`, `cone`, `cylinder`, and icosphere `sphere` primitives.
+  - Materials: flat Lambert (per-face, in linear light) and unlit, with a base `color` and
+    `cull="back|none"`. Lights: `ambient` and `directional` (up to 8), keyframable `intensity`;
+    a default rig when none is declared.
+  - Camera: perspective (`perspective` focal length or `fov`) or orthographic, `zoom`, `yaw`,
+    `pitch`, `roll` with the 2.5D camera's senses, `target` (a node or a point, with a level
+    horizon), and `near`/`far`. Every node and the camera animate with `data-hf-keyframes`
+    (`x`, `y`, `z`, `rotateX`, `rotateY`, `rotate`, `scale*`; camera `yaw`, `pitch`, `roll`,
+    `zoom`), with the keyframe easings plus `smooth`.
+  - Visibility: clip-space clipping against the near and far planes and a guard band, back-face
+    culling, and a per-sample reversed depth buffer (ties keep document order).
+  - CPU rasterizer (default): fixed-point edges with the top-left rule, an exact per-row span
+    solver, `data-hf-3d-antialias` supersampling (1 to 4 per axis, default 2), and bounded 64 px
+    tiles; deterministic across threads, segments, and CPUs.
+  - Optional wgpu backend (`--features gpu`; `render --3d-backend gpu|auto` or
+    `AETHER_3D_BACKEND`): the same shaded triangles, clip matrix, reversed depth, and integer
+    resolve, within a documented tolerance of the CPU, with an automatic and sticky CPU fallback
+    (stderr note, `check`'s `gpuFallback`).
+  - `check` reports `scenes3d`; `AETHER_PROFILE=1` reports a `scene-3d` phase; root and
+    per-element motion blur treat scene animation as movement.
+  - `examples/lighthouse-isle-3d.html`, `tests/scene3d.rs`, and `tests/scene3d_gpu.rs`.
+  [Benchmark details](BENCHMARK.md#020-native-low-poly-3d-2026-11-21)
 - 2.5D spaces for 0.1.9: `data-hf-space="perspective|orthographic"` (with `data-hf-perspective`,
   default 1000 px) turns a container into a 3D stage of flat planes. Planes take `data-hf-z`,
   `data-hf-rotate-x`, `data-hf-rotate-y`, and `data-hf-backface="hidden"`, keyframed as `z`,
