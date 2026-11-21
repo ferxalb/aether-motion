@@ -271,7 +271,10 @@ impl View {
     }
 }
 
-/// Inverse of a 3x3 matrix, or `None` when it is (nearly) singular: a plane seen exactly edge-on.
+/// Inverse of a plane homography, or `None` when it is (nearly) singular: a plane seen exactly
+/// edge-on. Columns 0 and 1 carry the plane's axes and `m[2][2]` its depth; the translation terms
+/// of column 2 can be arbitrarily large without making the map degenerate, so they do not scale
+/// the threshold.
 pub fn invert(m: &[[f64; 3]; 3]) -> Option<[[f64; 3]; 3]> {
     let cofactor =
         |r0: usize, r1: usize, c0: usize, c1: usize| m[r0][c0] * m[r1][c1] - m[r0][c1] * m[r1][c0];
@@ -293,14 +296,17 @@ pub fn invert(m: &[[f64; 3]; 3]) -> Option<[[f64; 3]; 3]> {
         ],
     ];
     let det = m[0][0] * adj[0][0] + m[0][1] * adj[1][0] + m[0][2] * adj[2][0];
-    let scale = m
-        .iter()
-        .flatten()
-        .fold(0.0_f64, |high, value| high.max(value.abs()));
-    if !det.is_finite() || det.abs() <= 1e-12 * scale * scale * scale {
+    let column = |c: usize| (m[0][c] * m[0][c] + m[1][c] * m[1][c] + m[2][c] * m[2][c]).sqrt();
+    let scale = column(0) * column(1) * m[2][2].abs().max(f64::MIN_POSITIVE);
+    if !det.is_finite() || det == 0.0 || det.abs() <= 1e-12 * scale {
         return None;
     }
-    Some(adj.map(|row| row.map(|value| value / det)))
+    let inverse = adj.map(|row| row.map(|value| value / det));
+    inverse
+        .iter()
+        .flatten()
+        .all(|value| value.is_finite())
+        .then_some(inverse)
 }
 
 /// The part of a convex polygon (plane-local `(u, v)`) where `distance(u, v) >= near`, with
@@ -423,6 +429,10 @@ mod tests {
             assert!((1.0 / back[2] - w).abs() < 1e-6);
         }
         assert!(invert(&[[1.0, 2.0, 3.0], [2.0, 4.0, 6.0], [0.0, 0.0, 1.0]]).is_none());
+        // A far translation leaves the map invertible.
+        let far = invert(&[[1.0, 0.0, 1e13], [0.0, 1.0, -1e12], [0.0, 0.0, 1.0]]).unwrap();
+        assert_eq!(far[0][2], -1e13);
+        assert_eq!(far[1][2], 1e12);
     }
 
     fn homography_of(view: &View, plane: &Affine, k: f64) -> [[f64; 3]; 3] {

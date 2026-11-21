@@ -148,6 +148,23 @@ impl<'a> Renderer<'a> {
         any
     }
 
+    /// Whether blurred element `idx` moves inside this frame's shutter window (it is then drawn
+    /// once per planned sample).
+    pub(in crate::render) fn blur_moves(&self, idx: usize) -> bool {
+        self.layer_blur
+            .elements
+            .iter()
+            .any(|b| b.idx == idx && !b.times.is_empty())
+    }
+
+    /// Whether blurred element `idx` is visible at any of this frame's planned samples.
+    pub(in crate::render) fn blur_visible(&self, idx: usize) -> bool {
+        self.layer_blur
+            .elements
+            .iter()
+            .any(|b| b.idx == idx && b.samples.iter().any(|s| s[0].alpha > 0.0))
+    }
+
     /// Whether `idx` must be drawn through [`Self::draw_layer_blurred`].
     pub(in crate::render) fn is_layer_blurred(&self, idx: usize) -> bool {
         !self.layer_blur.sampling
@@ -206,6 +223,10 @@ impl<'a> Renderer<'a> {
             self.time = t;
             outcome = self.draw_sample(draw);
             if outcome.is_err() {
+                // The failed sample stays out of the average; undo what it painted.
+                if let Some(touched) = self.surface.painted.take() {
+                    self.restore(&backdrop, touched);
+                }
                 break;
             }
             let Some(touched) = self.surface.painted.take() else {

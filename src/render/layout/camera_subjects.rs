@@ -12,6 +12,9 @@
 //! its center through the full 3D transforms of its chain (depth and tilts included), and the
 //! framing divides the anchor offset by the depth magnification of the subject at each instant
 //! (baked with the path), so the subject stays on its anchor while it or the camera moves in depth.
+//! A subject inside a nested `data-hf-space`, or below an element that flattens planes with 3D
+//! values on the subject's chain into a nested space, is projected twice; it is rejected with an
+//! error that names that element.
 
 use crate::camera::tracking::SubjectTrack;
 use crate::camera::Gain;
@@ -63,6 +66,28 @@ pub fn bind_camera_rigs(composition: &mut Composition) -> Result<()> {
             let start = element.start;
             let length = element.end - element.start;
             if let Some(stage) = &element.depth.stage {
+                let label = |idx: usize| {
+                    snapshot.elements[idx]
+                        .id
+                        .clone()
+                        .unwrap_or_else(|| format!("<{}> with no id", snapshot.elements[idx].tag))
+                };
+                for (i, &ancestor) in chain.iter().enumerate().skip(1) {
+                    let node = &snapshot.elements[ancestor];
+                    let nested = node.depth.stage.is_some()
+                        || (crate::render::space::flattens(node)
+                            && chain[..i]
+                                .iter()
+                                .any(|&below| snapshot.elements[below].depth.plane.is_some()));
+                    if nested {
+                        anyhow::bail!(
+                            "camera {}: data-hf-camera-subject {} is inside {}, a nested space of the camera's space; follow an element of the camera's own space",
+                            element.id.as_deref().unwrap_or("no id"),
+                            label(subject.element),
+                            label(ancestor)
+                        );
+                    }
+                }
                 // Rest centers of the chain, stage first, relative to their parents'.
                 let mut offsets = Vec::with_capacity(chain.len());
                 let mut parent_center = origin;

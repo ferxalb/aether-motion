@@ -15,10 +15,13 @@
 //!
 //! Each target pixel is mapped back by the inverse homography and sampled from premultiplied
 //! texels: bilinearly where the layer is not minified, and trilinearly from a box-filtered mipmap
-//! chain (built on demand) where it is, using the exact footprint of the pixel. A fragment's cuts
-//! are antialiased over one target pixel; pixels whose plane point is closer than the near
-//! distance are left untouched. While a layout probe runs, text drawn on the layer is reported
-//! through the same projection.
+//! chain (built on demand) where it is, using the exact footprint of the pixel. A fragment keeps
+//! the pixels whose center lies on its side of each cut: the two pieces of a split plane partition
+//! the pixels exactly, so nothing behind them shows through the cut (the plane's own outline stays
+//! antialiased). Pixels whose plane point is closer than the near distance are left untouched.
+//! While a layout probe runs, text drawn on the layer is reported through the same projection, cut
+//! at the same near distance. Blend modes cannot be drawn on a projected plane; the renderer says
+//! so (see `paint/effects`).
 
 use crate::model::Color;
 use crate::render::geometry::{clip_pixels, PixelRect, Rect};
@@ -170,10 +173,12 @@ impl<'a> Renderer<'a> {
         for (pass, backdrop) in [Color::BLACK, Color::WHITE].into_iter().enumerate() {
             let layer = Surface::filled(lw as u32, lh as u32, self.scale, backdrop);
             let outer = std::mem::replace(&mut self.surface, layer);
-            let probed = pass == 0 && self.enter_probe_map(&to_target);
+            let probed = pass == 0 && self.enter_probe_map(&to_target, view.near);
             self.layer_depth += 1;
             self.isolated += 1;
+            self.projecting += 1;
             outcome = outcome.and_then(|()| self.draw_plane(idx, layer_rect, q as f32, 0.0));
+            self.projecting -= 1;
             self.isolated -= 1;
             self.layer_depth -= 1;
             if probed {
@@ -204,7 +209,7 @@ impl<'a> Renderer<'a> {
         layer: &mut PlaneLayer,
         clips: &[[f64; 3]],
     ) {
-        // Screen bounds of the fragment, with a little slack for its antialiased cuts.
+        // Screen bounds of the fragment, with a little slack around its cuts.
         let slack = 2.0 / layer.scale.max(1e-9);
         let mut outline = layer.visible.clone();
         for clip in clips {
@@ -261,9 +266,13 @@ fn scale_rows(m: &[[f64; 3]; 3], s: f64) -> [[f64; 3]; 3] {
 impl PlaneLayer {
     /// Mip level `level` (0 = the layer), building the chain up to it on demand by averaging 2x2
     /// blocks (texels outside the layer count as transparent).
-    fn level(&mut self, level: usize) -> (&[[u8; 4]], [usize; 2]) {
+    /// Returns the level actually available (the chain ends at 1x1).
+    fn level(&mut self, level: usize) -> (usize, &[[u8; 4]], [usize; 2]) {
         while self.levels.len() <= level {
             let (texels, [w, h]) = self.levels.last().expect("level 0 exists");
+            if *w == 1 && *h == 1 {
+                break;
+            }
             let (nw, nh) = (w.div_ceil(2).max(1), h.div_ceil(2).max(1));
             let at = |x: usize, y: usize| -> [u32; 4] {
                 if x < *w && y < *h {
@@ -287,19 +296,16 @@ impl PlaneLayer {
                 }
             }
             self.levels.push((next, [nw, nh]));
-            if nw == 1 && nh == 1 {
-                break;
-            }
         }
         let level = level.min(self.levels.len() - 1);
         let (texels, size) = &self.levels[level];
-        (texels, *size)
+        (level, texels, *size)
     }
 
     /// Bilinear sample of mip level `level` at level-0 texel coordinates `(sx, sy)`.
     fn bilinear(&mut self, level: usize, sx: f64, sy: f64) -> [f32; 4] {
+        let (level, texels, [lw, lh]) = self.level(level);
         let factor = f64::from(1u32 << level.min(30));
-        let (texels, [lw, lh]) = self.level(level);
         let (sx, sy) = ((sx + 0.5) / factor - 0.5, (sy + 0.5) / factor - 0.5);
         let (ix, iy) = (sx.floor(), sy.floor());
         let (fx, fy) = ((sx - ix) as f32, (sy - iy) as f32);
@@ -393,22 +399,19 @@ fn warp(
             if !(sx > -1.0 && sy > -1.0 && sx < lw as f64 && sy < lh as f64) {
                 continue;
             }
-            // Derivatives of (u, v) per target pixel, for the cuts and the mip level.
-            let du = [(m[0][0] - u * m[2][0]) / c, (m[0][1] - u * m[2][1]) / c];
-            let dv = [(m[1][0] - v * m[2][0]) / c, (m[1][1] - v * m[2][1]) / c];
-            let mut coverage = 1.0_f32;
-            for clip in clips {
-                let value = clip[0] + clip[1] * u + clip[2] * v;
-                let gradient = (clip[1] * du[0] + clip[2] * dv[0])
-                    .hypot(clip[1] * du[1] + clip[2] * dv[1])
-                    .max(1e-12);
-                coverage = coverage.min((value / gradient + 0.5).clamp(0.0, 1.0) as f32);
-            }
-            if coverage <= 0.0 {
+            // A fragment keeps the pixels whose center is on its side of every cut (a center
+            // exactly on a cut belongs to the front piece, whose cut is `>= 0`).
+            if clips
+                .iter()
+                .any(|clip| clip[0] + clip[1] * u + clip[2] * v < 0.0)
+            {
                 continue;
             }
+            // Derivatives of (u, v) per target pixel, for the mip level.
+            let du = [(m[0][0] - u * m[2][0]) / c, (m[0][1] - u * m[2][1]) / c];
+            let dv = [(m[1][0] - v * m[2][0]) / c, (m[1][1] - v * m[2][1]) / c];
             let footprint = du[0].hypot(dv[0]).max(du[1].hypot(dv[1])) * scale;
-            let mut sample = if footprint > 1.0 {
+            let sample = if footprint > 1.0 {
                 let level = footprint.log2();
                 let base = level.floor() as usize;
                 let f = (level - level.floor()) as f32;
@@ -418,9 +421,6 @@ fn warp(
             } else {
                 layer.bilinear(0, sx, sy)
             };
-            if coverage < 1.0 {
-                sample = sample.map(|value| value * coverage);
-            }
             if sample[3] < 0.5 {
                 continue;
             }
@@ -432,5 +432,37 @@ fn warp(
             }
             dest[3] = 255;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn layer(texels: Vec<[u8; 4]>, size: [usize; 2]) -> PlaneLayer {
+        PlaneLayer {
+            levels: vec![(texels, size)],
+            scale: 1.0,
+            origin: [0.0; 2],
+            inverse: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            forward: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            visible: Vec::new(),
+            near: 0.0,
+        }
+    }
+
+    #[test]
+    fn mip_requests_past_the_chain_use_its_last_level() {
+        let mut layer = layer(vec![[200, 100, 40, 255]; 4], [2, 2]);
+        let (level, _, size) = layer.level(7);
+        assert_eq!((level, size), (1, [1, 1]));
+        // Asking again does not grow the chain.
+        layer.level(9);
+        assert_eq!(layer.levels.len(), 2);
+        // A clamped request samples the last level at its own scale: the same as asking for it.
+        let past = layer.bilinear(6, 0.5, 0.5);
+        let last = layer.bilinear(1, 0.5, 0.5);
+        assert_eq!(past, last);
+        assert!(past[3] > 0.0);
     }
 }

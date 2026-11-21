@@ -127,8 +127,10 @@ impl<'a> Renderer<'a> {
         self.shutter_sums.clear();
         self.shutter_sums.resize(len, 0);
         let mut drawn = Ok(());
-        for states in samples {
+        for (states, &t) in samples.into_iter().zip(&times) {
+            // Clip paths and drawn strokes read the composition time of the states being drawn.
             self.current = states;
+            self.time = t;
             drawn = self.draw_scene();
             if drawn.is_err() {
                 break;
@@ -137,6 +139,7 @@ impl<'a> Renderer<'a> {
                 *sum += u16::from(value);
             }
         }
+        self.time = time;
         // The surface no longer matches any single state, so the next frame must redraw.
         self.previous.clear();
         drawn?;

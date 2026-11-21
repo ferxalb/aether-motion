@@ -14,8 +14,11 @@ use super::math::{clip_half_plane, Affine};
 
 /// Planes closer than this (px) to a splitting plane count as lying on it.
 const ON_PLANE: f64 = 1e-3;
-/// Above this many fragments the tree is abandoned for a plain distance sort.
+/// Above this many pieces placed in the tree (whole or split), it is abandoned for a plain
+/// distance sort.
 pub const MAX_FRAGMENTS: usize = 4096;
+/// Deepest tree the partition builds (and walks) before falling back the same way.
+pub const MAX_DEPTH: usize = 256;
 
 /// One plane to order.
 #[derive(Clone, Debug)]
@@ -23,8 +26,8 @@ pub struct Polygon {
     /// The caller's identifier, returned with every fragment.
     pub id: usize,
     pub plane: Affine,
-    /// Half width and half height of the box (plane-local px).
-    pub half: [f64; 2],
+    /// What the plane paints, `[left, top, right, bottom]` in plane-local px from its center.
+    pub bounds: [f64; 4],
 }
 
 /// A visible piece of a plane: the plane `id` cut by `clips` (none for a whole plane).
@@ -79,16 +82,16 @@ pub fn order(polygons: &[Polygon], eye: Eye) -> Option<Vec<Fragment>> {
         .map(|(index, p)| Piece {
             index,
             outline: vec![
-                [-p.half[0], -p.half[1]],
-                [p.half[0], -p.half[1]],
-                [p.half[0], p.half[1]],
-                [-p.half[0], p.half[1]],
+                [p.bounds[0], p.bounds[1]],
+                [p.bounds[2], p.bounds[1]],
+                [p.bounds[2], p.bounds[3]],
+                [p.bounds[0], p.bounds[3]],
             ],
             clips: Vec::new(),
         })
         .collect();
-    let mut budget = MAX_FRAGMENTS;
-    let tree = build(pieces, polygons, &planes, &mut budget)?;
+    let mut budget = MAX_FRAGMENTS.checked_sub(pieces.len())?;
+    let tree = build(pieces, polygons, &planes, &mut budget, 0)?;
     let mut out = Vec::with_capacity(polygons.len());
     walk(&tree, polygons, &planes, eye, &mut out);
     Some(out)
@@ -99,9 +102,13 @@ fn build(
     polygons: &[Polygon],
     planes: &[Option<([f64; 3], [f64; 3])>],
     budget: &mut usize,
+    depth: usize,
 ) -> Option<Option<Box<Node>>> {
     if pieces.is_empty() {
         return Some(None);
+    }
+    if depth >= MAX_DEPTH {
+        return None;
     }
     let first = pieces.remove(0);
     let (normal, point) = planes[first.index].expect("pieces have planes");
@@ -121,6 +128,7 @@ fn build(
             (true, false) => front.push(piece),
             (false, true) => back.push(piece),
             (true, true) => {
+                // A split adds one piece to the tree.
                 *budget = budget.checked_sub(1)?;
                 // The signed distance is affine in the piece's own (u, v).
                 let a0 = plane.axis(0);
@@ -149,8 +157,8 @@ fn build(
     Some(Some(Box::new(Node {
         splitter,
         coplanar,
-        front: build(front, polygons, planes, budget)?,
-        back: build(back, polygons, planes, budget)?,
+        front: build(front, polygons, planes, budget, depth + 1)?,
+        back: build(back, polygons, planes, budget, depth + 1)?,
     })))
 }
 
@@ -190,7 +198,7 @@ mod tests {
         Polygon {
             id,
             plane,
-            half: [100.0, 100.0],
+            bounds: [-100.0, -100.0, 100.0, 100.0],
         }
     }
 
@@ -241,7 +249,7 @@ mod tests {
         let floor = Polygon {
             id: 0,
             plane: Affine::pose([0.0, 100.0, -500.0], 90.0, 0.0, 0.0, 1.0),
-            half: [400.0, 600.0],
+            bounds: [-400.0, -600.0, 400.0, 600.0],
         };
         let card = square(1, Affine::pose([0.0, 0.0, -800.0], 0.0, 0.0, 0.0, 1.0));
         let ids: Vec<usize> = order(&[card.clone(), floor.clone()], EYE)
@@ -253,5 +261,19 @@ mod tests {
         assert_eq!(ids.first(), Some(&0));
         assert!(ids.contains(&1));
         assert!(order(&[floor, card], EYE).is_some());
+    }
+
+    #[test]
+    fn deep_or_large_partitions_fall_back() {
+        // Parallel planes in paint order from near to far build one long chain.
+        let stack: Vec<Polygon> = (0..MAX_DEPTH + 1)
+            .map(|i| square(i, Affine::pose([0.0, 0.0, -(i as f64)], 0.0, 0.0, 0.0, 1.0)))
+            .collect();
+        assert!(order(&stack, EYE).is_none());
+        assert!(order(&stack[..MAX_DEPTH], EYE).is_some());
+        let many: Vec<Polygon> = (0..MAX_FRAGMENTS + 1)
+            .map(|i| square(i, Affine::pose([0.0; 3], 0.0, 0.0, 0.0, 1.0)))
+            .collect();
+        assert!(order(&many, EYE).is_none());
     }
 }

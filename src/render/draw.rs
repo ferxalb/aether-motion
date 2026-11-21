@@ -286,14 +286,14 @@ impl<'a> Renderer<'a> {
             }
             Content::Container => {}
         }
+        if self.is_stage(idx) {
+            return self.draw_space(idx, rect, cumulative);
+        }
         let layout = if element.style.display.as_deref() == Some("flex") {
             self.flex_layout(idx, content, cumulative)?
         } else {
             Vec::new()
         };
-        if self.is_stage(idx) {
-            return self.draw_space(idx, rect, cumulative);
-        }
         let count = self.children[idx].len();
         // Children painted before one that covers the frame with an opaque scene are not seen.
         let first = (0..count)

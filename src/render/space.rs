@@ -91,7 +91,7 @@ const ROOT: Placed = Placed {
 
 /// Whether an element draws its subtree on an offscreen layer of its own, so planes inside it are
 /// flattened into it.
-fn flattens(element: &Element) -> bool {
+pub(in crate::render) fn flattens(element: &Element) -> bool {
     let style = &element.style;
     let motion = &element.motion;
     style.overflow_hidden
@@ -108,9 +108,9 @@ fn flattens(element: &Element) -> bool {
         || element.effects.motion_blur.is_some()
 }
 
-/// How far (local px) an element may paint outside its box: shadows, blur, glow, and its own
-/// motion away from its resting place.
-fn reach(element: &Element) -> f64 {
+/// How far (local px) an element may paint outside its box: shadows, blur, and glow, plus (with
+/// `moving`) its own translation away from its resting place.
+fn reach(element: &Element, moving: bool) -> f64 {
     let style = &element.style;
     let mut reach = 0.0_f32;
     for s in style.shadows.iter().filter(|s| !s.inset) {
@@ -134,16 +134,42 @@ fn reach(element: &Element) -> f64 {
         reach += bloom.radius * 1.5;
     }
     let travel = |track: &crate::model::Track, rest: f32| {
-        track
-            .0
-            .iter()
-            .fold(0.0_f32, |high, p| high.max((p.value - rest).abs()))
+        extremes(track, rest).map_or(0.0, |(low, high)| {
+            (low - rest).abs().max((high - rest).abs())
+        })
     };
+    if !moving {
+        return f64::from(reach);
+    }
     let mut motion_reach = travel(&motion.x, motion.base.x).max(travel(&motion.y, motion.base.y));
     if let Some(path) = &motion.path {
         motion_reach += path.measure.length();
     }
     f64::from(reach + motion_reach)
+}
+
+/// Lowest and highest values a track can reach, including the overshoot of springs and `back`
+/// easings (at most 0.6 of a segment's change past either end), or `None` for an empty track.
+fn extremes(track: &crate::model::Track, rest: f32) -> Option<(f32, f32)> {
+    const OVERSHOOT: f32 = 0.6;
+    let mut previous = track.0.first()?.value;
+    let (mut low, mut high) = (rest.min(previous), rest.max(previous));
+    for point in &track.0 {
+        let swing = (point.value - previous).abs() * OVERSHOOT;
+        low = low.min(point.value.min(previous) - swing);
+        high = high.max(point.value.max(previous) + swing);
+        previous = point.value;
+    }
+    Some((low, high))
+}
+
+/// The largest scale an element can reach (its resting scale, or its animated scale with
+/// overshoot).
+fn largest_scale(element: &Element) -> f32 {
+    let motion = &element.motion;
+    let rest = motion.base.scale.abs();
+    extremes(&motion.scale, motion.base.scale)
+        .map_or(rest, |(low, high)| rest.max(low.abs()).max(high.abs()))
 }
 
 impl SpaceIndex {
@@ -281,12 +307,14 @@ impl SpaceIndex {
             let plane = owner[&idx];
             let origin = center(rects[&plane]);
             let element = &elements[idx];
-            let mut grow = reach(element);
-            if element.motion.rotates() || element.motion.base.scale != 1.0 {
+            // A plane's own translation, turn, and scale are part of its transform; its flat
+            // descendants move inside its box.
+            let own = plane == idx;
+            let mut grow = reach(element, !own);
+            let scale = largest_scale(element);
+            if !own && (element.motion.rotates() || scale != 1.0 || element.motion.rig.is_some()) {
                 // A turning or scaled element may sweep its half-diagonal around its center.
-                grow += f64::from(rect.w.hypot(rect.h))
-                    * f64::from(element.motion.base.scale.max(1.0))
-                    / 2.0;
+                grow += f64::from(rect.w.hypot(rect.h)) * f64::from(scale.max(1.0)) / 2.0;
             }
             let box_extent = [
                 f64::from(rect.x) - origin[0] - grow,
@@ -458,23 +486,26 @@ impl<'a> Renderer<'a> {
             let parent = node.parent.map_or(ROOT, |p| placed[p]);
             placed.push(self.place_node(node, parent, stage, focus));
         }
-        // Visible planes, in paint order.
+        // Visible planes, in paint order. A plane blurred over a moving shutter window is kept when
+        // any sample shows it, and its visibility and facing are decided per sample.
         let mut polygons = Vec::new();
         for (slot, node) in layout.nodes.iter().enumerate() {
-            if !node.plane || self.current[node.idx].alpha <= 0.0 {
+            if !node.plane {
                 continue;
             }
-            let world = placed[slot].world;
-            let plane = self.composition.elements[node.idx].depth.plane.as_ref();
-            if plane.is_some_and(|plane| plane.backface_hidden)
-                && view.facing(world.t, world.axis(2)) <= 0.0
-            {
+            let sampled = self.is_layer_blurred(node.idx) && self.blur_moves(node.idx);
+            let visible = if sampled {
+                self.blur_visible(node.idx)
+            } else {
+                self.current[node.idx].alpha > 0.0
+            };
+            if !visible || (!sampled && self.faces_away(node.idx, &placed[slot], &view)) {
                 continue;
             }
             polygons.push(Polygon {
                 id: slot,
-                plane: world,
-                half: [f64::from(node.size[0]) / 2.0, f64::from(node.size[1]) / 2.0],
+                plane: placed[slot].world,
+                bounds: node.extent,
             });
         }
         let eye = match view.eye_point() {
@@ -508,8 +539,9 @@ impl<'a> Renderer<'a> {
             let left = remaining.get_mut(&slot).expect("counted");
             *left -= 1;
             let last = *left == 0;
-            if self.is_layer_blurred(node.idx) {
-                // Blurred planes are drawn whole, once, placed again at every sample.
+            if self.is_layer_blurred(node.idx) && self.blur_moves(node.idx) {
+                // A plane blurred over a moving window is drawn whole, once, placed again at
+                // every sample; samples where it is hidden or faces away draw nothing.
                 if !fragment.clips.is_empty() && !last {
                     continue;
                 }
@@ -518,6 +550,9 @@ impl<'a> Renderer<'a> {
                 let idx = node.idx;
                 self.blur_samples(idx, &mut |r: &mut Self| {
                     let at = r.place_node(&node, parent, stage, focus);
+                    if r.current[idx].alpha <= 0.0 || r.faces_away(idx, &at, &view) {
+                        return Ok(());
+                    }
                     r.draw_whole_plane(&node, at, &view)
                 })?;
                 continue;
@@ -539,6 +574,13 @@ impl<'a> Renderer<'a> {
             }
         }
         Ok(())
+    }
+
+    /// Whether plane `idx`, placed at `at`, hides its back from the camera.
+    fn faces_away(&self, idx: usize, at: &Placed, view: &View) -> bool {
+        let plane = self.composition.elements[idx].depth.plane.as_ref();
+        plane.is_some_and(|plane| plane.backface_hidden)
+            && view.facing(at.world.t, at.world.axis(2)) <= 0.0
     }
 
     fn plane_setup<'v>(&self, node: &Node, at: Placed, view: &'v View) -> PlaneSetup<'v> {

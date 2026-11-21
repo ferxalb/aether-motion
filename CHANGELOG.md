@@ -21,7 +21,9 @@ CLI/MCP output may still change between minor releases.
     the anchor by its baked depth magnification (`camera::Gain`), and `data-hf-parallax` children
     pan by their factor.
   - Exact depth order: a BSP tree built in paint order (`space/bsp.rs`) draws planes at one depth
-    like 2D siblings and splits intersecting planes where they cross, with antialiased cuts.
+    like 2D siblings and splits intersecting planes where they cross; the pieces share a hard
+    edge (each pixel belongs to one side), so no backdrop shows through the cut. Past 4096 pieces or
+    256 levels it falls back to sorting whole planes by distance.
   - Drawing: whole planes facing an unturned camera are scaled, rolled 2D draws with every effect.
     Tilted planes, planes seen by a turned camera, and split pieces are warped from one layer per
     plane that covers its visible part (near and frame edges clipped in plane coordinates) and
@@ -33,7 +35,11 @@ CLI/MCP output may still change between minor releases.
     filters, masks, blend modes, reveals, bloom, pixel effects, motion blur) flattens its planes
     into a nested space, as CSS does.
   - Motion blur: `data-hf-motion-blur` on a plane blurs its 3D motion; `layer_blur.rs` gained
-    `blur_samples`, which redraws the element through a placement callback at every sample.
+    `blur_samples`, which redraws the element through a placement callback at every sample
+    (visibility and back faces are decided per sample; a stationary blurred plane is split and
+    ordered like any other).
+  - Validation: a blend mode on a plane that always tilts or under a turning camera, and a camera
+    subject inside a nested or flattening space, are rejected with errors naming the element.
   - Near clipping at a tenth of the perspective, scene instances, clip timing, fades, transitions,
     and root motion blur work as usual. A plane with 3D values needs a space ancestor, and 3D
     camera values need a space on the camera; other combinations are accepted.
@@ -114,6 +120,13 @@ CLI/MCP output may still change between minor releases.
 - A vector fit larger than the 64 MiB per-image limit (deep camera zooms at 4K) is rasterized for
   its visible part instead of failing with `rasterized image exceeds 64 MiB`; a visible part above
   64 MiB still asks for `--scale`.
+
+### Fixed
+
+- The root shutter (`data-motion-blur`) now draws each sample at its own composition time, so
+  animated clip paths and self-drawing strokes are averaged over the window instead of being
+  drawn at the frame time in every sample.
+- A per-element motion blur sample that fails to draw no longer leaves its pixels on the frame.
 
 ## [0.1.7] - 2026-11-19
 

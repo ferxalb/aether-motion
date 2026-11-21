@@ -158,6 +158,8 @@ pub struct Renderer<'a> {
     plane_pose: Option<(usize, Rect, f32)>,
     /// Projective plane layers whose text the layout probe reports (see `probe.rs`).
     probe_maps: Vec<probe::ProbeMap>,
+    /// Number of projected 2.5D plane layers being drawn into (blend modes cannot be drawn there).
+    projecting: u32,
 }
 
 pub(crate) fn check_image(path: &Path) -> Result<()> {
@@ -283,6 +285,7 @@ impl<'a> Renderer<'a> {
             spaces: space::SpaceIndex::default(),
             plane_pose: None,
             probe_maps: Vec::new(),
+            projecting: 0,
         };
         renderer.spaces = space::SpaceIndex::build(&mut renderer)?;
         Ok(renderer)

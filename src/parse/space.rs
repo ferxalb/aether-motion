@@ -1,7 +1,8 @@
 //! 2.5D attributes: `data-hf-space` stages (`data-hf-perspective`), the static 3D values of their
 //! planes (`data-hf-z`, `data-hf-rotate-x`, `data-hf-rotate-y`, `data-hf-backface`), the keyframed
 //! `z`/`rotateX`/`rotateY` channels, the stage camera's dolly and orientation (from
-//! `data-hf-camera` keyframes or `data-hf-shots`), and the check that every plane has a space.
+//! `data-hf-camera` keyframes or `data-hf-shots`), and the checks that every plane has a space and
+//! that no blend mode sits on a plane that is always projected.
 //! Produces [`crate::space::Depth`].
 
 use crate::camera::curve::{Curve, Interp};
@@ -221,6 +222,29 @@ pub(in crate::parse) fn check_spaces(elements: &[Element]) -> Result<()> {
             .unwrap_or_else(|| format!("<{}> with no id", elements[idx].tag))
     };
     for (idx, element) in elements.iter().enumerate() {
+        if element.style.blend != crate::model::BlendMode::Normal {
+            // A blended element on a plane that tilts, or under a camera that turns, is drawn on a
+            // projected layer, where blending against the frame is not possible.
+            let projected = std::iter::successors(Some(idx), |&p| elements[p].parent).find(|&a| {
+                elements[a]
+                    .depth
+                    .plane
+                    .as_ref()
+                    .is_some_and(|plane| plane.tilts())
+                    || elements[a]
+                        .depth
+                        .stage
+                        .as_ref()
+                        .is_some_and(|stage| stage.orientation.is_some())
+            });
+            if let Some(a) = projected {
+                bail!(
+                    "mix-blend-mode on {} cannot be drawn on a projected plane of a 2.5D space: {} tilts or turns its camera; keep blended elements on planes that face an unturned camera",
+                    label(idx),
+                    label(a)
+                );
+            }
+        }
         if element.depth.plane.is_none() {
             continue;
         }

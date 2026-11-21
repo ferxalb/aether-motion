@@ -594,34 +594,165 @@ fn a_plane_with_motion_blur_blurs_its_own_depth_motion() {
     assert_eq!(shot_at(&blurred, 1.0).pixels, b.pixels);
 }
 
-#[test]
-fn text_on_tilted_planes_is_probed_through_the_projection() {
+/// The probed box of the text element `label` and the bounds of the bright (text) pixels.
+fn probe_and_ink(html: &str) -> ([f32; 4], (usize, usize, usize, usize)) {
     let dir = scratch("space-probe");
-    let html = space(
-        "data-hf-space",
-        "<div data-hf-rotate-y='30' style='left:100px;top:50px;width:200px;height:100px;background:#123'>\
-           <p id='label' style='position:absolute;left:10px;top:30px;font-size:30px;color:#fff'>Label</p>\
-         </div>",
-    );
-    let path = write(&dir, "index.html", &html);
+    let path = write(&dir, "index.html", html);
     let composition = parse_file(&path).unwrap();
-    let mut renderer = Renderer::new(&composition, 1.0).unwrap();
-    let boxes = renderer.probe_text_at(0.0).unwrap();
     let label = composition
         .elements
         .iter()
         .position(|e| e.id.as_deref() == Some("label"))
         .unwrap();
+    let mut renderer = Renderer::new(&composition, 1.0).unwrap();
+    let boxes = renderer.probe_text_at(0.0).unwrap();
     let found = boxes
         .iter()
         .find(|b| b.element == label)
-        .expect("probed text");
-    let [l, t, r, b] = found.rect;
-    assert!(
-        l > 90.0 && r < 300.0 && t > 50.0 && b < 150.0 && r > l,
-        "{:?}",
-        found.rect
+        .expect("probed text")
+        .rect;
+    let (w, h) = renderer.dimensions();
+    let shot = Shot {
+        pixels: renderer.render_at(0.0).unwrap().to_vec(),
+        width: w as usize,
+        height: h as usize,
+    };
+    std::fs::remove_dir_all(dir).unwrap();
+    let ink = shot
+        .bbox(|p| p.iter().all(|&c| c > 150))
+        .expect("text pixels");
+    (found, ink)
+}
+
+#[test]
+fn text_on_tilted_planes_is_probed_through_the_projection() {
+    use aether_motion::space::math::{Affine, View};
+    use aether_motion::space::Projection;
+    let card = |turn: &str| {
+        space(
+            "data-hf-space",
+            &format!(
+                "<div {turn} style='left:100px;top:50px;width:200px;height:100px;background:#123'>\
+                   <p id='label' style='position:absolute;left:10px;top:30px;font-size:30px;color:#fff'>Label</p>\
+                 </div>"
+            ),
+        )
+    };
+    // The facing card gives the text box in the plane's own px (its center is the stage center).
+    let (flat, _) = probe_and_ink(&card(""));
+    let (turned, ink) = probe_and_ink(&card("data-hf-rotate-y='30'"));
+    let view = View::new(
+        Projection::Perspective { distance: 1000.0 },
+        [200.0, 100.0],
+        1.0,
+        [0.0; 3],
+        [0.0; 3],
+        100.0,
     );
+    let plane = Affine::pose([0.0; 3], 0.0, 30.0, 0.0, 1.0);
+    let mut expected = [
+        f64::INFINITY,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::NEG_INFINITY,
+    ];
+    for (x, y) in [(0, 1), (2, 1), (2, 3), (0, 3)] {
+        let local = [f64::from(flat[x]) - 200.0, f64::from(flat[y]) - 100.0, 0.0];
+        let p = view.project(plane.apply(local));
+        expected = [
+            expected[0].min(p[0]),
+            expected[1].min(p[1]),
+            expected[2].max(p[0]),
+            expected[3].max(p[1]),
+        ];
+    }
+    for (got, want) in turned.iter().zip(expected) {
+        assert!(close(f64::from(*got), want, 0.5), "{turned:?} {expected:?}");
+    }
+    // The ink lies inside the reported box.
+    let (l, t, r, b) = ink;
+    assert!(l as f32 >= turned[0] - 1.0 && r as f32 <= turned[2] + 1.0);
+    assert!(t as f32 >= turned[1] - 1.0 && b as f32 <= turned[3] + 1.0);
+    // Through two projections (a nested space turned inside a tilted space), the box stays close
+    // to the ink instead of growing at every map.
+    let nested = space(
+        "data-hf-space",
+        "<div data-hf-space data-hf-rotate-y='35' style='left:60px;top:30px;width:280px;height:140px;background:#123'>\
+           <div data-hf-rotate-x='25' style='left:40px;top:20px;width:200px;height:100px'>\
+             <p id='label' style='position:absolute;left:10px;top:30px;font-size:30px;color:#fff'>Label</p>\
+           </div>\
+         </div>",
+    );
+    let (boxed, (l, t, r, b)) = probe_and_ink(&nested);
+    let ink_w = (r + 1 - l) as f32;
+    let ink_h = (b + 1 - t) as f32;
+    assert!(
+        l as f32 >= boxed[0] - 1.0 && r as f32 <= boxed[2] + 1.0,
+        "{boxed:?} {:?}",
+        (l, t, r, b)
+    );
+    assert!(boxed[2] - boxed[0] < ink_w + 14.0, "{boxed:?} {ink_w}");
+    assert!(boxed[3] - boxed[1] < ink_h + 18.0, "{boxed:?} {ink_h}");
+}
+
+#[test]
+fn split_planes_share_a_hard_edge_without_showing_the_backdrop() {
+    let html = space(
+        "data-hf-space",
+        "<div data-hf-rotate-y='45' style='left:120px;top:50px;width:160px;height:100px;background:#f00'></div>\
+         <div data-hf-rotate-y='-45' style='left:120px;top:50px;width:160px;height:100px;background:#00f'></div>",
+    );
+    let shot = shot_at(&html, 0.0);
+    let dark = (70..130)
+        .flat_map(|y| (196..205).map(move |x| (x, y)))
+        .filter(|&(x, y)| {
+            let p = shot.at(x, y);
+            u16::from(p[0]) + u16::from(p[2]) < 230
+        })
+        .count();
+    assert_eq!(dark, 0, "the backdrop shows through the cut");
+}
+
+#[test]
+fn projected_blends_and_nested_subjects_are_explained() {
+    let dir = scratch("space-errors-2");
+    let cases = [
+        (
+            space(
+                "data-hf-space",
+                "<div data-hf-rotate-y='20' style='left:100px;top:50px;width:200px;height:100px;background:#00f'>\
+                   <div style='position:absolute;left:0px;top:0px;width:50px;height:50px;background:#f00;mix-blend-mode:screen'></div>\
+                 </div>",
+            ),
+            "cannot be drawn on a projected plane",
+        ),
+        (
+            space(
+                "data-hf-space data-hf-camera-subject='red' data-hf-camera='[{\"at\":0,\"follow\":1}]'",
+                &format!(
+                    "<div data-hf-space style='left:0;top:0;width:400px;height:200px'>{}</div>",
+                    red_plane(0, 0, "data-hf-z='-100'")
+                ),
+            ),
+            "a nested space of the camera's space",
+        ),
+    ];
+    for (html, expected) in cases {
+        let path = write(&dir, "index.html", &html);
+        let error = format!("{:#}", parse_file(&path).unwrap_err());
+        assert!(
+            error.contains(expected),
+            "expected {expected:?} in: {error}"
+        );
+    }
+    // A blend on a plane that faces the camera is drawn as in 2D.
+    let facing = space(
+        "data-hf-space",
+        "<div style='left:100px;top:50px;width:200px;height:100px;background:#00f'>\
+           <div style='position:absolute;left:0px;top:0px;width:50px;height:50px;background:#f00;mix-blend-mode:screen'></div>\
+         </div>",
+    );
+    assert!(shot_at(&facing, 0.0).count(|p| p[0] > 200 && p[2] > 200) > 2000);
     std::fs::remove_dir_all(dir).unwrap();
 }
 
