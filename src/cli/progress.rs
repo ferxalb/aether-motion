@@ -1,9 +1,11 @@
 //! Terminal and machine-readable render progress for the CLI (`--progress auto|json|off`).
 //!
-//! `auto` redraws one status line on stderr when stderr is a terminal and prints nothing otherwise,
+//! `auto` redraws one status line on stderr when stderr is a terminal (a bar, the percentage, frames,
+//! speed, and ETA) and prints nothing otherwise,
 //! so piped output and logs stay clean; `json` writes one JSON object per update on stderr for
 //! scripts and job runners; `off` disables reporting. Progress never changes the rendered output.
 
+use super::ui::Style;
 use crate::encode::{ProgressObserver, ProgressUpdate};
 use anyhow::{bail, Result};
 use std::io::{IsTerminal, Write};
@@ -70,6 +72,44 @@ pub fn with_progress<T>(
     result
 }
 
+/// Width of the terminal progress bar in cells.
+const BAR: usize = 24;
+
+/// The terminal status line for one update, such as
+/// `  ━━━━━━━━━━━━────────────  50%  45/90 frames · 30.0 fps · ETA 1.5 s`.
+pub fn bar_line(update: &ProgressUpdate, style: Style) -> String {
+    let fraction = update.fraction().clamp(0.0, 1.0);
+    let filled = ((fraction * BAR as f64).round() as usize).min(BAR);
+    let eta = match update.eta() {
+        Some(eta) if update.done < update.total => {
+            format!(" · ETA {}", duration(eta.as_secs_f64()))
+        }
+        _ => String::new(),
+    };
+    format!(
+        "  {}{} {:>3.0}%  {}",
+        style.cyan(&"━".repeat(filled)),
+        style.dim(&"─".repeat(BAR - filled)),
+        fraction * 100.0,
+        style.dim(&format!(
+            "{}/{} frames · {:.1} fps{eta}",
+            update.done,
+            update.total,
+            update.frames_per_second()
+        ))
+    )
+}
+
+/// `42.0 s`, `3 m 05 s`, or `1 h 02 m`.
+fn duration(seconds: f64) -> String {
+    let whole = seconds.round() as u64;
+    match whole {
+        0..=59 => format!("{seconds:.1} s"),
+        60..=3599 => format!("{} m {:02} s", whole / 60, whole % 60),
+        _ => format!("{} h {:02} m", whole / 3600, whole / 60 % 60),
+    }
+}
+
 /// The JSON line for one update.
 pub fn json_line(update: &ProgressUpdate) -> String {
     serde_json::json!({
@@ -90,7 +130,7 @@ impl ProgressObserver for StderrProgress {
             writeln!(stderr, "{}", json_line(&update))
         } else {
             // `\x1b[K` clears what remains of a longer previous line.
-            write!(stderr, "\r{}\x1b[K", update.summary())
+            write!(stderr, "\r{}\x1b[K", bar_line(&update, Style::err()))
         };
         let _ = stderr.flush();
     }
@@ -111,6 +151,12 @@ mod tests {
             total: 90,
             elapsed: Duration::from_millis(1500),
         };
+        assert_eq!(
+            bar_line(&update, Style::plain()),
+            "  ━━━━━━━━━━━━────────────  50%  45/90 frames · 30.0 fps · ETA 1.5 s"
+        );
+        assert_eq!(duration(185.0), "3 m 05 s");
+        assert_eq!(duration(3720.0), "1 h 02 m");
         assert_eq!(
             json_line(&update),
             r#"{"done":45,"elapsedMs":1500,"etaMs":1500,"fps":30.0,"fraction":0.5,"total":90}"#

@@ -145,6 +145,60 @@ CLI/MCP output may still change between minor releases.
   (resvg rounds the pattern tile to whole pixels) re-phase at each level switch rather than on
   every zooming frame. `AETHER_PROFILE=1` reports `image-resample` time and `visible-region rasters`.
   [Benchmark details](BENCHMARK.md#zoom-aware-svg-reuse-2026-11-19)
+  - CLI redesign. `aether-motion --help` groups the commands (create and export, compose, coding
+  agents, diagnose) and every command has its own help page with grouped options, defaults, and
+  examples: `aether-motion help <command>` or `aether-motion <command> --help` (`-h`). `-V` and
+  `version` print the version.
+- One output style for every human-facing command: marked status lines (`✓`, `✗`, `!`, `+`, `~`,
+  `=`), section headings, aligned facts, and paths without a leading `./`. Colors are used only on
+  a terminal and follow `NO_COLOR` and `CLICOLOR_FORCE`. `doctor` reports by section with a fix
+  under each problem and a final verdict; `init` separates project files from agent setup;
+  `inspect` prints aligned tables; `bench` reports the frames it drew and the time per frame; the
+  terminal render progress line shows a bar. Machine-readable output is unchanged: `check` JSON,
+  `--progress json`, `block <name>` HTML, and `captions` to stdout.
+- Errors print as `error: ...` on stderr. Command-line mistakes (unknown commands or options,
+  missing or invalid values) exit with code 2, suggest the closest command or option, and point at
+  the command's help; other failures exit with code 1.
+- `render` has two explicit modes, chosen by whether a file is named, and `-o` and `--output` are
+  one option in both. `render` without a file is project mode: the entry, fps, size, quality,
+  output folder, and variable values come from `aether.json`. `render <file>` is direct mode:
+  only the command line counts and `aether.json` is never read. Both modes take every option
+  (`--frames`, `--encoder`, `--priority`, `--segments`, and `--parts` work in project mode too),
+  with the same validation, messages, and exit codes; the flags of `render`, `inspect`, and
+  `bench` are parsed once, in `src/cli/options.rs`.
+- One collision rule for both modes: a PNG is overwritten; an existing MP4 or `.aseg` named with
+  `-o`/`--output` needs `--force` (`-f`) and is refused with exit code 2 before the composition is
+  parsed; the default output (`<out>/<name>.mp4`) is replaced on every render. A failing
+  composition never removes the previous output. The output folder is created when missing.
+- Migration: `render <file> -o <path>` (and `render <file>` with no output) used to apply
+  `aether.json`; it now ignores it. Run `render` without a file to use the project, or pass
+  `--size`, `--fps`, `--quality`, and `--variables-file` explicitly. `render <file> --output <png>`
+  keeps overwriting stills, and `render <file> --output <mp4>` still refuses an existing file,
+  now with exit code 2 and a `--force` hint (previously exit code 1 and no way to replace it).
+  Project mode `-o <png>` no longer needs `--force`. `render <file>` without an output writes
+  `out/<name>.mp4` in the current directory.
+- `check` and `preview` follow the same rule: with a file they run standalone and never read
+  `aether.json` (no project variables; `preview` at 30 fps), and without one they use the
+  project's entry, variables, and fps. `preview` gains `--fps`. The `check` JSON report is
+  unchanged. Both reject extra positional arguments, and `preview` reports invalid
+  `--variables` as usage errors (exit code 2), as `check` and `render` do.
+  Migration: `check <file>` and `preview <file>` inside a project no longer apply its
+  `"variables"` or fps; drop the file or pass `--variables-file`/`--fps`.
+- Replacing an output is now safe: `--force` and the automatic project export write the new file
+  to a hidden sibling and rename it over the previous one only after the render and encode
+  succeed, and PNGs (`render`, `--frames`, `preview`) are written to a temporary file first. A
+  failed render, encode, or write leaves the previous output intact and no staging files behind.
+  Previously `--force` and the automatic export removed the old file before rendering.
+- `render` validates `--threads` (1 to 64) and `--audio-bitrate` (64 to 320) in both modes,
+  rejects `--frame` for MP4 output, out-of-range frames, and `--encoder ffmpeg` for PNG, part,
+  or assembled output, and checks its flags before parsing the composition. `init`, `render`,
+  `inspect`, and `bench` reject extra positional arguments instead of ignoring them.
+- `src/main.rs` only calls `cli::main`; `render` lives in `src/cli/render/` (`output.rs` holds the
+  collision rule, `ffmpeg.rs` the optional FFmpeg encoder), and `inspect` and `bench` have their
+  own files.
+- Regression tests in `tests/cli.rs` run the binary for option equivalence, project isolation of
+  `render`, `check`, and `preview`, broken configurations, the `check` JSON report, overwrite
+  behavior, safe replacement on failure, invalid arguments, and exit codes.
 
 ### Fixed
 

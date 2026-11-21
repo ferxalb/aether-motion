@@ -1,4 +1,6 @@
-//! Project configuration (`aether.json`) and entry-file resolution for the short commands.
+//! Project configuration (`aether.json`), entry-file resolution, and the mode rule shared by
+//! `render`, `check`, and `preview` ([`select`]): a named file runs standalone with built-in
+//! defaults and never reads `aether.json`; no file means the project.
 
 use crate::encode::Quality;
 use crate::parse::VariableValues;
@@ -21,6 +23,31 @@ pub struct Project {
     pub out_dir: PathBuf,
     /// Values for the composition's declared variables (`"variables"`, an object keyed by id).
     pub variables: VariableValues,
+}
+
+/// The settings of a command run: [`standalone`] for a named file, else the project in the
+/// current directory.
+pub fn select(file: Option<&Path>) -> Result<Project> {
+    match file {
+        Some(file) => standalone(file),
+        None => resolve(Path::new("."), None),
+    }
+}
+
+/// `file` with the built-in defaults (30 fps, the composition's own size, quality `standard`,
+/// output folder `out`, no variable values). `aether.json` is not read.
+pub fn standalone(file: &Path) -> Result<Project> {
+    if !file.is_file() {
+        bail!("composition not found: {}", file.display());
+    }
+    Ok(Project {
+        entry: file.to_path_buf(),
+        fps: 30,
+        size: None,
+        quality: Quality::default(),
+        out_dir: PathBuf::from("out"),
+        variables: VariableValues::new(),
+    })
 }
 
 /// Resolves the composition file and settings relative to `dir`.
@@ -120,6 +147,10 @@ mod tests {
         );
         fs::write(dir.join(CONFIG), r#"{"variables":[1]}"#).unwrap();
         assert!(resolve(&dir, None).is_err());
+        // A named file never reads the (now broken) configuration.
+        let alone = standalone(&dir.join("a.html")).unwrap();
+        assert!(alone.fps == 30 && alone.size.is_none() && alone.variables.is_empty());
+        assert!(standalone(&dir.join("missing.html")).is_err());
         fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -10,24 +10,13 @@ pub mod skills;
 use anyhow::Result;
 use std::path::Path;
 
-/// Outcome of one setup step, printed by `init` and `agent setup`.
+/// Outcome of one setup step; `cli::agent_cmd::print_steps` shows it for `init` and `agent setup`.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Step {
     Created(String),
     Updated(String),
     Unchanged(String),
     Skipped(String, String),
-}
-
-impl Step {
-    pub fn line(&self) -> String {
-        match self {
-            Step::Created(p) => format!("  + {p}"),
-            Step::Updated(p) => format!("  ~ {p}"),
-            Step::Unchanged(p) => format!("  = {p} (already set up)"),
-            Step::Skipped(p, why) => format!("  ! {p} skipped: {why}"),
-        }
-    }
 }
 
 /// Installs skills and MCP config for the agents detected in `root` (all of them with `all`).

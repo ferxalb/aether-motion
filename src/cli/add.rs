@@ -1,21 +1,30 @@
 //! `add`: list ready-made blocks, or append one to the project's composition.
 
-use super::project;
+use super::args::UsageError;
+use super::ui::{display_path, line, Mark, Style};
+use super::{block_cmd, project};
 use crate::blocks;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, Result};
 use std::fs;
 use std::path::Path;
 
-/// `add` lists blocks; `add <block> [--set k=v]...` inserts the block before the root's closing tag.
+/// `add` and `add list` list blocks; `add <block> [--set k=v]...` inserts a block.
 pub fn run(raw: &[String]) -> Result<()> {
-    if raw.is_empty() {
-        print!("{}", blocks::run_cli(&[])?);
+    if raw.is_empty() || raw == ["list"] {
+        print!("{}", block_cmd::listing(Style::out())?);
         return Ok(());
     }
+    if raw[0] == "list" {
+        return Err(UsageError::new("add list takes no arguments").into());
+    }
     if raw[0].starts_with("theme-") {
-        bail!(
-            "themes are not inserted automatically; print one with `aether-motion block {}`",
-            raw[0]
+        return Err(
+            UsageError::new(format!("{} is a theme; themes are not inserted", raw[0]))
+                .with_hint(format!(
+                    "print it with `aether-motion block {}` and paste it into the composition",
+                    raw[0]
+                ))
+                .into(),
         );
     }
     let html = blocks::run_cli(raw)?;
@@ -33,6 +42,14 @@ pub fn run(raw: &[String]) -> Result<()> {
     }
     out.push_str(&source[at..]);
     fs::write(&project.entry, out)?;
-    println!("Added {} to {}", raw[0], project.entry.display());
+    println!(
+        "{}",
+        line(
+            Style::out(),
+            Mark::Ok,
+            &format!("Added {} to {}", raw[0], display_path(&project.entry)),
+            "",
+        )
+    );
     Ok(())
 }

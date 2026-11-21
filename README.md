@@ -39,7 +39,7 @@ aether-motion preview         # render a frame and open it (add --watch to refre
 aether-motion render          # export out/index.mp4
 ```
 
-`init` writes `aether.json`, a sample `index.html`, project `AGENTS.md`, the bundled Agent Skills (`.claude/skills`, `.agents/skills`), and the MCP server entry for Claude Code (`.mcp.json`; Cursor and VS Code too when their folders exist or with `--all`). It never overwrites existing files without `--force`, merges into existing MCP files, and is safe to re-run. Other commands: `check`, `add [block]`, `agent setup|status`, `doctor`.
+`init` writes `aether.json`, a sample `index.html`, project `AGENTS.md`, the bundled Agent Skills (`.claude/skills`, `.agents/skills`), and the MCP server entry for Claude Code (`.mcp.json`; Cursor and VS Code too when their folders exist or with `--all`). It never overwrites existing files without `--force`, merges into existing MCP files, and is safe to re-run. Other commands: `check`, `add [block]`, `captions`, `agent setup|status`, `doctor`. `aether-motion --help` lists every command by task, and `aether-motion help <command>` (or `<command> --help`) shows its options, defaults, and examples.
 
 ### With an AI coding agent
 

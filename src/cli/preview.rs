@@ -7,12 +7,13 @@
 //! [`SceneCache`]: a scene is compiled again only when one of the files it read (including those
 //! of the scenes it imports) changed.
 
-use super::args::Args;
+use super::args::{usage, Args};
 use super::project;
-use super::render_cmd::write_png;
+use super::render::write_png;
+use super::ui::{display_path, line, Mark, Style};
 use crate::parse::{parse_file_cached, SceneCache, VariableValues};
 use crate::render::Renderer;
-use anyhow::{bail, Result};
+use anyhow::Result;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -91,7 +92,15 @@ fn open(path: &Path) {
         .status()
         .is_ok_and(|s| s.success());
     if !launched {
-        println!("Open {} to see it.", path.display());
+        println!(
+            "{}",
+            line(
+                Style::out(),
+                Mark::Info,
+                &format!("Open {} to see it", path.display()),
+                ""
+            )
+        );
     }
 }
 
@@ -106,16 +115,30 @@ fn modified(path: &Path) -> Option<SystemTime> {
 pub fn run(raw: &[String]) -> Result<()> {
     let args = Args::parse(
         raw,
-        &["--at", "--variables", "--variables-file"],
+        &["--at", "--fps", "--variables", "--variables-file"],
         &["--watch", "--no-open"],
     )?;
-    let project = project::resolve(Path::new("."), args.positional.first().map(String::as_str))?;
+    // Flags are checked before the project is read, as in `render`.
+    let file = args.file("preview")?;
+    let fps_flag = args
+        .number::<u64>("--fps")?
+        .map(|fps| crate::render::validate_fps(fps, "--fps").map_err(|e| usage(format!("{e:#}"))))
+        .transpose()?;
+    let at: f64 = args.number("--at")?.unwrap_or(1.0);
+    if at.is_nan() || at < 0.0 {
+        return Err(usage(format!("--at must be 0 or more seconds (got {at})")));
+    }
+    // A named file previews standalone at 30 fps; without one, aether.json supplies entry, fps,
+    // and variables. `--fps` overrides either (it sets the motion-blur shutter window).
+    let project = project::select(file)?;
+    let fps = fps_flag.unwrap_or(project.fps);
     let values = || {
         super::variables::values(
             args.value("--variables"),
             args.value("--variables-file"),
             &project.variables,
         )
+        .map_err(|e| usage(format!("{e:#}")))
     };
     let variables_file = args.value("--variables-file").map(PathBuf::from);
     let watched = |files: &[PathBuf]| -> Vec<Option<SystemTime>> {
@@ -125,35 +148,43 @@ pub fn run(raw: &[String]) -> Result<()> {
             .map(|path| modified(path))
             .collect()
     };
-    let at: f64 = args.number("--at")?.unwrap_or(1.0);
-    if at < 0.0 {
-        bail!("--at must be 0 or more seconds");
-    }
     let out = PathBuf::from(OUTPUT);
     fs::create_dir_all(out.parent().unwrap())?;
     let mut cache = SceneCache::persistent();
-    let (time, mut files) = match render_once(
-        &project.entry,
-        &values()?,
-        at,
-        project.fps,
-        &out,
-        &mut cache,
-    ) {
+    let (time, mut files) = match render_once(&project.entry, &values()?, at, fps, &out, &mut cache)
+    {
         (Ok(time), files) => (time, files),
         (Err(error), _) => return Err(error),
     };
-    println!("Preview at {time:.2} s: {}", out.display());
+    let style = Style::out();
+    println!(
+        "{}",
+        line(
+            style,
+            Mark::Ok,
+            &format!("Preview of {}", display_path(&project.entry)),
+            &format!("{time:.2} s → {}", out.display()),
+        )
+    );
     if !args.has("--no-open") {
         open(&out);
     }
     if !args.has("--watch") {
         return Ok(());
     }
+    let others = files.len().saturating_sub(1);
     println!(
-        "Watching {} and {} files it reads (Ctrl-C to stop)",
-        project.entry.display(),
-        files.len().saturating_sub(1)
+        "{}",
+        line(
+            style,
+            Mark::Info,
+            &format!(
+                "Watching {} and {others} file{} it reads",
+                display_path(&project.entry),
+                if others == 1 { "" } else { "s" }
+            ),
+            "Ctrl-C to stop",
+        )
     );
     // The files of the last good render; after a failure `files` also holds the attempted ones.
     let mut good = files.clone();
@@ -165,17 +196,20 @@ pub fn run(raw: &[String]) -> Result<()> {
             continue;
         }
         let (result, read) = match values() {
-            Ok(values) => render_once(&project.entry, &values, at, project.fps, &out, &mut cache),
+            Ok(values) => render_once(&project.entry, &values, at, fps, &out, &mut cache),
             Err(error) => (Err(error), Vec::new()),
         };
         let read = match result {
             Ok(t) => {
-                println!("Updated ({t:.2} s)");
+                println!("{}", line(style, Mark::Ok, "Updated", &format!("{t:.2} s")));
                 good = read.clone();
                 read
             }
             Err(e) => {
-                println!("Error: {e:#}");
+                println!(
+                    "{}",
+                    line(style, Mark::Fail, &format!("{e:#}"), "keeps watching")
+                );
                 after_failure(&good, read)
             }
         };

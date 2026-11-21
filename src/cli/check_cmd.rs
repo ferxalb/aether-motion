@@ -8,10 +8,12 @@
 //! Exit codes: 0 success, 1 the composition is invalid or a gating finding exists, 2 usage error.
 //! Safe-zone findings are warnings and never fail, even with `--strict`.
 
-use super::args::Args;
+use super::args::{usage as usage_error, Args};
 use super::project;
+use super::ui::{self, display_path, Mark, Style};
 use crate::agent::{self, zones};
-use anyhow::{anyhow, Result};
+use anyhow::Result;
+use serde_json::Value;
 use std::io::IsTerminal;
 use std::path::Path;
 
@@ -33,7 +35,12 @@ pub fn run(raw: &[String]) -> Result<i32> {
         Ok(args) => args,
         Err(error) => return usage(error),
     };
-    let project = project::resolve(Path::new("."), args.positional.first().map(String::as_str))?;
+    let file = match args.file("check") {
+        Ok(file) => file,
+        Err(error) => return usage(error),
+    };
+    // A named file is checked standalone; without one, aether.json supplies entry and variables.
+    let project = project::select(file)?;
     // Values that cannot be read are usage errors; values the composition rejects fail the check.
     let values = match super::variables::values(
         args.value("--variables"),
@@ -46,16 +53,17 @@ pub fn run(raw: &[String]) -> Result<i32> {
     let mut report = agent::check_with(&project.entry, &values);
     let ok = report["ok"] == true;
     let mut exit = i32::from(!ok);
-    let mut lines: Vec<String> = Vec::new();
+    let mut findings: Vec<Value> = Vec::new();
+    let mut notes: Vec<String> = Vec::new();
     if ok {
         let request = (|| -> Result<zones::ZoneRequest> {
             let at = match args.value("--at") {
                 Some(list) => list
                     .split(',')
                     .map(|t| {
-                        t.trim()
-                            .parse::<f64>()
-                            .map_err(|_| anyhow!("--at must be a comma list of seconds: {t}"))
+                        t.trim().parse::<f64>().map_err(|_| {
+                            usage_error(format!("--at must be a comma list of seconds: {t}"))
+                        })
                     })
                     .collect::<Result<Vec<_>>>()?,
                 None => Vec::new(),
@@ -82,17 +90,8 @@ pub fn run(raw: &[String]) -> Result<i32> {
             return usage(error);
         }
         if let Some(outcome) = zones::attach(&mut report, &project.entry, &request)? {
-            for finding in &outcome.findings {
-                lines.push(format!(
-                    "{} {} {}: {} (t={})",
-                    finding["severity"].as_str().unwrap_or(""),
-                    finding["code"].as_str().unwrap_or(""),
-                    finding["element"].as_str().unwrap_or(""),
-                    finding["text"].as_str().unwrap_or(""),
-                    finding["time"]
-                ));
-            }
-            lines.extend(outcome.notes.iter().map(|n| format!("note: {n}")));
+            findings.extend(outcome.findings.iter().cloned());
+            notes.extend(outcome.notes.iter().cloned());
             if outcome.caption_errors || (args.has("--strict") && outcome.caption_collisions > 0) {
                 exit = 1;
             }
@@ -100,29 +99,90 @@ pub fn run(raw: &[String]) -> Result<i32> {
     }
     if args.has("--json") || !std::io::stdout().is_terminal() {
         println!("{}", serde_json::to_string_pretty(&report)?);
-    } else if ok {
-        println!(
-            "ok: {} | {}x{} | {:.1} s | {} elements",
-            project.entry.display(),
-            report["width"],
-            report["height"],
-            report["duration"].as_f64().unwrap_or(0.0),
-            report["elements"]
-        );
-        for line in &lines {
-            println!("{line}");
-        }
     } else {
-        println!("error: {}", report["error"].as_str().unwrap_or("unknown"));
-        if let Some(fix) = report["fix"].as_str() {
-            println!("fix:   {fix}");
-        }
+        summary(&project.entry, &report, &findings, &notes, exit);
     }
     Ok(exit)
 }
 
+/// The terminal view of a check: verdict, composition facts, then layout findings and notes.
+fn summary(entry: &Path, report: &Value, findings: &[Value], notes: &[String], exit: i32) {
+    let style = Style::out();
+    let name = display_path(entry);
+    if report["ok"] != true {
+        println!("{}", ui::line(style, Mark::Fail, &name, "invalid"));
+        println!(
+            "    {}  {}",
+            style.red("error"),
+            report["error"].as_str().unwrap_or("unknown")
+        );
+        if let Some(fix) = report["fix"].as_str() {
+            println!("    {}    {fix}", style.cyan("fix"));
+        }
+        return;
+    }
+    let verdict = if exit == 0 { Mark::Ok } else { Mark::Fail };
+    let word = if exit == 0 {
+        "valid"
+    } else {
+        "valid, but a caption-zone finding fails the check"
+    };
+    println!("{}", ui::line(style, verdict, &name, word));
+    for row in ui::rows(
+        style,
+        4,
+        &[
+            (
+                "Canvas",
+                format!("{}x{}", report["width"], report["height"]),
+            ),
+            (
+                "Duration",
+                format!("{:.1} s", report["duration"].as_f64().unwrap_or(0.0)),
+            ),
+            ("Elements", report["elements"].to_string()),
+        ],
+    ) {
+        println!("{row}");
+    }
+    if !findings.is_empty() {
+        let label = if findings.len() == 1 {
+            "finding"
+        } else {
+            "findings"
+        };
+        println!(
+            "\n{}",
+            ui::heading(style, &format!("Layout · {} {label}", findings.len()))
+        );
+        for finding in findings {
+            let mark = match finding["severity"].as_str() {
+                Some("error") => Mark::Fail,
+                _ => Mark::Warn,
+            };
+            let subject = format!(
+                "{} {}",
+                finding["code"].as_str().unwrap_or(""),
+                finding["element"].as_str().unwrap_or("")
+            );
+            let detail = format!(
+                "\"{}\" at {} s",
+                finding["text"].as_str().unwrap_or(""),
+                finding["time"]
+            );
+            println!("{}", ui::line(style, mark, subject.trim_end(), &detail));
+        }
+    }
+    for note in notes {
+        println!("{}", ui::line(style, Mark::Info, note, ""));
+    }
+}
+
 /// Bad flags or values: print the problem and exit with code 2.
 fn usage(error: anyhow::Error) -> Result<i32> {
-    eprintln!("error: {error:#}");
-    Ok(2)
+    let error = match error.downcast::<super::args::UsageError>() {
+        Ok(usage) => usage.into(),
+        Err(other) => usage_error(format!("{other:#}")),
+    };
+    Ok(super::print_error(&error, Some("check")))
 }
