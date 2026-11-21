@@ -490,12 +490,16 @@ fn mesh(node: &NodeRef, total: &mut usize, vars: Option<&Vars>) -> Result<NodeKi
                 bail!("a mesh may have at most {MAX_MESH_TRIANGLES} triangles");
             }
             let positions = vertices
-                .chunks_exact(3)
-                .map(|c| [c[0] as f32, c[1] as f32, c[2] as f32])
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .map(|c| c.map(|v| v as f32))
                 .collect();
             let triangles = indices
-                .chunks_exact(3)
-                .map(|c| [c[0] as u32, c[1] as u32, c[2] as u32])
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .map(|c| c.map(|v| v as u32))
                 .collect();
             (Mesh::custom(positions, triangles)?, "custom")
         }

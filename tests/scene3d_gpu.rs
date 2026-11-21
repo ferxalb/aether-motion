@@ -54,7 +54,7 @@ fn gpu_output_matches_the_cpu_within_tolerance() {
         let mut far = 0;
         let mut total = 0_u64;
         let mut peak = 0;
-        for (a, b) in cpu.chunks_exact(4).zip(gpu.chunks_exact(4)) {
+        for (a, b) in cpu.as_chunks::<4>().0.iter().zip(gpu.as_chunks::<4>().0) {
             let d = (0..3).map(|i| a[i].abs_diff(b[i])).max().unwrap();
             total += u64::from(d);
             peak = peak.max(d);
