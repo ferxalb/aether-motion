@@ -2,7 +2,7 @@
 //!
 //! `parse_file` (and `parse_file_with`, which takes variable values) is the facade. Submodules: `html` (node helpers), `css` (stylesheet, selectors, cascade,
 //! variables), `values` (value parsers), `style` (property groups into `Style`), `animation`
-//! (CSS animation, `data-hf-keyframes`, and `data-hf-camera` into motion tracks), `split/` (`data-hf-split` kinetic text: pieces, entrance motion, line rows, and the wrap plan of the two-pass parse), `effects` (`data-hf-bloom` and per-element `data-hf-motion-blur`), `audio` (`<audio>` clips for the mixer), `speed` (`data-hf-speed` and `data-hf-speed-ramp` on `<video>` and `<audio>`), `captions` (`data-hf-captions` timed captions from a transcript), `counter` (`data-hf-counter` animated numbers; `data-hf-reveal` lives in `animation/reveal.rs`), `transition` (`data-hf-transition` scene transitions), `scenes` (external scene instances: reuse of compiled scenes, canvas fit, dependency lists), `variables` (`data-composition-variables` declarations and their `data-var-*` bindings, applied to the DOM first), `sequence` (image-sequence indexing), `filmic` (root tone controls), `tree` (DOM walk), `timeline` (`data-start`).
+//! (CSS animation, `data-hf-keyframes`, and `data-hf-camera` into motion tracks), `split/` (`data-hf-split` kinetic text: pieces, entrance motion, line rows, and the wrap plan of the two-pass parse), `effects` (`data-hf-bloom` and per-element `data-hf-motion-blur`), `audio` (`<audio>` clips for the mixer), `speed` (`data-hf-speed` and `data-hf-speed-ramp` on `<video>` and `<audio>`), `captions` (`data-hf-captions` timed captions from a transcript), `counter` (`data-hf-counter` animated numbers; `data-hf-reveal` lives in `animation/reveal.rs`), `transition` (`data-hf-transition` scene transitions), `scenes` (external scene instances: reuse of compiled scenes, canvas fit, dependency lists), `variables` (`data-composition-variables` declarations and their `data-var-*` bindings, applied to the DOM first), `sequence` (image-sequence indexing), `filmic` (root tone controls), `space` (`data-hf-space` stages, 3D plane values, and their tree checks), `tree` (DOM walk), `timeline` (`data-start`).
 
 mod animation;
 mod audio;
@@ -17,6 +17,7 @@ mod reads;
 mod rich_text;
 mod scenes;
 mod sequence;
+mod space;
 mod speed;
 mod split;
 mod style;
@@ -369,6 +370,8 @@ fn parse_pass(
                 p.element.motion = motion_from_camera(rest, &p.camera.frames);
             }
         }
+        space::finish_depth(&mut p.element, &p.keyframes, &p.camera, idx == 0, clip_len)
+            .with_context(|| format!("2.5D values on {label}"))?;
         if let Some(path) = p.motion_path.take() {
             if idx == 0 {
                 bail!("data-hf-motion-path cannot be on the root; add a container inside it");
@@ -468,6 +471,7 @@ fn parse_pass(
     dependencies.sort();
     dependencies.dedup();
     check_blend_isolation(&elements)?;
+    space::check_spaces(&elements)?;
     effects::check_layer_blur(&elements, motion_blur)?;
     let background = match elements[0].style.background {
         Some(Background::Solid(color)) => color,

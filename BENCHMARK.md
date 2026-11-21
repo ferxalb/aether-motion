@@ -1334,3 +1334,42 @@ newest are covered.
   with the same frames drawn in full (fades, translucent roots, pushes, `contain` and `cover`
   fits, moving and filtered hosts, backdrop blur and blend modes inside the cover, and a
   fractional `--scale`).
+
+## 2.5D spaces (2026-11-20)
+
+Release builds (`cargo build --release`) of the commit before this change and of the change, on
+one generic 4-core Linux container. Each command ran under `nice -n 10`, alternating binaries;
+wall time, user CPU, and max RSS come from `getrusage` of the child process.
+
+**Existing 2D compositions.** No 2D drawing path changed; elements outside a space only gain zero
+2.5D state, and a renderer without a `data-hf-space` builds no space index.
+
+| Command (3 runs) | Baseline wall / user / max RSS | 2.5D wall / user / max RSS |
+| --- | ---: | ---: |
+| `bench examples/premium-promo.html --frame 0 --count 20 --threads 1` | 0.88–0.95 s / 0.85–0.92 s / 52–53 MB | 0.91–0.95 s / 0.87–0.89 s / 53 MB |
+| `bench examples/cinematic-camera-rig-6s.html --frame 60 --count 20 --threads 1` | 10.36–10.69 s / 10.22–10.48 s / 149–152 MB | 9.92–10.16 s / 9.85–9.98 s / 142–149 MB |
+| `bench examples/cinematic-dystopia.html --frame 30 --count 20 --threads 1` | 1.96–2.12 s / 1.92–2.08 s / 63 MB | 1.96–2.31 s / 1.93–2.25 s / 63–64 MB |
+| `check examples/one-night/index.html --safe-zone off --samples 1` | 0.14–0.15 s / 0.12–0.14 s / 26 MB | 0.14–0.22 s / 0.13–0.21 s / 26 MB |
+| `render examples/cinematic-camera-rig-6s.html --fps 30 --threads 4` (1 run) | 27.04 s / 77.55 s / 698 MB | 26.59 s / 75.90 s / 692 MB |
+
+All differences are within run-to-run noise. The camera-rig MP4 is byte-identical to the baseline,
+170 PNG stills (frames 0, 1/3, 1/2, 2/3, and last at 30 fps of all 34 other examples) are
+byte-identical, and `check` prints identical JSON for all 33 top-level examples.
+
+**The 2.5D example.** `examples/depth-lantern-valley.html` (1920x1080, 180 frames, 16 planes; one
+tilted lake split by the BSP order where the ridges and reeds stand on it):
+
+| Command | Wall / user / max RSS |
+| --- | ---: |
+| `render --fps 30 --threads 1` | 75.82 s / 73.55 s / 299 MB |
+| `render --fps 30 --threads 4` | 27.72 s / 76.34 s / 798 MB |
+| `bench --frame 60 --count 15 --threads 1` | 4.59 s raster (306 ms per frame) |
+
+`AETHER_PROFILE=1` attributes 67 ms per frame to drawing the lake's layer (`plane-layer`, two
+passes of a four-stop gradient over about 1.5 times its on-screen area) and 94 ms to warping its
+four fragments (`plane-warp`, trilinear where minified); everything else costs what it did with
+three separate lake strips (152 ms). Sizing the layer by the plane's on-screen area instead of the
+frame cut the frame from 375 to 306 ms, and drawing rows only across each fragment's projected
+outline keeps the warp proportional to the visible area. The one- and four-thread exports are
+byte-identical; `tests/space.rs` also checks reverse-order frames and a segmented export
+assembled from part files against the one-thread MP4.

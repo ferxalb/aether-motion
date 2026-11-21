@@ -44,7 +44,17 @@ impl<'a> Renderer<'a> {
         ps: f32,
         assigned: Option<Rect>,
     ) -> (Rect, f32) {
-        let state = self.current[idx];
+        if let Some((plane, rect, cumulative)) = self.plane_pose {
+            if plane == idx {
+                return (rect, cumulative);
+            }
+        }
+        let mut state = self.current[idx];
+        if self.is_space_camera(idx) {
+            // A space's camera moves the 3D camera (see `space.rs`), not the space's own box.
+            let base = self.composition.elements[idx].motion.base;
+            (state.x, state.y, state.scale) = (base.x, base.y, base.scale);
+        }
         let mut rect = self.place(idx, parent, ps, assigned);
         rect.x += state.x * ps;
         rect.y += state.y * ps;
@@ -281,6 +291,9 @@ impl<'a> Renderer<'a> {
         } else {
             Vec::new()
         };
+        if self.is_stage(idx) {
+            return self.draw_space(idx, rect, cumulative);
+        }
         let count = self.children[idx].len();
         // Children painted before one that covers the frame with an opaque scene are not seen.
         let first = (0..count)
@@ -290,6 +303,10 @@ impl<'a> Renderer<'a> {
         self.stats.occluded += first;
         for i in first..count {
             let child = self.children[idx][i];
+            // Planes of a space are drawn by the space, in depth order.
+            if self.is_space_plane(child) {
+                continue;
+            }
             let (parent, slot) = self.child_frame(idx, rect, cumulative, &layout, child);
             self.draw_node(child, parent, cumulative, slot)?;
         }

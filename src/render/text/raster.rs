@@ -266,7 +266,9 @@ impl<'a> Renderer<'a> {
             } else {
                 0.0
             };
-        if self.probe.is_some() && self.layer_depth == 0 {
+        if self.probe.is_some()
+            && crate::render::probe::recordable(&self.probe_maps, self.layer_depth)
+        {
             let (mut x0, mut x1) = (f32::INFINITY, f32::NEG_INFINITY);
             for line in &run.lines {
                 let pen = rect.x * scale
@@ -282,11 +284,12 @@ impl<'a> Renderer<'a> {
                 (x1 / scale + sx).min(clip[2]),
                 ((top + total) / scale + sy).min(clip[3]),
             ];
-            if let (true, true, Some(boxes)) = (
-                x0 < x1,
-                rect[0] < rect[2] && rect[1] < rect[3],
-                self.probe.as_mut(),
-            ) {
+            let rect = if rect[0] < rect[2] && rect[1] < rect[3] {
+                crate::render::probe::project(&self.probe_maps, rect)
+            } else {
+                None
+            };
+            if let (true, Some(rect), Some(boxes)) = (x0 < x1, rect, self.probe.as_mut()) {
                 boxes.push(crate::render::probe::TextBox { element: idx, rect });
             }
         }

@@ -1,7 +1,8 @@
 //! `data-hf-keyframes` JSON attribute parsing: offsets, opacity, easing, and filter amounts
 //! (`blur`, `brightness`, `contrast`, `saturate`, `grayscale`, `sepia`, `hueRotate`, `invert`), and
 //! the `glitch` (0 to 1) and `rgbSplit` (px) pixel effects, the `data-hf-bloom` intensity
-//! (`bloom`, 0 to 8), and `clipPath` shapes.
+//! (`bloom`, 0 to 8), `clipPath` shapes, and the 3D values of planes in a `data-hf-space` (`z` in
+//! px, `rotateX` and `rotateY` in degrees).
 use crate::model::{Easing, FilterChannel, Keyframe};
 use crate::parse::animation::timing::parse_keyframe_easing;
 use crate::parse::values::clip::parse_clip_path;
@@ -23,6 +24,7 @@ pub(in crate::parse) fn parse_keyframes(raw: &str) -> Result<Vec<Keyframe>> {
         filters: [None; 8],
         effects: [None; 3],
         clip: None,
+        depth: [None; 3],
     };
     let mut keyframes = Vec::with_capacity(frames.len());
     for (index, frame) in frames.into_iter().enumerate() {
@@ -32,6 +34,7 @@ pub(in crate::parse) fn parse_keyframes(raw: &str) -> Result<Vec<Keyframe>> {
                 if !filter && !matches!(
                         key.as_str(),
                         "at" | "x" | "y" | "opacity" | "easing" | "glitch" | "rgbSplit" | "bloom" | "clipPath"
+                        | "z" | "rotateX" | "rotateY"
                     ) {
                     bail!("unknown field: {key}");
                 }
@@ -106,6 +109,18 @@ pub(in crate::parse) fn parse_keyframes(raw: &str) -> Result<Vec<Keyframe>> {
                     *slot = Some(n as f32);
                 }
             }
+            let mut depth = [None; 3];
+            for (slot, key) in depth.iter_mut().zip(["z", "rotateX", "rotateY"]) {
+                if let Some(value) = frame.get(key) {
+                    let n = value
+                        .as_f64()
+                        .filter(|n| n.abs() <= crate::parse::space::MAX_DEPTH_VALUE)
+                        .ok_or_else(|| {
+                            anyhow!("{key} must be a number of at most 100,000 (px or degrees)")
+                        })?;
+                    *slot = Some(n as f32);
+                }
+            }
             let clip = match frame.get("clipPath") {
                 None => None,
                 Some(value) => {
@@ -127,6 +142,7 @@ pub(in crate::parse) fn parse_keyframes(raw: &str) -> Result<Vec<Keyframe>> {
                 filters,
                 effects,
                 clip,
+                depth,
             })
         })()
         .with_context(|| format!("keyframe {}", index + 1))?;

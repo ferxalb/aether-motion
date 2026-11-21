@@ -1,0 +1,91 @@
+<!-- Lantern Valley: a six-second demonstration of native 2.5D spaces (AETHER Motion 0.1.9).
+     One perspective space holds every layer as a flat plane at its own depth: sky, moon, two ridges, a
+     lake floor tilted flat (rotateX 90) that the ridges stand on (the depth order splits it where
+     they meet), floating lanterns, and foreground reeds. A single camera
+     trucks right and dollies 760 px into the valley, so parallax and growth come from real depth;
+     the near end of the lake passes through the near clipping distance. The title card swings in on
+     rotateY and carries a nested plane 60 px in front of it, which separates from the card as it
+     turns. Everything is a function of time; there are no external assets. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lantern Valley — 2.5D space</title>
+<style>
+  .plane { position: absolute; }
+  #valley { position: absolute; left: 0px; top: 0px; width: 1920px; height: 1080px; }
+  /* Overscanned for the widest view: depth shrinks far planes, and the camera trucks 300 px. */
+  #sky { left: -3640px; top: -2160px; width: 9200px; height: 5000px;
+         background: linear-gradient(to bottom, #060a20 0%, #121844 30%, #35346a 47%, #a8737c 56%, #f2b38c 60.5%, #b77a78 66%, #b77a78 100%); }
+  #moon { left: 2400px; top: -720px; width: 520px; height: 520px; border-radius: 260px;
+          background: radial-gradient(circle farthest-side, #fffaf0 0%, #fde9c8 40%, rgba(253, 226, 186, 0.32) 46%, rgba(253, 226, 186, 0) 100%); }
+  #haze { left: -2540px; top: 540px; width: 7000px; height: 500px;
+          background: linear-gradient(to bottom, rgba(240, 170, 140, 0) 0%, rgba(240, 170, 140, 0.30) 55%, rgba(240, 170, 140, 0) 100%); }
+  #far-ridge { left: -2240px; top: 170px; width: 6400px; height: 700px; }
+  #mid-ridge { left: -1440px; top: 230px; width: 4800px; height: 640px; }
+  /* The lake lies flat (rotateX 90) at y = 330 px, from z = -3200 (its top edge) to z = 800. */
+  #lake { left: -2840px; top: -1130px; width: 7600px; height: 4000px;
+          background: linear-gradient(to bottom, #b77a78 0%, #946466 20%, #63454c 47.5%, #070a1c 100%); }
+  .lantern { position: absolute; width: 34px; height: 50px; border-radius: 10px;
+             background: linear-gradient(to bottom, #fff3c8, #ffb45a); }
+  #reeds-left { left: -490px; top: 170px; width: 900px; height: 700px; }
+  #reeds-right { left: 1560px; top: 170px; width: 900px; height: 700px; }
+  #card { left: 540px; top: 310px; width: 980px; height: 300px; border-radius: 26px;
+          background: rgba(9, 12, 34, 0.74); border: 2px solid rgba(255, 214, 160, 0.55);
+          box-shadow: 0px 30px 80px rgba(0, 0, 0, 0.45); }
+  #title { position: absolute; left: 0px; top: 58px; width: 980px; font-size: 92px; font-weight: 700;
+           letter-spacing: 14px; color: #ffe7c2; text-align: center; line-height: 1.15; }
+  #tag { position: absolute; left: 250px; top: 212px; width: 480px; height: 56px; border-radius: 28px;
+         background: #ffb45a; box-shadow: 0px 10px 30px rgba(0, 0, 0, 0.35); }
+  #tag p { position: absolute; left: 0px; top: 13px; width: 480px; font-size: 26px; font-weight: 600;
+           letter-spacing: 3px; color: #1a1230; text-align: center; }
+</style>
+</head>
+<body>
+<div data-composition-id="lantern-valley" data-width="1920" data-height="1080" data-duration="6"
+     data-hf-exposure=".08" data-hf-highlight-rolloff=".4" data-hf-shadow-toe=".15"
+     data-hf-vignette=".38" data-hf-grain=".04" style="background:#060a20">
+  <!-- One perspective space; its camera looks from 1200 px in front of the stage plane. -->
+  <div id="valley" class="clip" data-start="0" data-duration="6" data-track-index="1"
+       data-hf-space="perspective" data-hf-perspective="1200"
+       data-hf-camera='[{"at":0,"x":-220,"y":-30,"zoom":1,"z":0},{"at":6,"x":80,"y":12,"z":760,"easing":"cubic-bezier(0.45, 0, 0.2, 1)"}]'>
+    <div id="sky" class="plane" data-hf-z="-4000"></div>
+    <div id="moon" class="plane" data-hf-z="-3600" data-hf-bloom="1.3" data-hf-bloom-radius="60" data-hf-bloom-threshold="0.6"></div>
+    <svg id="far-ridge" class="plane" data-hf-z="-2400" width="6400" height="700" viewBox="0 0 6400 700" preserveAspectRatio="none">
+      <path d="M0 700 L0 142 L100 140 L200 162 L300 169 L400 154 L500 146 L600 175 L700 229 L800 264 L900 247 L1000 191 L1100 144 L1200 145 L1300 190 L1400 240 L1500 268 L1600 285 L1700 327 L1800 408 L1900 498 L2000 546 L2100 529 L2200 469 L2300 418 L2400 399 L2500 395 L2600 371 L2700 321 L2800 274 L2900 270 L3000 311 L3100 356 L3200 357 L3300 305 L3400 234 L3500 186 L3600 169 L3700 154 L3800 114 L3900 61 L4000 37 L4100 77 L4200 166 L4300 255 L4400 303 L4500 313 L4600 320 L4700 351 L4800 391 L4900 404 L5000 372 L5100 323 L5200 307 L5300 347 L5400 417 L5500 469 L5600 476 L5700 457 L5800 448 L5900 456 L6000 454 L6100 404 L6200 305 L6300 201 L6400 142 L6400 700 Z" fill="#3a3c6e"/>
+    </svg>
+    <div id="haze" class="plane" data-hf-z="-2380"></div>
+    <svg id="mid-ridge" class="plane" data-hf-z="-1300" width="4800" height="640" viewBox="0 0 4800 640" preserveAspectRatio="none">
+      <path d="M0 640 L0 74 L75 82 L150 112 L225 150 L300 182 L375 206 L450 235 L525 280 L600 345 L675 414 L750 465 L825 483 L900 465 L975 430 L1050 399 L1125 386 L1200 389 L1275 395 L1350 390 L1425 372 L1500 353 L1575 348 L1650 364 L1725 391 L1800 408 L1875 394 L1950 347 L2025 278 L2100 211 L2175 162 L2250 133 L2325 115 L2400 93 L2475 64 L2550 40 L2625 37 L2700 65 L2775 117 L2850 174 L2925 211 L3000 220 L3075 206 L3150 188 L3225 185 L3300 200 L3375 223 L3450 241 L3525 247 L3600 250 L3675 266 L3750 308 L3825 374 L3900 446 L3975 499 L4050 518 L4125 506 L4200 477 L4275 451 L4350 434 L4425 420 L4500 396 L4575 354 L4650 301 L4725 257 L4800 239 L4800 640 Z" fill="#1b1e46"/>
+    </svg>
+    <div id="lake" class="plane" data-hf-z="-1200" data-hf-rotate-x="90"></div>
+    <div class="lantern" data-hf-bloom="1.6" data-hf-bloom-radius="30" data-hf-z="-1900" style="left:443px; top:635px"
+         data-hf-keyframes='[{"at":0,"y":0},{"at":6,"y":-60,"easing":"ease-in-out"}]'></div>
+    <div class="lantern" data-hf-bloom="1.6" data-hf-bloom-radius="30" data-hf-z="-1500" style="left:1243px; top:575px"
+         data-hf-keyframes='[{"at":0,"y":0},{"at":6,"y":-80,"easing":"ease-in-out"}]'></div>
+    <div class="lantern" data-hf-bloom="1.6" data-hf-bloom-radius="30" data-hf-z="-900" style="left:793px; top:695px"
+         data-hf-keyframes='[{"at":0,"y":0},{"at":6,"y":-50,"easing":"ease-in-out"}]'></div>
+    <div class="lantern" data-hf-bloom="1.6" data-hf-bloom-radius="30" data-hf-z="-600" style="left:1463px; top:655px"
+         data-hf-keyframes='[{"at":0,"y":0},{"at":6,"y":-70,"easing":"ease-in-out"}]'></div>
+    <div class="lantern" data-hf-bloom="1.6" data-hf-bloom-radius="30" data-hf-z="-200" style="left:243px; top:715px"
+         data-hf-keyframes='[{"at":0,"y":0},{"at":6,"y":-55,"easing":"ease-in-out"}]'></div>
+    <div class="lantern" data-hf-bloom="1.6" data-hf-bloom-radius="30" data-hf-z="100" style="left:493px; top:745px"
+         data-hf-keyframes='[{"at":0,"y":0},{"at":6,"y":-65,"easing":"ease-in-out"}]'></div>
+    <!-- The title card swings in on rotateY; the tag is a nested plane 60 px in front of it. -->
+    <div id="card" class="plane clip" data-start="3.1" data-duration="2.9" data-hf-fade-in="0.5"
+         data-hf-z="-760" data-hf-keyframes='[{"at":0,"z":-980,"rotateY":-68},{"at":1.8,"z":-760,"rotateY":0,"easing":"ease-out-cubic"}]'>
+      <h1 id="title" data-hf-split="chars" data-hf-stagger="0.035" data-hf-split-duration="0.7" data-hf-split-distance="40">LANTERN VALLEY</h1>
+      <div id="tag" data-hf-z="60">
+        <p>NATIVE 2.5D · ONE CAMERA</p>
+      </div>
+    </div>
+    <svg id="reeds-left" class="plane" data-hf-z="150" width="900" height="700" viewBox="0 0 900 700" preserveAspectRatio="none">
+      <path d="M36 700 Q39 425 29 200 Q44 425 50 700 Z M108 700 Q121 491 131 320 Q128 491 126 700 Z M157 700 Q181 403 210 160 Q189 403 179 700 Z M235 700 Q225 469 186 280 Q231 469 249 700 Z M284 700 Q285 381 265 120 Q292 381 302 700 Z M333 700 Q344 447 344 240 Q353 447 355 700 Z M411 700 Q426 359 446 80 Q432 359 425 700 Z M460 700 Q486 425 525 200 Q493 425 478 700 Z M509 700 Q507 491 478 320 Q516 491 531 700 Z M587 700 Q590 403 580 160 Q595 403 601 700 Z M636 700 Q649 469 659 280 Q656 469 654 700 Z M708 700 Q732 381 761 120 Q740 381 730 700 Z M763 700 Q753 447 714 240 Q759 447 777 700 Z M812 700 Q813 359 793 80 Q820 359 830 700 Z" fill="#03050e"/>
+    </svg>
+    <svg id="reeds-right" class="plane" data-hf-z="170" width="900" height="700" viewBox="0 0 900 700" preserveAspectRatio="none">
+      <path d="M44 700 Q59 403 79 160 Q65 403 58 700 Z M93 700 Q102 469 102 280 Q109 469 111 700 Z M165 700 Q168 381 148 120 Q176 381 187 700 Z M220 700 Q210 447 171 240 Q216 447 234 700 Z M292 700 Q314 359 343 80 Q321 359 310 700 Z M341 700 Q356 425 366 200 Q365 425 363 700 Z M396 700 Q399 491 389 320 Q404 491 410 700 Z M468 700 Q464 403 435 160 Q472 403 486 700 Z M517 700 Q545 469 584 280 Q554 469 539 700 Z M595 700 Q610 381 630 120 Q616 381 609 700 Z M644 700 Q653 447 653 240 Q660 447 662 700 Z M693 700 Q696 359 676 80 Q704 359 715 700 Z M771 700 Q761 425 722 200 Q767 425 785 700 Z M820 700 Q842 491 871 320 Q849 491 838 700 Z" fill="#03050e"/>
+    </svg>
+  </div>
+</div>
+</body>
+</html>

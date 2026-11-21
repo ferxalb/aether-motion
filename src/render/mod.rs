@@ -2,7 +2,7 @@
 //!
 //! Submodules: `draw` (scene traversal), `layout` (flex sizing and placement), `paint` (the `Surface`, fills, gradients, rotation and `overflow` layers,
 //! filters and blend modes), `text` (fonts, measurement, glyph painting), `shutter` (motion blur), `allocation` (checked buffer sizes),
-//! `geometry` and `frame_state` (shared small types), `occlusion` (siblings hidden under an opaque full-frame scene are skipped). `paint/video.rs` draws `<video>` frames.
+//! `geometry` and `frame_state` (shared small types), `occlusion` (siblings hidden under an opaque full-frame scene are skipped), `space` (2.5D spaces: plane transforms, depth order, and projection; tilted planes are warped by `paint/project.rs`). `paint/video.rs` draws `<video>` frames.
 //! A frame is drawn by `draw_scene` and finished by `finish_frame` (root color grade, filmic tone curve, vignette, grain).
 
 mod allocation;
@@ -15,6 +15,7 @@ mod occlusion;
 mod paint;
 pub mod probe;
 mod shutter;
+mod space;
 mod text;
 
 use crate::model::{Composition, Content, Element};
@@ -150,6 +151,13 @@ pub struct Renderer<'a> {
     fps: u32,
     /// Elements with `data-hf-motion-blur`, their subtrees, sample plans, and scratch buffers.
     layer_blur: layer_blur::LayerBlur,
+    /// Resting layout of the planes of every `data-hf-space` (see `space.rs`).
+    spaces: space::SpaceIndex,
+    /// Placement (`idx`, border box, scale) of the space plane being drawn, which replaces its own
+    /// placement and pose in `posed_rect`.
+    plane_pose: Option<(usize, Rect, f32)>,
+    /// Projective plane layers whose text the layout probe reports (see `probe.rs`).
+    probe_maps: Vec<probe::ProbeMap>,
 }
 
 pub(crate) fn check_image(path: &Path) -> Result<()> {
@@ -232,7 +240,7 @@ impl<'a> Renderer<'a> {
                 children
             })
             .collect();
-        Ok(Self {
+        let mut renderer = Self {
             composition,
             scale,
             surface: Surface::blank(width, height, scale, composition.background),
@@ -272,7 +280,12 @@ impl<'a> Renderer<'a> {
             bloom_scratch: paint::BloomScratch::default(),
             fps: shutter::SNAPSHOT_FPS,
             layer_blur: layer_blur::LayerBlur::new(composition),
-        })
+            spaces: space::SpaceIndex::default(),
+            plane_pose: None,
+            probe_maps: Vec::new(),
+        };
+        renderer.spaces = space::SpaceIndex::build(&mut renderer)?;
+        Ok(renderer)
     }
 
     pub fn dimensions(&self) -> (u32, u32) {

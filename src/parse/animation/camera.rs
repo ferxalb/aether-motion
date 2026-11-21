@@ -17,6 +17,8 @@ use std::collections::BTreeMap;
 const MIN_ZOOM: f64 = 0.05;
 const MAX_ZOOM: f64 = 50.0;
 const MAX_OFFSET: f64 = 1_000_000.0;
+/// 3D camera fields, allowed on the camera of a `data-hf-space`.
+pub(in crate::parse) const DEPTH_FIELDS: [&str; 4] = ["z", "rotateX", "rotateY", "rotate"];
 
 /// One camera pose: `zoom` (1 = neutral) centered on the point `(fx, fy)` px from the container center.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -32,6 +34,11 @@ pub(in crate::parse) struct CameraFrame {
     pub(in crate::parse) follow: Option<f64>,
     /// `easing` as written (`smooth` included); `None` when omitted.
     pub(in crate::parse) interp: Option<Interp>,
+    /// 3D camera values of a `data-hf-space` camera: `[z, rotateX, rotateY, rotate]` (dolly in px,
+    /// tilt, pan, and roll in degrees; inherited, 0 at first).
+    pub(in crate::parse) depth: [f32; 4],
+    /// Which of `depth` this keyframe gives.
+    pub(in crate::parse) given_depth: [bool; 4],
 }
 
 /// Whether the keyframes need the camera rig (smooth easing, framing anchor, or follow weight).
@@ -59,6 +66,8 @@ pub(in crate::parse) fn parse_camera(raw: &str) -> Result<Vec<CameraFrame>> {
         anchor: [None; 2],
         follow: None,
         interp: None,
+        depth: [0.0; 4],
+        given_depth: [false; 4],
     };
     let mut out = Vec::with_capacity(frames.len());
     for (index, frame) in frames.into_iter().enumerate() {
@@ -67,8 +76,8 @@ pub(in crate::parse) fn parse_camera(raw: &str) -> Result<Vec<CameraFrame>> {
                 if !matches!(
                     key.as_str(),
                     "at" | "zoom" | "x" | "y" | "easing" | "anchorX" | "anchorY" | "follow"
-                ) {
-                    bail!("unknown field: {key} (use at, zoom, x, y, easing, anchorX, anchorY, follow)");
+                ) && !DEPTH_FIELDS.contains(&key.as_str()) {
+                    bail!("unknown field: {key} (use at, zoom, x, y, easing, anchorX, anchorY, follow, and in a data-hf-space z, rotateX, rotateY, rotate)");
                 }
             }
             let number = |key: &str, fallback: f64| -> Result<f64> {
@@ -92,6 +101,14 @@ pub(in crate::parse) fn parse_camera(raw: &str) -> Result<Vec<CameraFrame>> {
             let fy = number("y", previous.fy as f64)?;
             if fx.abs() > MAX_OFFSET || fy.abs() > MAX_OFFSET {
                 bail!("x and y must be offsets of at most 1,000,000 px");
+            }
+            let mut depth = previous.depth;
+            for (slot, key) in depth.iter_mut().zip(DEPTH_FIELDS) {
+                let value = number(key, f64::from(*slot))?;
+                if value.abs() > MAX_OFFSET {
+                    bail!("{key} must be at most 1,000,000 (px or degrees)");
+                }
+                *slot = value as f32;
             }
             let interp = match frame.get("easing") {
                 None => None,
@@ -129,6 +146,8 @@ pub(in crate::parse) fn parse_camera(raw: &str) -> Result<Vec<CameraFrame>> {
                 anchor: [fraction("anchorX")?, fraction("anchorY")?],
                 follow,
                 interp,
+                depth,
+                given_depth: DEPTH_FIELDS.map(|key| frame.contains_key(key)),
             })
         })()
         .with_context(|| format!("camera keyframe {}", index + 1))?;
@@ -202,7 +221,7 @@ mod tests {
         assert!(parse_camera("[]").is_err());
         assert!(parse_camera(r#"[{"at":0,"zoom":0}]"#).is_err());
         assert!(parse_camera(r#"[{"at":1},{"at":1}]"#).is_err());
-        assert!(parse_camera(r#"[{"at":0,"rotate":3}]"#).is_err());
+        assert!(parse_camera(r#"[{"at":0,"roll":3}]"#).is_err());
         assert!(parse_camera(r#"[{"at":0,"anchorX":1.5}]"#).is_err());
     }
 
