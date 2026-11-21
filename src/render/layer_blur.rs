@@ -119,7 +119,12 @@ impl<'a> Renderer<'a> {
                     states_at(composition, last, &mut states);
                     let to = subset(&states, &subtree);
                     let (low, high) = MotionBlur::AUTO_SAMPLES;
-                    let travel = travel(&from, &to, short_side);
+                    let travel = travel(&from, &to, short_side).max(self.scene3d_travel(
+                        first,
+                        last,
+                        &states,
+                        Some(&subtree),
+                    ));
                     ((travel * self.scale / 2.0).ceil() as u32).clamp(low, high)
                 }
             };

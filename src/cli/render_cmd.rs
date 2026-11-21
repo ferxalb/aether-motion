@@ -21,7 +21,8 @@ pub fn write_png(renderer: &mut Renderer<'_>, output: &Path, frame: usize, fps: 
 }
 
 /// `render [file] [-o out.mp4|png] [--size 1080p|4k | --scale N] [--fps N] [--quality Q] [--frame N]
-/// [--variables JSON | --variables-file PATH] [--progress auto|json|off] [--force]`.
+/// [--variables JSON | --variables-file PATH] [--progress auto|json|off] [--3d-backend cpu|gpu|auto]
+/// [--force]`.
 pub fn run(raw: &[String]) -> Result<()> {
     let args = Args::parse(
         raw,
@@ -37,6 +38,7 @@ pub fn run(raw: &[String]) -> Result<()> {
             "--variables",
             "--variables-file",
             "--progress",
+            "--3d-backend",
         ],
         &["--force"],
     )?;
@@ -46,6 +48,9 @@ pub fn run(raw: &[String]) -> Result<()> {
         args.value("--variables-file"),
         &project.variables,
     )?;
+    if let Some(backend) = args.value("--3d-backend") {
+        crate::scene3d::backend::set_request(backend.parse()?);
+    }
     let composition = parse_file_with(&project.entry, &values)?;
     let fps = match args.number::<u64>("--fps")? {
         Some(fps) => aether_fps(fps)?,
@@ -135,6 +140,9 @@ pub fn run(raw: &[String]) -> Result<()> {
             })?;
         }
         _ => return Err(anyhow!("output must end in .png or .mp4")),
+    }
+    if let (_, Some(reason)) = crate::scene3d::backend::status() {
+        eprintln!("note: 3D scenes were drawn on the CPU: {reason}");
     }
     let bytes = fs::metadata(&output).map(|m| m.len()).unwrap_or(0);
     println!(

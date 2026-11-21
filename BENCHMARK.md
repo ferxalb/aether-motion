@@ -1373,3 +1373,73 @@ frame cut the frame from 375 to 306 ms, and drawing rows only across each fragme
 outline keeps the warp proportional to the visible area. The one- and four-thread exports are
 byte-identical; `tests/space.rs` also checks reverse-order frames and a segmented export
 assembled from part files against the one-thread MP4.
+
+## 0.2.0: native low-poly 3D (2026-11-21)
+
+Release builds of the commit before this change (baseline) and of the change, on one generic 4-core
+Linux cloud container. Wall time, user CPU, and peak RSS come from `getrusage` of the child process;
+`bench` numbers are the raster time it prints; `AETHER_PROFILE=1` gives the `scene-3d` phase.
+
+**Existing 2D and 2.5D compositions.** No existing drawing path changed: a scene adds one
+`Content` variant, one `FrameState` field (0 for every other element), and an empty per-renderer
+workspace that allocates nothing until a scene is drawn.
+
+| `bench --frame 30 --count 20 --size 1080p` (2 runs) | Baseline | 0.2.0 |
+| --- | ---: | ---: |
+| `examples/premium-promo.html` | 0.803 / 0.873 s | 0.868 / 0.855 s |
+| `examples/depth-lantern-valley.html` | 4.994 / 4.925 s | 4.949 / 4.941 s |
+| `examples/cinematic-camera-rig-6s.html` | 3.989 / 4.121 s | 3.900 / 4.040 s |
+
+All differences are within run-to-run noise. 96 PNG stills (frames 0, 37, and 95 at `--scale 0.5`
+of every top-level example) and four MP4 exports (`depth-lantern-valley`, `premium-promo`,
+`transitions`, `layer-motion-blur` at `--scale 0.5 --threads 2`) are byte-identical to the baseline.
+`check` output gains an empty `scenes3d` array.
+
+**The 3D example.** `examples/lighthouse-isle-3d.html` (1920x1080, 300 frames at 30 fps, 2,594
+triangles, `data-hf-3d-antialias="3"`, bloom on the viewport and the sun, a moving sky gradient):
+
+| `render --size 1080p --priority normal` | Wall / user / peak RSS |
+| --- | ---: |
+| `--threads 1` | 68.6 s / 65.2 s / 113 MiB |
+| `--threads 2` | 34.8 s / 65.9 s / 220 MiB |
+| `--threads 4` | 20.3 s / 65.8 s / 366 MiB |
+| same composition without geometry, `--threads 1` | 32.8 s / 31.5 s / 121 MiB |
+| same composition without geometry, `--threads 4` | 10.2 s / 31.9 s / 345 MiB |
+
+The one-, two-, and four-thread MP4s are byte-identical (1.8 MB). Total CPU does not grow with
+threads. Peak RSS grows by about 85 MiB per worker with or without geometry: that is the existing
+2D renderer (frame, bloom effect layers, gradient caches). The 3D path adds about 5 MiB per worker
+at 1080p: the triangle list, one 64 px tile of samples (at most 512 KiB), and the one-entry memo of
+the resolved region (8 MiB at 1080p, capped at 64 MiB). At 4K (`bench --count 10 --size 4k`), peak
+RSS is 185 MiB with geometry and 182 MiB without.
+
+**Cost by supersampling** (`scene-3d` per frame, one thread, the example without bloom so each
+frame draws the scene once):
+
+| `data-hf-3d-antialias` | 1080p | 4K |
+| --- | ---: | ---: |
+| 1 | 26.8 ms | 98.6 ms |
+| 2 (default) | 37.0 ms | 150.7 ms |
+| 3 | 61.2 ms | 243.6 ms |
+| 4 | 95.1 ms | 340.2 ms |
+
+**Optimizations, profiled first** (`bench --frame 150 --count 15 --size 1080p --threads 1`, with
+bloom, so the viewport is an effect layer drawn on black and on white):
+
+| Step | `scene-3d` per frame | Frame |
+| --- | ---: | ---: |
+| First version: per-sample edge tests over each triangle's bounding box, two full rasterizations | 207 ms | 369 ms |
+| Exact span solver per sample row (integer ceil/floor of each edge inequality) and a one-entry memo that replays an identical draw | 92 ms | 261 ms |
+| Coverage read from depth (no color clear) and an opaque fast path when compositing | 62 ms | 230 ms |
+
+Every step keeps output byte-identical: the span solver is tested against the per-sample loop on 400
+random triangles, the memo replays the rows it recorded, a sample is covered exactly when its
+reversed depth is above 0, and the fast path writes what `blend_pixel` writes at full coverage. The
+stills of the example were compared before and after each step.
+
+**GPU backend.** `--features gpu` on Mesa lavapipe (Vulkan implemented on the CPU, so these are not
+hardware GPU timings): 56 ms per `scene-3d` call at 1080p including readback. Against the CPU, at
+most 20 of 2,073,600 pixels of the example differ by more than 1% (peak 24 levels, all on
+triangle edges); `tests/scene3d_gpu.rs` measured a mean difference of 0.0004 levels or less and at
+most 6 of 129,600 pixels more than 2 levels apart at 480x270. Without an adapter the GPU build falls
+back to the CPU, byte-identical to the CPU build.

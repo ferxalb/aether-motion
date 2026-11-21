@@ -266,6 +266,16 @@ impl<'a> Renderer<'a> {
                 alpha,
                 zoom,
             )?,
+            Content::Scene3d(scene) => {
+                let border = element.style.border_width * cumulative;
+                let padding_box = Rect {
+                    x: rect.x + border,
+                    y: rect.y + border,
+                    w: (rect.w - 2.0 * border).max(0.0),
+                    h: (rect.h - 2.0 * border).max(0.0),
+                };
+                self.draw_scene3d(idx, scene, padding_box, cumulative, alpha)?
+            }
             Content::Video(source) => self.draw_video(
                 idx,
                 source,

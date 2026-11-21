@@ -136,6 +136,7 @@ The [premium promo](examples/premium-promo.html) combines titles, feature cards,
 | Reusable scenes and a match dissolve | [One Night](examples/one-night/index.html) |
 | Subject tracking and shot presets | [Camera rig](examples/cinematic-camera-rig-6s.html) |
 | 2.5D planes and a perspective camera | [Lantern Valley](examples/depth-lantern-valley.html) |
+| Native low-poly 3D: meshes, lights, a 3D camera | [Lighthouse Isle](examples/lighthouse-isle-3d.html) |
 | Parallax, image sequences, and bloom | [The Morning Shift](examples/cinematic-dystopia.html) |
 | Wrapped kinetic typography | [Kinetic text](examples/kinetic-wrap.html) |
 | Word-highlighted captions | [Captions](examples/captions.html) |
@@ -156,6 +157,7 @@ Native MP4 exports use H.264 at up to 60 fps with limited-range BT.709 yuv420p. 
 
 - Supported HTML, CSS, and motion attributes ([Composition reference](AGENTS.md), [Limits](limits.md))
 - Importing, fitting, and reusing scenes ([Motion Scenes](docs/motion-scenes.md))
+- Native 3D scenes, cameras, lights, backends, and limits ([3D](docs/3d.md))
 - Source layout, resource limits, and rendering internals ([Architecture](docs/architecture.md))
 - Performance measurements and methods ([Benchmarks](BENCHMARK.md))
 - Release history and publishing workflow ([Changelog](CHANGELOG.md), [Release process](docs/releasing.md))
@@ -168,6 +170,7 @@ Install the skill collection with `npx skills add ferxalb/aether-motion`, then s
 | --- | --- |
 | `aether-motion` | Creating and editing compositions |
 | `aether-motion-cinematic` | Directing consistent, cinematic scenes, characters, and camera work |
+| `aether-motion-3d` | Building native low-poly 3D shots: meshes, lights, and a 3D camera |
 | `aether-motion-cli` | Checking, inspecting, and rendering compositions |
 | `aether-motion-blocks` | Finding and adapting ready-made blocks and themes |
 | `aether-motion-svg` | Creating and placing static SVG artwork |

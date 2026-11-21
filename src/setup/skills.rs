@@ -19,6 +19,10 @@ pub const FILES: &[(&str, &str)] = &[
         include_str!("../../skills/aether-motion/references/composition-contract.md"),
     ),
     (
+        "aether-motion-3d/SKILL.md",
+        include_str!("../../skills/aether-motion-3d/SKILL.md"),
+    ),
+    (
         "aether-motion-blocks/SKILL.md",
         include_str!("../../skills/aether-motion-blocks/SKILL.md"),
     ),

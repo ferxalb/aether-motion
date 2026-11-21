@@ -215,7 +215,21 @@ pub(in crate::parse) fn walk(
         }
         out[camera].element.layout.has_parallax |= factor != 1.0;
     }
-    let content = if let Some(sequence) = sequence {
+    let scene3d = if super::scene3d::is_host(node) {
+        Some(
+            super::scene3d::parse_scene(node, &tag, &vars).with_context(|| {
+                format!(
+                    "data-hf-3d scene <{tag}> ({})",
+                    attr(node, "id").as_deref().unwrap_or("no id")
+                )
+            })?,
+        )
+    } else {
+        None
+    };
+    let content = if let Some(scene) = scene3d {
+        Content::Scene3d(std::sync::Arc::new(scene))
+    } else if let Some(sequence) = sequence {
         Content::Sequence(sequence)
     } else if tag == "svg" {
         let markup = inline_svg_markup(node)?;
@@ -417,10 +431,11 @@ pub(in crate::parse) fn walk(
     if let (Some(spec), Some(text)) = (&split, &split_text) {
         return spec.expand(text, idx, out);
     }
-    // SVG children belong to the vector graphic, and `<source>` children to the video.
+    // SVG children belong to the vector graphic, `<source>` children to the video, and the
+    // `<hf-*>` nodes of a 3D scene to the scene.
     if matches!(
         out[idx].element.content,
-        Content::InlineSvg(_) | Content::DrawnSvg(_) | Content::Video(_)
+        Content::InlineSvg(_) | Content::DrawnSvg(_) | Content::Video(_) | Content::Scene3d(_)
     ) {
         return Ok(());
     }

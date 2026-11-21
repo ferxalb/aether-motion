@@ -37,10 +37,10 @@ When the composition declares `data-composition-variables`, pass values as a JSO
 ## Operational constraints
 
 - The renderer defaults to low process priority and a limited thread count. Preserve those defaults for ordinary exports; use `--threads` when the user requests a different tradeoff.
-- Output is byte-identical for any `--threads` value, any distributed split, and any CPU, so a different worker count never changes the video.
+- Output is byte-identical for any `--threads` value, any distributed split, and any CPU, so a different worker count never changes the video. This holds for `data-hf-3d` scenes on the default CPU backend; `--3d-backend gpu|auto` (only in builds with `--features gpu`) matches the CPU within a small edge tolerance and falls back to the CPU, with a stderr note, when no GPU works.
 - Native MP4 output supports the documented audio formats and encodes AAC. `--encoder ffmpeg` rejects compositions containing `<audio>`.
 - Long exports can be split across processes or machines: `inspect <file> --fps N` prints the number of one-second segments, `render <file> --output part.aseg --segments A..B` renders one range with the same options on each worker, and `render <file> --output video.mp4 --parts a.aseg,b.aseg,...` (same `--variables`, `--audio-bitrate`) assembles them. Use it only when the user asks for distributed rendering; one process is simpler.
 - `aether-motion inspect <composition.html>` can provide parsed composition details. Use it when timing or resolved structure is unclear.
-- To see where export time goes, set `AETHER_PROFILE=1`: the command prints thread seconds for drawing (`raster`), YUV conversion, encoding, and the effect-layer, bloom, and per-element motion blur parts of drawing on stderr. It never changes the output.
+- To see where export time goes, set `AETHER_PROFILE=1`: the command prints thread seconds for drawing (`raster`), YUV conversion, encoding, and the effect-layer, bloom, per-element motion blur, 2.5D plane, and `scene-3d` parts of drawing on stderr. It never changes the output.
 - For reproducible output, state the selected size and FPS when they matter. A PNG snapshot is a single frame, not an MP4 export.
 - Do not claim visual correctness from a successful check alone; inspect the rendered image or video.

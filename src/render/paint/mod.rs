@@ -21,6 +21,7 @@ pub(in crate::render) use project::{PlaneLayer, PlaneSetup};
 mod resample;
 mod reveal;
 mod rotate;
+mod scene3d;
 mod shadow;
 mod shape;
 mod surface;

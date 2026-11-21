@@ -6,7 +6,7 @@
 //! of any element across the window: about one sample per 2 output px, from 8 to 64. Sample times depend only on the frame time and fps, so output stays
 //! deterministic. The root's color grade, filmic curve, vignette, and grain run once on the averaged frame.
 //! When nothing moves inside the window (no visible element changes position, scale, rotation,
-//! reveal, or 2.5D depth and tilt; fades, filters, and video frames do not count as movement) the frame is drawn once at the
+//! reveal, 2.5D depth and tilt, or 3D scene state; fades, filters, and video frames do not count as movement) the frame is drawn once at the
 //! frame time, and the identical-frame shortcut still applies.
 //!
 //! Sums are kept in 16-bit channels (at most 64 samples of 255), so a 4K frame needs 66 MiB.
@@ -45,6 +45,7 @@ pub(in crate::render) fn moves(samples: &[Vec<FrameState>], center: &[FrameState
                 s.camera_pan,
                 s.depth,
                 s.camera_3d,
+                s.scene_3d,
             ) != (
                 reference.x,
                 reference.y,
@@ -54,6 +55,7 @@ pub(in crate::render) fn moves(samples: &[Vec<FrameState>], center: &[FrameState
                 reference.camera_pan,
                 reference.depth,
                 reference.camera_3d,
+                reference.scene_3d,
             )
         })
     })
@@ -108,7 +110,8 @@ impl<'a> Renderer<'a> {
                     &start,
                     &self.current,
                     self.composition.width.min(self.composition.height),
-                );
+                )
+                .max(self.scene3d_travel(first, last, &start, None));
                 let (low, high) = MotionBlur::AUTO_SAMPLES;
                 ((travel * self.scale / 2.0).ceil() as u32).clamp(low, high)
             }

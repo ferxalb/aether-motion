@@ -2,7 +2,7 @@
 //!
 //! Submodules: `draw` (scene traversal), `layout` (flex sizing and placement), `paint` (the `Surface`, fills, gradients, rotation and `overflow` layers,
 //! filters and blend modes), `text` (fonts, measurement, glyph painting), `shutter` (motion blur), `allocation` (checked buffer sizes),
-//! `geometry` and `frame_state` (shared small types), `occlusion` (siblings hidden under an opaque full-frame scene are skipped), `space` (2.5D spaces: plane transforms, depth order, and projection; tilted planes are warped by `paint/project.rs`). `paint/video.rs` draws `<video>` frames.
+//! `geometry` and `frame_state` (shared small types), `occlusion` (siblings hidden under an opaque full-frame scene are skipped), `space` (2.5D spaces: plane transforms, depth order, and projection; tilted planes are warped by `paint/project.rs`). `paint/video.rs` draws `<video>` frames and `paint/scene3d.rs` composites `data-hf-3d` scenes rasterized by `crate::scene3d`.
 //! A frame is drawn by `draw_scene` and finished by `finish_frame` (root color grade, filmic tone curve, vignette, grain).
 
 mod allocation;
@@ -160,6 +160,9 @@ pub struct Renderer<'a> {
     probe_maps: Vec<probe::ProbeMap>,
     /// Number of projected 2.5D plane layers being drawn into (blend modes cannot be drawn there).
     projecting: u32,
+    /// Triangle list, raster tile, and GPU target reused by every `data-hf-3d` scene this
+    /// renderer draws (see `crate::scene3d::backend`).
+    scene3d: crate::scene3d::backend::Workspace,
 }
 
 pub(crate) fn check_image(path: &Path) -> Result<()> {
@@ -286,6 +289,7 @@ impl<'a> Renderer<'a> {
             plane_pose: None,
             probe_maps: Vec::new(),
             projecting: 0,
+            scene3d: Default::default(),
         };
         renderer.spaces = space::SpaceIndex::build(&mut renderer)?;
         Ok(renderer)

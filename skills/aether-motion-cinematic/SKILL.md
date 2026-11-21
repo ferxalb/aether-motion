@@ -15,6 +15,7 @@ The renderer changes often. Before designing, read the Supported contract in `AG
 | --- | --- |
 | One continuous camera through a space | `data-hf-shots` (`follow`, `dolly-in`, `pan`, `reveal`) on a rig camera with `data-hf-camera-subject` |
 | Depth | A `data-hf-space` with planes at `data-hf-z` depths (true perspective, tilted floors and cards, camera `z` dolly, pan, and tilt; intersecting planes are ordered exactly); `data-hf-parallax` planes for a flat rig shot. Overscan either way, and stand uprights on a floor (their base on its surface) so nothing sinks into it |
+| Solid objects seen from changing angles | A `data-hf-3d` viewport (meshes, lights, a `target`ed camera with `smooth` keyframes) between 2D sky and title layers; see the `aether-motion-3d` skill |
 | Characters | `data-hf-sequence` cels on a shared registration, plus a matching hold cel |
 | Travel along a route | `data-hf-motion-path` |
 | Joining two spaces | `data-hf-transition` (`crossfade` as a match dissolve, `blur`, `whip-*`, `dip-to-black` to end an act) |

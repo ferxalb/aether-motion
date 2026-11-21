@@ -11,6 +11,7 @@ pub mod model;
 pub mod parse;
 pub mod profile;
 pub mod render;
+pub mod scene3d;
 pub mod setup;
 pub mod space;
 pub mod speed;

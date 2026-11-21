@@ -12,7 +12,9 @@ pub mod zones;
 pub use mcp::serve;
 
 fn fix_hint(message: &str) -> &'static str {
-    if message.contains("2.5D values")
+    if message.contains("data-hf-3d") || message.contains("<hf-") {
+        "put data-hf-3d on a sized <div> clip (optional data-hf-3d-antialias 1 to 4) and fill it only with <hf-node>, <hf-mesh shape=\"plane|box|pyramid|cone|cylinder|sphere|custom\">, <hf-light type=\"ambient|directional\">, and at most one <hf-camera>; place nodes with position, rotation, and scale (or data-hf-keyframes with x, y, z, rotateX, rotateY, rotate, scale; cameras use yaw, pitch, roll, zoom), color meshes with color and material=\"lambert|unlit\", and close every <hf-*> tag explicitly"
+    } else if message.contains("2.5D values")
         || message.contains("data-hf-space")
         || message.contains("3D plane values")
         || message.contains("the plane ")
@@ -179,6 +181,52 @@ fn check_videos(c: &Composition) -> Result<Vec<Value>> {
 
 /// Decodes and mixes the composition's audio (without encoding) and reports each clip, the peak
 /// level, and any samples that would clip. Empty when the composition has no `<audio>`.
+/// The `data-hf-3d` scenes: their nodes, meshes, lights, camera, and the backend in use.
+fn scenes3d_json(c: &Composition) -> Vec<Value> {
+    use crate::scene3d::{NodeKind, Projection, Shading};
+    let (backend, fallback) = crate::scene3d::backend::status();
+    c.elements
+        .iter()
+        .filter_map(|e| {
+            let Content::Scene3d(scene) = &e.content else {
+                return None;
+            };
+            let mut meshes = Vec::new();
+            let mut lights = Vec::new();
+            for node in &scene.nodes {
+                match &node.kind {
+                    NodeKind::Mesh { mesh, material, shape } => meshes.push(json!({
+                        "id": node.id, "shape": shape, "triangles": mesh.triangles.len(),
+                        "material": match material.shading { Shading::Lambert => "lambert", Shading::Unlit => "unlit" },
+                        "cull": match material.cull { crate::scene3d::Cull::Back => "back", crate::scene3d::Cull::None => "none" },
+                    })),
+                    NodeKind::Light(light) => lights.push(json!({
+                        "id": node.id,
+                        "type": match light.kind { crate::scene3d::LightKind::Ambient => "ambient", _ => "directional" },
+                        "animated": light.intensity.is_animated(),
+                    })),
+                    _ => {}
+                }
+            }
+            let (_, camera, index) = scene.camera();
+            let projection = match camera.projection {
+                Projection::Perspective { focal } => json!({"type": "perspective", "focal": focal}),
+                Projection::FieldOfView { degrees } => json!({"type": "perspective", "fov": degrees}),
+                Projection::Orthographic => json!({"type": "orthographic"}),
+            };
+            Some(json!({
+                "id": e.id, "start": e.start, "end": e.end,
+                "antialias": scene.antialias, "nodes": scene.nodes.len(),
+                "triangles": scene.triangle_count(), "meshes": meshes, "lights": lights,
+                "defaultLights": scene.default_lights,
+                "camera": {"declared": index.is_some(), "projection": projection, "near": camera.near, "far": camera.far, "target": camera.target.is_some()},
+                "animated": scene.is_animated(),
+                "backend": backend, "gpuFallback": fallback,
+            }))
+        })
+        .collect()
+}
+
 fn check_audio(c: &Composition) -> Result<Value> {
     if c.audio.is_empty() {
         return Ok(json!({"clips": [], "peak": 0.0, "clippedSamples": 0}));
@@ -330,8 +378,9 @@ pub fn check_with(path: &Path, values: &VariableValues) -> Value {
                 json!({"id": e.id, "start": e.start, "end": e.end, "subject": subject, "keys": keys})
             })
             .collect();
+        let scenes3d = scenes3d_json(&c);
         Ok(
-            json!({"animations": animations, "cameras": cameras, "ok": true, "width": c.width, "height": c.height, "duration": c.duration, "elements": c.elements.len(), "clips": clips, "audio": audio, "videos": videos, "effects": effects, "variables": variables_json(&c), "dependencies": c.dependencies.iter().map(|p| p.display().to_string()).collect::<Vec<_>>()}),
+            json!({"animations": animations, "cameras": cameras, "scenes3d": scenes3d, "ok": true, "width": c.width, "height": c.height, "duration": c.duration, "elements": c.elements.len(), "clips": clips, "audio": audio, "videos": videos, "effects": effects, "variables": variables_json(&c), "dependencies": c.dependencies.iter().map(|p| p.display().to_string()).collect::<Vec<_>>()}),
         )
     };
     match run() {
