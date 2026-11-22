@@ -36,6 +36,25 @@ const EMBEDDED_FONTS: [&[u8]; 2] = [
     include_bytes!("../../../assets/fonts/Roboto-Bold.ttf"),
 ];
 
+/// The system fonts plus the embedded faces, scanned once per process and cloned by every
+/// renderer. A check, its safe-zone probe, the split-wrap measuring pass, and each MCP call would
+/// otherwise rescan every font directory. Fonts installed while a long-running process (such as
+/// `aether-motion mcp`) is up are seen after it restarts.
+fn system_index() -> &'static Database {
+    static INDEX: std::sync::OnceLock<Database> = std::sync::OnceLock::new();
+    INDEX.get_or_init(|| {
+        let mut db = Database::new();
+        db.load_system_fonts();
+        for data in EMBEDDED_FONTS {
+            db.load_font_data(data.to_vec());
+        }
+        db.set_sans_serif_family(EMBEDDED_FAMILY);
+        db.set_serif_family(EMBEDDED_FAMILY);
+        db.set_monospace_family(EMBEDDED_FAMILY);
+        db
+    })
+}
+
 /// A parsed font plus the face bytes it came from (for glyph outlines, see `stroke.rs`).
 struct Loaded {
     font: Font,
@@ -54,19 +73,14 @@ pub(in crate::render) struct FontStore {
 }
 
 impl FontStore {
-    /// Loads the embedded fonts and scans system fonts only when `needed`; otherwise the index stays empty.
+    /// Loads the embedded fonts and the system fonts only when `needed`; otherwise the index stays
+    /// empty. The system scan runs once per process (see [`system_index`]).
     pub(in crate::render) fn new(needed: bool) -> Self {
-        let mut db = Database::new();
-        if needed {
-            db.load_system_fonts();
-            for data in EMBEDDED_FONTS {
-                db.load_font_data(data.to_vec());
-            }
-            db.set_sans_serif_family(EMBEDDED_FAMILY);
-            db.set_serif_family(EMBEDDED_FAMILY);
-            db.set_monospace_family(EMBEDDED_FAMILY);
-        }
-        Self::with_index(db)
+        Self::with_index(if needed {
+            system_index().clone()
+        } else {
+            Database::new()
+        })
     }
 
     /// Reuses an already scanned font index (see [`FontStore::index`]).

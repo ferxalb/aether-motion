@@ -20,6 +20,28 @@ CLI/MCP output may still change between minor releases.
 - npm releases bundle all supported native binaries in `@aether-motion/cli`. The launcher
   selects the host binary at startup, and GitHub Actions stages one package for approval.
 
+### Fixed
+
+- The MCP server survives a panic inside a tool handler: the call returns an `isError` result
+  naming the tool instead of ending the stdio session.
+- `aether_write` without `overwrite` creates the file exclusively, so it never replaces a file or
+  follows a symlink that appears after the existence check; with `overwrite` it writes a temporary
+  file and renames it, so a failed write never leaves a truncated composition.
+- `aether_render` rejects an `audioBitrate` large enough to overflow instead of wrapping it.
+
+### Security
+
+- MCP messages are capped at 32 MiB per line; longer lines are skipped and answered with a parse
+  error instead of being buffered whole.
+- Composition, external scene, and variables files are capped at 16 MiB before they are read.
+
+### Performance
+
+- The system font index is scanned once per process and shared by every renderer. `check` (with
+  its safe-zone probe and split-wrap measuring pass) and every MCP call after the first no longer
+  rescan the font directories. Fonts installed while `aether-motion mcp` runs are seen after a
+  restart.
+
 ## [0.2.0] - 2026-11-21
 
 ### Added

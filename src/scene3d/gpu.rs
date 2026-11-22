@@ -140,7 +140,8 @@ impl Gpu {
             .await
             .map_err(|e| anyhow!("no adapter: {e}"))?;
         let info = adapter.get_info();
-        if super::backend::strict() && (info.backend != wgpu::Backend::Vulkan || info.vendor != NVIDIA)
+        if super::backend::strict()
+            && (info.backend != wgpu::Backend::Vulkan || info.vendor != NVIDIA)
         {
             bail!(
                 "--require-gpu needs an NVIDIA Vulkan adapter, found {} ({:?}, vendor {:#06x})",

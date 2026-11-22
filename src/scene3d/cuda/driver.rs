@@ -70,7 +70,11 @@ fn open(name: &str) -> Result<Handle> {
         // SAFETY: dlerror returns a static NUL-terminated string or null.
         let why = unsafe {
             let e = libc::dlerror();
-            if e.is_null() { String::new() } else { CStr::from_ptr(e).to_string_lossy().into_owned() }
+            if e.is_null() {
+                String::new()
+            } else {
+                CStr::from_ptr(e).to_string_lossy().into_owned()
+            }
         };
         bail!("could not load {name}: {why}");
     }
@@ -98,7 +102,9 @@ impl Driver {
         let known = unsafe { (self.cuGetErrorName)(code, &mut name) } == 0 && !name.is_null();
         let label = if known {
             // SAFETY: checked non-null above; the driver's string is NUL-terminated.
-            unsafe { CStr::from_ptr(name) }.to_string_lossy().into_owned()
+            unsafe { CStr::from_ptr(name) }
+                .to_string_lossy()
+                .into_owned()
         } else {
             "unknown".into()
         };

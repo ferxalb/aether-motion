@@ -150,10 +150,20 @@ pub fn status() -> (&'static str, Option<String>) {
     #[cfg(not(feature = "gpu"))]
     let gpu = gpu && false;
     #[cfg(all(feature = "cuda", unix))]
-    let cuda = matches!(request(), Ok(Request::Cuda)) && reason.is_none() && super::cuda::available();
+    let cuda =
+        matches!(request(), Ok(Request::Cuda)) && reason.is_none() && super::cuda::available();
     #[cfg(not(all(feature = "cuda", unix)))]
     let cuda = false;
-    (if cuda { "cuda" } else if gpu { "gpu" } else { "cpu" }, reason)
+    (
+        if cuda {
+            "cuda"
+        } else if gpu {
+            "gpu"
+        } else {
+            "cpu"
+        },
+        reason,
+    )
 }
 
 /// Largest resolved region (bytes) the memo keeps; bigger draws are not remembered.

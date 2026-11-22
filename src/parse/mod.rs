@@ -102,6 +102,26 @@ fn compile(path: &Path, values: &VariableValues, cache: &mut SceneCache) -> Resu
     Ok(composition)
 }
 
+/// Largest composition (or external scene) file. Media is referenced by path, never inlined
+/// (`data:` URIs are rejected), so real compositions are far smaller; the cap bounds DOM memory.
+const MAX_HTML_BYTES: u64 = 16 * 1024 * 1024;
+
+/// Reads a UTF-8 text file after checking its size, so a huge file fails fast instead of being
+/// loaded whole. `what` names the file in the error.
+pub(crate) fn read_text_limited(path: &Path, limit: u64, what: &str) -> Result<String> {
+    let len = fs::metadata(path)
+        .with_context(|| format!("could not read {}", path.display()))?
+        .len();
+    if len > limit {
+        bail!(
+            "{what} {} is larger than {} MiB",
+            path.display(),
+            limit >> 20
+        );
+    }
+    fs::read_to_string(path).with_context(|| format!("could not read {}", path.display()))
+}
+
 /// One parse of the composition, with the wrap breaks of `splits` (empty on the first parse).
 fn parse_pass(
     path: &Path,
@@ -111,8 +131,7 @@ fn parse_pass(
     imported: bool,
 ) -> Result<Composition> {
     reads::note(path);
-    let html =
-        fs::read_to_string(path).with_context(|| format!("could not read {}", path.display()))?;
+    let html = read_text_limited(path, MAX_HTML_BYTES, "composition")?;
     let document = kuchiki::parse_html().one(html);
     if let Some(unsupported) = document
         .select("script, canvas, iframe")

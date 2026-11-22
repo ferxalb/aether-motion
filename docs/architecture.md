@@ -27,6 +27,8 @@ Source layout and resource limits of the native renderer. Compositions with `dat
 
 ## Memory and resource limits
 
+Composition, external scene, and variables files are limited to 16 MiB before they are read, and the MCP server accepts JSON-RPC messages of at most 32 MiB per line. The system font index is scanned once per process (`render/text/fonts.rs`) and cloned by each renderer.
+
 The renderer keeps one RGBA frame, up to 64 MiB of scaled images, and up to 32 MiB of text masks. When the visible state matches the previous frame, it reuses the RGBA frame and the native encoder's YUV conversion.
 
 Each gradient or outer-shadow tile cache retains at most 4,096 keys, including first sightings and rejected tiles. Exceeding that metadata limit returns an explicit render error; existing slots are not evicted or changed, preserving the cached/direct drawing decisions. Reduce animated size variation or split the composition when this limit is reached. Fitted-image and text-run caches also retain at most 4,096 entries; image eviction and uncached text preparation retain the same pixel calculations. Text-layout blocks already have a 4,096-key cap.

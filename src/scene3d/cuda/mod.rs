@@ -131,28 +131,51 @@ impl Cuda {
             let mut device = 0;
             d.check("cuDeviceGet", (d.cuDeviceGet)(&mut device, 0))?;
             let mut name = [0 as std::ffi::c_char; 256];
-            d.check("cuDeviceGetName", (d.cuDeviceGetName)(name.as_mut_ptr(), 256, device))?;
-            let name = std::ffi::CStr::from_ptr(name.as_ptr()).to_string_lossy().into_owned();
+            d.check(
+                "cuDeviceGetName",
+                (d.cuDeviceGetName)(name.as_mut_ptr(), 256, device),
+            )?;
+            let name = std::ffi::CStr::from_ptr(name.as_ptr())
+                .to_string_lossy()
+                .into_owned();
             let (mut major, mut minor) = (0, 0);
-            d.check("cuDeviceGetAttribute", (d.cuDeviceGetAttribute)(&mut major, driver::CC_MAJOR, device))?;
-            d.check("cuDeviceGetAttribute", (d.cuDeviceGetAttribute)(&mut minor, driver::CC_MINOR, device))?;
+            d.check(
+                "cuDeviceGetAttribute",
+                (d.cuDeviceGetAttribute)(&mut major, driver::CC_MAJOR, device),
+            )?;
+            d.check(
+                "cuDeviceGetAttribute",
+                (d.cuDeviceGetAttribute)(&mut minor, driver::CC_MINOR, device),
+            )?;
             let mut uuid = [0_u8; 16];
-            d.check("cuDeviceGetUuid", (d.cuDeviceGetUuid)(uuid.as_mut_ptr(), device))?;
+            d.check(
+                "cuDeviceGetUuid",
+                (d.cuDeviceGetUuid)(uuid.as_mut_ptr(), device),
+            )?;
             let uuid = format!(
                 "GPU-{}",
                 uuid.iter().map(|b| format!("{b:02x}")).collect::<String>()
             );
             let mut context: Handle = std::ptr::null_mut();
-            d.check("cuDevicePrimaryCtxRetain", (d.cuDevicePrimaryCtxRetain)(&mut context, device))?;
+            d.check(
+                "cuDevicePrimaryCtxRetain",
+                (d.cuDevicePrimaryCtxRetain)(&mut context, device),
+            )?;
             d.check("cuCtxSetCurrent", (d.cuCtxSetCurrent)(context))?;
             let (module_name, mut image) = load_kernel(major, minor)?;
             let jit = module_name.ends_with(".ptx");
             image.push(0); // PTX must be NUL-terminated; harmless after a cubin
             let mut module: Handle = std::ptr::null_mut();
-            d.check("cuModuleLoadData", (d.cuModuleLoadData)(&mut module, image.as_ptr().cast()))?;
+            d.check(
+                "cuModuleLoadData",
+                (d.cuModuleLoadData)(&mut module, image.as_ptr().cast()),
+            )?;
             let mut function: Handle = std::ptr::null_mut();
             let entry = CString::new("rasterize")?;
-            d.check("cuModuleGetFunction", (d.cuModuleGetFunction)(&mut function, module, entry.as_ptr()))?;
+            d.check(
+                "cuModuleGetFunction",
+                (d.cuModuleGetFunction)(&mut function, module, entry.as_ptr()),
+            )?;
             Ok(Self {
                 driver: d,
                 context,
@@ -171,7 +194,10 @@ impl Cuda {
 /// Reads the kernel artifact for this device: a cubin for its exact capability, else PTX.
 fn load_kernel(major: c_int, minor: c_int) -> Result<(String, Vec<u8>)> {
     let dirs = kernel_dir();
-    let names = [format!("raster_sm{major}{minor}.cubin"), "raster_compute75.ptx".to_string()];
+    let names = [
+        format!("raster_sm{major}{minor}.cubin"),
+        "raster_compute75.ptx".to_string(),
+    ];
     for dir in &dirs {
         for name in &names {
             if let Ok(bytes) = std::fs::read(dir.join(name)) {
@@ -228,8 +254,12 @@ impl Target {
                 (d.cuMemcpyHtoD_v2)(in_ptr, self.setups.as_ptr().cast(), setup_bytes),
             )?;
             let t1 = Instant::now();
-            let (count, width, height, ss) =
-                (self.setups.len() as c_int, w as c_int, h as c_int, region.antialias as c_int);
+            let (count, width, height, ss) = (
+                self.setups.len() as c_int,
+                w as c_int,
+                h as c_int,
+                region.antialias as c_int,
+            );
             let mut params: [*mut c_void; 6] = [
                 (&in_ptr as *const CUdeviceptr).cast_mut().cast(),
                 (&count as *const c_int).cast_mut().cast(),
@@ -287,7 +317,11 @@ impl Target {
 ///
 /// # Safety
 /// The CUDA context must be current on this thread.
-unsafe fn grow(d: &Driver, slot: &mut Option<(CUdeviceptr, usize)>, bytes: usize) -> Result<CUdeviceptr> {
+unsafe fn grow(
+    d: &Driver,
+    slot: &mut Option<(CUdeviceptr, usize)>,
+    bytes: usize,
+) -> Result<CUdeviceptr> {
     if let Some((ptr, cap)) = *slot {
         if cap >= bytes {
             return Ok(ptr);
@@ -297,7 +331,8 @@ unsafe fn grow(d: &Driver, slot: &mut Option<(CUdeviceptr, usize)>, bytes: usize
     }
     let cap = bytes.next_power_of_two().max(4096);
     let mut ptr: CUdeviceptr = 0;
-    d.check("cuMemAlloc", (d.cuMemAlloc_v2)(&mut ptr, cap)).context("device allocation")?;
+    d.check("cuMemAlloc", (d.cuMemAlloc_v2)(&mut ptr, cap))
+        .context("device allocation")?;
     *slot = Some((ptr, cap));
     Ok(ptr)
 }
@@ -312,7 +347,10 @@ impl Drop for Target {
         // releasing memory at teardown have nowhere useful to go.
         unsafe {
             let _ = (d.cuCtxSetCurrent)(cuda.context);
-            for (ptr, _) in [self.device_setups.take(), self.device_out.take()].into_iter().flatten() {
+            for (ptr, _) in [self.device_setups.take(), self.device_out.take()]
+                .into_iter()
+                .flatten()
+            {
                 let _ = (d.cuMemFree_v2)(ptr);
             }
         }
@@ -341,7 +379,10 @@ mod tests {
     }
 
     fn tri(a: [f64; 3], b: [f64; 3], c: [f64; 3], color: [u8; 3]) -> Triangle {
-        Triangle { corners: [a, b, c], color }
+        Triangle {
+            corners: [a, b, c],
+            color,
+        }
     }
 
     /// Overlapping triangles, a depth tie, geometry clipped by the near plane and the guard band,
@@ -357,25 +398,63 @@ mod tests {
             }
         };
         let triangles = [
-            tri([-60.0, -50.0, 0.0], [70.0, -40.0, 0.0], [10.0, 60.0, 0.0], [220, 40, 40]),
+            tri(
+                [-60.0, -50.0, 0.0],
+                [70.0, -40.0, 0.0],
+                [10.0, 60.0, 0.0],
+                [220, 40, 40],
+            ),
             // Same plane and corners: a depth tie the first triangle keeps.
-            tri([-60.0, -50.0, 0.0], [70.0, -40.0, 0.0], [10.0, 60.0, 0.0], [40, 220, 40]),
-            tri([-30.0, -70.0, 50.0], [90.0, 10.0, -30.0], [-70.0, 30.0, 20.0], [40, 40, 220]),
+            tri(
+                [-60.0, -50.0, 0.0],
+                [70.0, -40.0, 0.0],
+                [10.0, 60.0, 0.0],
+                [40, 220, 40],
+            ),
+            tri(
+                [-30.0, -70.0, 50.0],
+                [90.0, 10.0, -30.0],
+                [-70.0, 30.0, 20.0],
+                [40, 40, 220],
+            ),
             // Runs from the far distance to behind the eye.
-            tri([-500.0, 50.0, -2000.0], [500.0, 50.0, -2000.0], [0.0, 50.0, 3000.0], [90, 90, 90]),
+            tri(
+                [-500.0, 50.0, -2000.0],
+                [500.0, 50.0, -2000.0],
+                [0.0, 50.0, 3000.0],
+                [90, 90, 90],
+            ),
         ];
-        let placement = Placement { origin: [0.0, 0.0], scale: 1.0, size: [97.0, 61.0] };
+        let placement = Placement {
+            origin: [0.0, 0.0],
+            scale: 1.0,
+            size: [97.0, 61.0],
+        };
         for ss in [1_u32, 2, 4] {
             let region = Region::of(&placement, [97, 61], ss).unwrap();
             let mut expected = vec![[0_u8; 4]; 97 * 61];
-            rasterize(&view(), &triangles, &placement, &region, &mut Scratch::default(), &mut |x, y, row| {
-                expected[y * 97 + x..y * 97 + x + row.len()].copy_from_slice(row);
-            });
+            rasterize(
+                &view(),
+                &triangles,
+                &placement,
+                &region,
+                &mut Scratch::default(),
+                &mut |x, y, row| {
+                    expected[y * 97 + x..y * 97 + x + row.len()].copy_from_slice(row);
+                },
+            );
             let mut actual = vec![[0_u8; 4]; 97 * 61];
             Target::default()
-                .draw(&cuda, &view(), &triangles, &placement, &region, &mut |x, y, row| {
-                    actual[y * 97 + x..y * 97 + x + row.len()].copy_from_slice(row);
-                })
+                .draw(
+                    &cuda,
+                    &view(),
+                    &triangles,
+                    &placement,
+                    &region,
+                    &mut |x, y, row| {
+                        actual[y * 97 + x..y * 97 + x + row.len()].copy_from_slice(row);
+                    },
+                )
                 .unwrap();
             let differing = expected.iter().zip(&actual).filter(|(a, b)| a != b).count();
             assert_eq!(differing, 0, "{differing} pixels differ at antialias {ss}");

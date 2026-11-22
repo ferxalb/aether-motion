@@ -8,7 +8,7 @@ mod tools;
 
 use anyhow::{anyhow, Result};
 use serde_json::{json, Value};
-use std::io::{BufRead, IsTerminal, Write};
+use std::io::{BufRead, IsTerminal, Read, Write};
 
 /// Serves newline-delimited MCP JSON-RPC messages over stdin and stdout. Startup and malformed
 /// input are reported on stderr (never stdout, which carries only protocol messages), where
@@ -22,12 +22,22 @@ pub fn serve() -> Result<()> {
     );
     let mut output = std::io::stdout();
     let mut legacy_initialized = false;
-    for line in std::io::stdin().lock().lines() {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        let request = match serde_json::from_str::<Value>(&line) {
+    let mut input = std::io::stdin().lock();
+    let mut buffer = Vec::new();
+    loop {
+        let parsed = match read_message(&mut input, &mut buffer)? {
+            Message::End => break,
+            Message::TooLarge => Err(format!(
+                "message exceeds the {} MiB limit",
+                MAX_MESSAGE_BYTES >> 20
+            )),
+            Message::Line => match std::str::from_utf8(&buffer) {
+                Ok(line) if line.trim().is_empty() => continue,
+                Ok(line) => serde_json::from_str::<Value>(line).map_err(|e| e.to_string()),
+                Err(error) => Err(format!("message is not UTF-8: {error}")),
+            },
+        };
+        let request = match parsed {
             Ok(request) => request,
             Err(error) => {
                 let response = json!({"jsonrpc": "2.0", "id": null, "error": protocol::rpc_error(-32700, format!("parse error: {error}"), None)});
@@ -42,6 +52,58 @@ pub fn serve() -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Largest accepted JSON-RPC message (one line). A composition sent to `aether_write` is a few
+/// hundred KiB at most; the cap keeps a runaway or hostile client from growing memory without bound.
+const MAX_MESSAGE_BYTES: u64 = 32 * 1024 * 1024;
+
+enum Message {
+    /// `buffer` holds one line without its terminator.
+    Line,
+    /// The line was longer than [`MAX_MESSAGE_BYTES`]; the rest of it was skipped.
+    TooLarge,
+    /// End of input.
+    End,
+}
+
+/// Reads one newline-delimited message into `buffer`, never holding more than
+/// [`MAX_MESSAGE_BYTES`] of it in memory.
+fn read_message(input: &mut impl BufRead, buffer: &mut Vec<u8>) -> std::io::Result<Message> {
+    buffer.clear();
+    let read = input
+        .by_ref()
+        .take(MAX_MESSAGE_BYTES + 1)
+        .read_until(b'\n', buffer)?;
+    if read == 0 {
+        return Ok(Message::End);
+    }
+    if buffer.last() == Some(&b'\n') {
+        buffer.pop();
+        if buffer.last() == Some(&b'\r') {
+            buffer.pop();
+        }
+        return Ok(Message::Line);
+    }
+    if (buffer.len() as u64) <= MAX_MESSAGE_BYTES {
+        // The final line had no terminator.
+        return Ok(Message::Line);
+    }
+    // Discard the remainder of the oversized line without buffering it.
+    buffer.clear();
+    loop {
+        let chunk = input.fill_buf()?;
+        if chunk.is_empty() {
+            break;
+        }
+        if let Some(end) = chunk.iter().position(|&b| b == b'\n') {
+            input.consume(end + 1);
+            break;
+        }
+        let len = chunk.len();
+        input.consume(len);
+    }
+    Ok(Message::TooLarge)
 }
 
 /// Handshake check without a client: runs discovery, the legacy `initialize`, and `tools/list`
@@ -127,4 +189,40 @@ pub fn run(args: &[String]) -> Result<()> {
         return Ok(());
     }
     serve()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn read_message_splits_lines_and_skips_oversized_ones() {
+        let big = "x".repeat(MAX_MESSAGE_BYTES as usize + 10);
+        let data = format!("{{\"a\":1}}\r\n{big}\nnext\nlast");
+        let mut input = std::io::Cursor::new(data.into_bytes());
+        let mut buffer = Vec::new();
+        assert!(matches!(
+            read_message(&mut input, &mut buffer).unwrap(),
+            Message::Line
+        ));
+        assert_eq!(buffer, b"{\"a\":1}");
+        assert!(matches!(
+            read_message(&mut input, &mut buffer).unwrap(),
+            Message::TooLarge
+        ));
+        assert!(matches!(
+            read_message(&mut input, &mut buffer).unwrap(),
+            Message::Line
+        ));
+        assert_eq!(buffer, b"next");
+        assert!(matches!(
+            read_message(&mut input, &mut buffer).unwrap(),
+            Message::Line
+        ));
+        assert_eq!(buffer, b"last");
+        assert!(matches!(
+            read_message(&mut input, &mut buffer).unwrap(),
+            Message::End
+        ));
+    }
 }

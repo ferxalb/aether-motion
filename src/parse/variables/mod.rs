@@ -33,8 +33,7 @@ pub fn values_from_json(text: &str) -> Result<VariableValues> {
 
 /// Reads a JSON file holding a variable-values object.
 pub fn read_values_file(path: &Path) -> Result<VariableValues> {
-    let text = std::fs::read_to_string(path)
-        .with_context(|| format!("could not read variables file {}", path.display()))?;
+    let text = crate::parse::read_text_limited(path, 16 * 1024 * 1024, "variables file")?;
     values_from_json(&text).with_context(|| format!("variables file {}", path.display()))
 }
 

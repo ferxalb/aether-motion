@@ -98,6 +98,36 @@ fn snapshot(path: &Path, time: f64, args: &Value) -> Result<Value> {
     )
 }
 
+/// Writes `html` to `path` for `aether_write`. Without `overwrite` the file is created
+/// exclusively, so an existing file (or a symlink planted at the path) is never replaced, even if
+/// it appears between a check and the write. With `overwrite` the text goes to a sibling temporary
+/// file that is renamed into place, so a failed write never leaves a truncated composition.
+fn write_composition(path: &Path, html: &str, overwrite: bool) -> Result<()> {
+    use std::io::Write;
+    if !overwrite {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+            .map_err(|error| match error.kind() {
+                std::io::ErrorKind::AlreadyExists => {
+                    anyhow!("{} already exists; use overwrite=true", path.display())
+                }
+                _ => anyhow!("could not create {}: {error}", path.display()),
+            })?;
+        return file
+            .write_all(html.as_bytes())
+            .map_err(|error| anyhow!("could not write {}: {error}", path.display()));
+    }
+    let partial = path.with_extension(format!("aether-{}.partial.html", std::process::id()));
+    let written = std::fs::write(&partial, html).and_then(|()| std::fs::rename(&partial, path));
+    if let Err(error) = written {
+        let _ = std::fs::remove_file(&partial);
+        return Err(anyhow!("could not write {}: {error}", path.display()));
+    }
+    Ok(())
+}
+
 fn text(value: impl Into<String>) -> Value {
     json!({"content": [{"type": "text", "text": value.into()}]})
 }
@@ -257,16 +287,9 @@ pub(super) fn call(
             if path.extension().and_then(|extension| extension.to_str()) != Some("html") {
                 return Err(anyhow!("the path must end in .html"));
             }
-            if path.exists() && args.get("overwrite").and_then(Value::as_bool) != Some(true) {
-                return Err(anyhow!(
-                    "{} already exists; use overwrite=true",
-                    path.display()
-                ));
-            }
-            std::fs::write(
-                path,
-                string_arg("html").ok_or_else(|| anyhow!("missing html"))?,
-            )?;
+            let html = string_arg("html").ok_or_else(|| anyhow!("missing html"))?;
+            let overwrite = args.get("overwrite").and_then(Value::as_bool) == Some(true);
+            write_composition(path, html, overwrite)?;
             Ok(text(checked(path, args)?.to_string()))
         }
         "aether_block" => match string_arg("name") {
@@ -308,7 +331,9 @@ pub(super) fn call(
             };
             let fps = integer("fps", 30)?;
             let threads = integer("threads", crate::encode::default_threads())?;
-            let audio_bitrate = integer("audioBitrate", crate::audio::DEFAULT_BITRATE / 1000)?;
+            let audio_bitrate = integer("audioBitrate", crate::audio::DEFAULT_BITRATE / 1000)?
+                .checked_mul(1000)
+                .ok_or_else(|| anyhow!("audioBitrate must be between 64 and 320"))?;
             let quality = string_arg("quality")
                 .map(str::parse)
                 .transpose()?
@@ -323,7 +348,7 @@ pub(super) fn call(
                     &mut renderer,
                     output,
                     &EncodeOptions {
-                        audio_bitrate: audio_bitrate * 1000,
+                        audio_bitrate,
                         quality,
                         ..EncodeOptions::new(fps, threads)
                     },
@@ -375,6 +400,25 @@ mod tests {
             None,
         );
         assert!(format!("{:#}", snapshot.unwrap_err()).contains("must be a string"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn write_refuses_existing_files_unless_overwrite() {
+        let dir = std::env::temp_dir().join(format!("aether-mcp-write-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("w.html");
+        write_composition(&path, "a", false).unwrap();
+        let error = write_composition(&path, "b", false).unwrap_err();
+        assert!(error.to_string().contains("overwrite=true"), "{error}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "a");
+        write_composition(&path, "c", true).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "c");
+        assert_eq!(
+            std::fs::read_dir(&dir).unwrap().count(),
+            1,
+            "no partial file left"
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

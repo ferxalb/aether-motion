@@ -38,6 +38,29 @@ fn complete_result(mut result: Value) -> Value {
     result
 }
 
+/// Runs one tool and shapes its outcome as a tool result: errors become `isError` text content, and a
+/// panic inside a handler is caught and reported the same way, so one bad composition cannot take
+/// the whole stdio server down.
+fn run_tool(name: &str, arguments: &Value, params: &Value) -> Value {
+    let reporter = McpProgress::from_params(params);
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        call(name, arguments, reporter.as_ref().map(|r| r as _))
+    }));
+    let message = match outcome {
+        Ok(Ok(result)) => return result,
+        Ok(Err(error)) => format!("{error:#}"),
+        Err(payload) => {
+            let detail = payload
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| payload.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "unknown panic".to_string());
+            format!("internal error in {name}: {detail}; please report it with the composition")
+        }
+    };
+    json!({"content": [{"type": "text", "text": message}], "isError": true})
+}
+
 fn tool_call(params: &Value) -> std::result::Result<Value, Value> {
     let Some(name) = params.get("name").and_then(Value::as_str) else {
         return Err(invalid_params("tools/call requires a string name"));
@@ -50,13 +73,7 @@ fn tool_call(params: &Value) -> std::result::Result<Value, Value> {
         Some(Value::Object(_)) => params["arguments"].clone(),
         Some(_) => return Err(invalid_params("tools/call arguments must be an object")),
     };
-    let reporter = McpProgress::from_params(params);
-    let mut result = match call(name, &arguments, reporter.as_ref().map(|r| r as _)) {
-        Ok(result) => result,
-        Err(error) => {
-            json!({"content": [{"type": "text", "text": format!("{error:#}")}], "isError": true})
-        }
-    };
+    let mut result = run_tool(name, &arguments, params);
     if result.get("isError").is_none() {
         result["isError"] = json!(false);
     }
@@ -105,13 +122,7 @@ fn legacy_dispatch(method: &str, params: &Value) -> std::result::Result<Value, V
                 Some(Value::Object(_)) => params["arguments"].clone(),
                 Some(_) => return Err(invalid_params("tools/call arguments must be an object")),
             };
-            let reporter = McpProgress::from_params(params);
-            match call(name, &arguments, reporter.as_ref().map(|r| r as _)) {
-                Ok(result) => Ok(result),
-                Err(error) => Ok(
-                    json!({"content": [{"type": "text", "text": format!("{error:#}")}], "isError": true}),
-                ),
-            }
+            Ok(run_tool(name, &arguments, params))
         }
         "ping" => Ok(json!({})),
         _ => Err(rpc_error(
