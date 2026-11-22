@@ -1,6 +1,6 @@
 # Releasing
 
-A release is a `v<version>` tag that matches `Cargo.toml`. `.github/workflows/release.yml` builds the binaries for every target, attaches them to a GitHub release, and publishes the npm packages.
+A release is a `v<version>` tag that matches `Cargo.toml`. `.github/workflows/release.yml` builds the binaries for every target, attaches them to a GitHub release, and stages the npm packages for maintainer approval.
 
 The macOS job builds both `aarch64-apple-darwin` and `x86_64-apple-darwin` on an Apple Silicon runner. It tests the Intel build through Rosetta and combines both executables with `lipo`. The GitHub release offers one macOS download, `aether-motion-v<version>-universal-apple-darwin.tar.gz`. npm uses the architecture-specific builds so each installation downloads only its own binary.
 
@@ -30,7 +30,7 @@ Wait for the Release workflow to finish. It builds the four native binaries, cre
 Download and extract the artifact, then run these commands from the directory containing the five tarballs:
 
 ```bash
-npm login
+npm login --registry=https://registry.npmjs.org
 version=0.1.0
 tag=latest
 case "$version" in *-*) tag=next ;; esac
@@ -43,7 +43,7 @@ In **Staged Packages** on npmjs.com, review and approve the four platform packag
 
 ## Subsequent npm releases
 
-For each of the five packages, open **Settings → Trusted Publisher**, select **GitHub Actions**, and enter:
+For each of the five packages on npmjs.com, open **Settings → Trusted Publisher**, select **GitHub Actions**, and enter:
 
 | Setting | Value |
 | --- | --- |
@@ -53,6 +53,12 @@ For each of the five packages, open **Settings → Trusted Publisher**, select *
 | Environment | Leave empty |
 | Allowed actions | Staged publishing |
 
-Create these connections just before the next release. npm requires the first successful use within two days. The GitHub-hosted `npm` job uses OIDC with `id-token: write`. npm automatically adds provenance for public packages built from a public repository.
+Create these connections just before the next release. npm requires the first successful use within two days. The GitHub-hosted `npm` job already targets `https://registry.npmjs.org` and uses OIDC with `id-token: write`. This setup needs no `NPM_TOKEN` secret. npm automatically adds provenance for public packages built from a public repository.
 
 Bump the version in `Cargo.toml` and update `Cargo.lock` and `CHANGELOG.md`, then commit and push the matching tag. GitHub Actions stages the five packages. Approve them in npmjs.com in the same order as the first release. Stable versions use `latest` and pre-releases such as `0.2.0-rc.1` use `next`.
+
+## Troubleshoot npm staging
+
+- If npm exits with code 128 and tries `git ls-remote` over SSH, prefix the tarball's relative path with `./` or use an absolute path. npm otherwise treats `npm-tarballs/<file>.tgz` as GitHub shorthand. The 0.1.5 and 0.1.7 workflow runs failed at this step after creating their GitHub releases.
+- If the npm job fails after the GitHub release is created, download its `npm-tarballs` artifact and use the manual staging loop above with the release version. Skip any versions already staged or published. Verify all four platform packages before approving the launcher.
+- For an OIDC rejection, check the trusted publisher on the package named in the error. Verify the repository name, workflow filename, environment, and permission for staged publishing against the table above.

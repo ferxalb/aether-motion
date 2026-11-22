@@ -174,5 +174,5 @@ jobs:
             if npm view "$name@$version" version >/dev/null 2>&1; then
               echo "$name@$version is already published"; continue
             fi
-            npm stage publish "npm-tarballs/aether-motion-${dir}-$version.tgz" --access public --tag "$tag"
+            npm stage publish "./npm-tarballs/aether-motion-${dir}-$version.tgz" --access public --tag "$tag"
           done < npm-order.txt

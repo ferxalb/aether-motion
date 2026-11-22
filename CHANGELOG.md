@@ -32,7 +32,7 @@ CLI/MCP output may still change between minor releases.
   - CPU rasterizer (default): fixed-point edges with the top-left rule, an exact per-row span
     solver, `data-hf-3d-antialias` supersampling (1 to 4 per axis, default 2), and bounded 64 px
     tiles; deterministic across threads, segments, and CPUs.
-  - Optional wgpu backend (`--features gpu`; `render --3d-backend gpu|auto` or
+  - wgpu backend included by default (`render --3d-backend gpu|auto` or
     `AETHER_3D_BACKEND`): the same shaded triangles, clip matrix, reversed depth, and integer
     resolve, within a documented tolerance of the CPU, with an automatic and sticky CPU fallback
     (stderr note, `check`'s `gpuFallback`).
@@ -40,7 +40,7 @@ CLI/MCP output may still change between minor releases.
     per-element motion blur treat scene animation as movement.
   - `examples/lighthouse-isle-3d.html`, `tests/scene3d.rs`, and `tests/scene3d_gpu.rs`.
   [Benchmark details](BENCHMARK.md#020-native-low-poly-3d-2026-11-21)
-- 2.5D spaces for 0.1.9: `data-hf-space="perspective|orthographic"` (with `data-hf-perspective`,
+- 2.5D spaces: `data-hf-space="perspective|orthographic"` (with `data-hf-perspective`,
   default 1000 px) turns a container into a 3D stage of flat planes. Planes take `data-hf-z`,
   `data-hf-rotate-x`, `data-hf-rotate-y`, and `data-hf-backface="hidden"`, keyframed as `z`,
   `rotateX`, and `rotateY` in `data-hf-keyframes`, and compose hierarchically with their layout,
@@ -145,7 +145,7 @@ CLI/MCP output may still change between minor releases.
   (resvg rounds the pattern tile to whole pixels) re-phase at each level switch rather than on
   every zooming frame. `AETHER_PROFILE=1` reports `image-resample` time and `visible-region rasters`.
   [Benchmark details](BENCHMARK.md#zoom-aware-svg-reuse-2026-11-19)
-  - CLI redesign. `aether-motion --help` groups the commands (create and export, compose, coding
+- CLI redesign. `aether-motion --help` groups the commands (create and export, compose, coding
   agents, diagnose) and every command has its own help page with grouped options, defaults, and
   examples: `aether-motion help <command>` or `aether-motion <command> --help` (`-h`). `-V` and
   `version` print the version.
@@ -206,12 +206,12 @@ CLI/MCP output may still change between minor releases.
   its visible part instead of failing with `rasterized image exceeds 64 MiB`; a visible part above
   64 MiB still asks for `--scale`.
 
-### Fixed
-
 - The root shutter (`data-motion-blur`) now draws each sample at its own composition time, so
   animated clip paths and self-drawing strokes are averaged over the window instead of being
   drawn at the frame time in every sample.
 - A per-element motion blur sample that fails to draw no longer leaves its pixels on the frame.
+- GitHub Actions stages local npm tarballs using explicit file paths, so npm resolves the release
+  archives from disk.
 
 ## [0.1.7] - 2026-11-19
 
