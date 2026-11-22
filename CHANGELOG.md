@@ -7,6 +7,14 @@ CLI/MCP output may still change between minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- Opt-in CUDA backend for `data-hf-3d` scenes (`--3d-backend cuda`, Cargo feature `cuda`, Linux and
+  NVIDIA only): a kernel does triangle coverage, depth, and resolve with the CPU rasterizer's
+  arithmetic, loaded at run time with its precompiled kernel (`tools/build_cuda_kernel.py`).
+  `--require-gpu` works with it and its `AETHER_3D_PROOF` names the backend, device, and completed
+  launches. See [docs/3d.md](docs/3d.md).
+
 ### Changed
 
 - npm releases bundle all supported native binaries in `@aether-motion/cli`. The launcher

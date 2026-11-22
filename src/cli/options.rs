@@ -153,8 +153,11 @@ pub fn parse(command: &str, raw: &[String]) -> Result<Options> {
         crate::scene3d::backend::set_request(backend);
     }
     if args.has("--require-gpu") {
-        if !matches!(crate::scene3d::backend::request(), Ok(crate::scene3d::backend::Request::Gpu)) {
-            return Err(usage("--require-gpu needs --3d-backend gpu"));
+        if !matches!(
+            crate::scene3d::backend::request(),
+            Ok(crate::scene3d::backend::Request::Gpu | crate::scene3d::backend::Request::Cuda)
+        ) {
+            return Err(usage("--require-gpu needs --3d-backend gpu or cuda"));
         }
         crate::scene3d::backend::set_strict(true);
     }

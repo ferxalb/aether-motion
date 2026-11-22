@@ -11,6 +11,10 @@
 //! Strict mode (`--require-gpu`, [`set_strict`]) is for exports that must not touch the CPU rasterizer:
 //! the adapter must be an NVIDIA Vulkan device, any GPU failure aborts the render with an error
 //! instead of falling back, and [`proof`] reports what drew so a caller can verify it.
+//!
+//! `cuda` (`--3d-backend cuda`, the `cuda` feature) is a separate, explicit request for the CUDA
+//! backend ([`super::cuda`]): it never selects wgpu, and strict mode then requires a CUDA device.
+//! `gpu` and `auto` keep meaning wgpu.
 
 use super::camera::Placement;
 use super::frame::Triangle;
@@ -26,6 +30,8 @@ pub enum Request {
     Cpu,
     Gpu,
     Auto,
+    /// The CUDA rasterizer, only when asked for by name.
+    Cuda,
 }
 
 impl std::str::FromStr for Request {
@@ -36,7 +42,8 @@ impl std::str::FromStr for Request {
             "cpu" => Ok(Self::Cpu),
             "gpu" => Ok(Self::Gpu),
             "auto" => Ok(Self::Auto),
-            other => bail!("3D backend must be cpu, gpu, or auto (got {other})"),
+            "cuda" => Ok(Self::Cuda),
+            other => bail!("3D backend must be cpu, gpu, cuda, or auto (got {other})"),
         }
     }
 }
@@ -61,6 +68,10 @@ pub fn strict() -> bool {
 /// made, and whether anything fell back. A caller accepts a GPU export only when `backend` is
 /// `gpu`, `api` is `Vulkan`, `vendor` is 4318 (NVIDIA), `draws` is positive, and `fallbacks` is 0.
 pub fn proof() -> String {
+    #[cfg(all(feature = "cuda", unix))]
+    if matches!(request(), Ok(Request::Cuda)) {
+        return cuda_proof();
+    }
     let (backend, reason) = status();
     #[cfg(feature = "gpu")]
     let adapter = super::gpu::adapter_report();
@@ -74,11 +85,29 @@ pub fn proof() -> String {
     )
 }
 
+/// The strict-mode proof of the CUDA backend: `backend` is `cuda`, `api` is `CUDA`, and the `cuda`
+/// object carries the driver, device, kernel, and measured times. A caller accepts it only when
+/// `backend` is `cuda`, `vendor` is 4318, `draws` and `cuda.launches` are positive (kernels that
+/// ran to completion and were read back), and `fallbacks` is 0.
+#[cfg(all(feature = "cuda", unix))]
+fn cuda_proof() -> String {
+    let (backend, reason) = status();
+    let name = super::cuda::adapter_name().unwrap_or_default();
+    let detail = super::cuda::proof_fields().unwrap_or_else(|| "null".into());
+    format!(
+        "{{\"backend\":{backend:?},\"adapter\":{name:?},\"api\":\"CUDA\",\"vendor\":{},\"draws\":{},\"fallbacks\":{},\"cuda\":{detail}}}",
+        if name.is_empty() { 0 } else { super::cuda::NVIDIA },
+        GPU_DRAWS.load(Ordering::Relaxed),
+        u32::from(reason.is_some())
+    )
+}
+
 fn encode(request: Request) -> u8 {
     match request {
         Request::Cpu => 1,
         Request::Gpu => 2,
         Request::Auto => 3,
+        Request::Cuda => 4,
     }
 }
 
@@ -93,6 +122,7 @@ pub fn request() -> Result<Request> {
         1 => Ok(Request::Cpu),
         2 => Ok(Request::Gpu),
         3 => Ok(Request::Auto),
+        4 => Ok(Request::Cuda),
         _ => match std::env::var("AETHER_3D_BACKEND") {
             Ok(value) if !value.trim().is_empty() => value
                 .parse()
@@ -119,7 +149,11 @@ pub fn status() -> (&'static str, Option<String>) {
     let gpu = gpu && super::gpu::available();
     #[cfg(not(feature = "gpu"))]
     let gpu = gpu && false;
-    (if gpu { "gpu" } else { "cpu" }, reason)
+    #[cfg(all(feature = "cuda", unix))]
+    let cuda = matches!(request(), Ok(Request::Cuda)) && reason.is_none() && super::cuda::available();
+    #[cfg(not(all(feature = "cuda", unix)))]
+    let cuda = false;
+    (if cuda { "cuda" } else if gpu { "gpu" } else { "cpu" }, reason)
 }
 
 /// Largest resolved region (bytes) the memo keeps; bigger draws are not remembered.
@@ -156,6 +190,8 @@ pub struct Workspace {
     memo: Memo,
     #[cfg(feature = "gpu")]
     gpu: Option<super::gpu::Target>,
+    #[cfg(all(feature = "cuda", unix))]
+    cuda: Option<super::cuda::Target>,
 }
 
 impl Workspace {
@@ -221,8 +257,18 @@ impl Workspace {
             sink(x, y, row);
         };
         if !self.triangles.is_empty() {
-            let drawn = !matches!(request()?, Request::Cpu)
-                && Self::try_gpu(
+            let drawn = match request()? {
+                Request::Cpu => false,
+                Request::Cuda => Self::try_cuda(
+                    #[cfg(all(feature = "cuda", unix))]
+                    &mut self.cuda,
+                    &view,
+                    &self.triangles,
+                    placement,
+                    &region,
+                    &mut record,
+                ),
+                Request::Gpu | Request::Auto => Self::try_gpu(
                     #[cfg(feature = "gpu")]
                     &mut self.gpu,
                     &view,
@@ -230,7 +276,8 @@ impl Workspace {
                     placement,
                     &region,
                     &mut record,
-                );
+                ),
+            };
             if !drawn && strict() {
                 let reason = FALLBACK
                     .lock()
@@ -255,6 +302,46 @@ impl Workspace {
             memo.region = Some(region);
         }
         Ok(Some(region))
+    }
+
+    #[cfg(all(feature = "cuda", unix))]
+    fn try_cuda(
+        target: &mut Option<super::cuda::Target>,
+        view: &super::camera::View,
+        triangles: &[Triangle],
+        placement: &Placement,
+        region: &Region,
+        sink: &mut RowSink,
+    ) -> bool {
+        if FALLBACK.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
+            return false;
+        }
+        let Some(cuda) = super::cuda::shared() else {
+            return false;
+        };
+        let target = target.get_or_insert_with(super::cuda::Target::default);
+        match target.draw(cuda, view, triangles, placement, region, sink) {
+            Ok(()) => {
+                GPU_DRAWS.fetch_add(1, Ordering::Relaxed);
+                true
+            }
+            Err(error) => {
+                fall_back(format!("CUDA draw failed: {error:#}"));
+                false
+            }
+        }
+    }
+
+    #[cfg(not(all(feature = "cuda", unix)))]
+    fn try_cuda(
+        _: &super::camera::View,
+        _: &[Triangle],
+        _: &Placement,
+        _: &Region,
+        _: &mut RowSink,
+    ) -> bool {
+        fall_back("this build has no CUDA backend (build with --features cuda on Linux)".into());
+        false
     }
 
     #[cfg(feature = "gpu")]

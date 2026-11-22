@@ -101,16 +101,18 @@ impl Region {
     }
 }
 
-/// A triangle ready to rasterize.
+/// A triangle ready to rasterize. `repr(C)` because the CUDA backend uploads these as they are
+/// (112 bytes; its kernel declares the same layout).
 #[derive(Clone, Copy, Debug)]
-struct Setup {
+#[repr(C)]
+pub(crate) struct Setup {
     /// Snapped corners in 1/256 sample, relative to the region's corner.
-    v: [[i64; 2]; 3],
+    pub(crate) v: [[i64; 2]; 3],
     /// Inclusive-exclusive sample bounds `[x0, y0, x1, y1]`.
-    bounds: [i64; 4],
+    pub(crate) bounds: [i64; 4],
     /// `z = z0 + zx * x + zy * y` at sample centers (`x`, `y` in samples).
-    depth: [f64; 3],
-    color: u32,
+    pub(crate) depth: [f64; 3],
+    pub(crate) color: u32,
 }
 
 /// Reusable buffers of the rasterizer (bounded by one tile and the frame's triangles).
@@ -134,7 +136,7 @@ impl Scratch {
     }
 }
 
-const COVERED: u32 = 0xff00_0000;
+pub(crate) const COVERED: u32 = 0xff00_0000;
 
 /// Draws `triangles` seen by `view` into `region`, calling `sink(x, y, row)` with straight-alpha
 /// RGBA for each resolved row segment that holds geometry (`x`, `y` target px).
@@ -146,13 +148,8 @@ pub fn rasterize(
     scratch: &mut Scratch,
     sink: &mut RowSink,
 ) {
-    let matrix = region.matrix(view, placement);
     let ss = region.antialias as usize;
-    let size = [(region.width() * ss) as f64, (region.height() * ss) as f64];
-    scratch.setups.clear();
-    for triangle in triangles {
-        setup(triangle, &matrix, size, region.samples, &mut scratch.setups);
-    }
+    setups(view, triangles, placement, region, &mut scratch.setups);
     if scratch.setups.is_empty() {
         return;
     }
@@ -247,6 +244,24 @@ pub fn rasterize(
                 }
             }
         }
+    }
+}
+
+/// Clips and snaps `triangles` into `out` (cleared first): the geometry stage every backend that
+/// draws integer-snapped triangles shares, in draw order.
+pub(crate) fn setups(
+    view: &View,
+    triangles: &[Triangle],
+    placement: &Placement,
+    region: &Region,
+    out: &mut Vec<Setup>,
+) {
+    let matrix = region.matrix(view, placement);
+    let ss = region.antialias as usize;
+    let size = [(region.width() * ss) as f64, (region.height() * ss) as f64];
+    out.clear();
+    for triangle in triangles {
+        setup(triangle, &matrix, size, region.samples, out);
     }
 }
 

@@ -1,0 +1,35 @@
+<!doctype html>
+<!--
+  CUDA parity fixture (AETHER Motion data-hf-3d). A still, deterministic scene for comparing 3D
+  backends pixel by pixel. It covers:
+    - overlapping solids at different depths (two boxes, one in front of a sphere),
+    - depth ties: two coplanar quads at the same z, where the first drawn must win on every backend,
+    - clipped geometry: a floor much larger than the view that runs past the camera's near plane,
+    - antialiasing: tilted box and low-detail sphere edges at 4x4 supersampling.
+  Render one frame per backend and diff them:
+    aether-motion render examples/cuda-parity-3d.html --frame 0 --output cpu.png
+    aether-motion render examples/cuda-parity-3d.html --frame 0 --3d-backend cuda --require-gpu --output cuda.png
+-->
+<html>
+<body>
+<div data-composition-id="cuda-parity-3d" data-width="640" data-height="360" data-duration="1"
+     style="position: relative; width: 640px; height: 360px; background: #101828">
+  <div id="world" class="clip" data-start="0" data-duration="1" data-track-index="1"
+       data-hf-3d data-hf-3d-antialias="4"
+       style="position: absolute; left: 0; top: 0; width: 640px; height: 360px">
+    <hf-light type="ambient" color="#6a78b0" intensity="0.5"></hf-light>
+    <hf-light type="directional" color="#ffd9b0" intensity="1.1" direction="0.5 0.7 -0.5"></hf-light>
+    <hf-camera position="0 -260 1500" target="0 20 0"></hf-camera>
+    <!-- Clipped: spans far beyond the camera on every side. -->
+    <hf-mesh shape="plane" size="20000 20000" color="#2a3a5a" position="0 150 0"></hf-mesh>
+    <!-- Depth ties: identical geometry in one plane; the first quad in draw order wins. -->
+    <hf-mesh shape="plane" size="160 160" color="#e0402a" position="-150 100 40" rotation="-90 0 0"></hf-mesh>
+    <hf-mesh shape="plane" size="160 160" color="#2ae070" position="-150 100 40" rotation="-90 0 0"></hf-mesh>
+    <!-- Overlaps at different depths. -->
+    <hf-mesh shape="sphere" radius="90" detail="1" color="#7fb3d5" position="60 -20 -80"></hf-mesh>
+    <hf-mesh shape="box" size="150 150 150" color="#d08c5a" position="20 10 60" rotation="25 35 10"></hf-mesh>
+    <hf-mesh shape="box" size="90 220 90" color="#c0c0e0" position="170 -30 120" rotation="0 20 -15"></hf-mesh>
+  </div>
+</div>
+</body>
+</html>

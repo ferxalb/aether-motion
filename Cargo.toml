@@ -30,6 +30,9 @@ pollster = { version = "1.0", optional = true }
 default = ["gpu"]
 # wgpu backend for `data-hf-3d` scenes, selected with `--3d-backend gpu` or `AETHER_3D_BACKEND=gpu`.
 gpu = ["dep:wgpu", "dep:pollster"]
+# CUDA backend for `data-hf-3d` scenes (Linux, NVIDIA), selected with `--3d-backend cuda`. Opt-in:
+# it loads libcuda at run time and needs the kernel built by `tools/build_cuda_kernel.py`.
+cuda = []
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

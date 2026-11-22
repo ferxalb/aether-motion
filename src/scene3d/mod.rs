@@ -11,11 +11,13 @@
 //! [`Scene3d::frame`] evaluates the scene at one instant into a [`frame::Frame`]: world-space
 //! triangles that survived back-face culling, each with its flat-shaded color ([`shade`]), plus
 //! the camera ([`camera::View`]). That packet is the shared representation every backend draws:
-//! the deterministic CPU rasterizer ([`raster`]) and, with the `gpu` feature, the wgpu backend
-//! ([`gpu`]). [`backend`] picks one and falls back to the CPU.
+//! the deterministic CPU rasterizer ([`raster`]), with the `gpu` feature the wgpu backend
+//! ([`gpu`]), and with the `cuda` feature the CUDA backend ([`cuda`]). [`backend`] picks one and falls back to the CPU.
 
 pub mod backend;
 pub mod camera;
+#[cfg(all(feature = "cuda", unix))]
+pub mod cuda;
 pub mod frame;
 #[cfg(feature = "gpu")]
 pub mod gpu;

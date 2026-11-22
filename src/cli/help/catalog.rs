@@ -238,13 +238,13 @@ pub const COMMANDS: &[Command] = &[
                     ),
                     opt(
                         "--3d-backend",
-                        "cpu|gpu|auto",
-                        "Backend for data-hf-3d scenes. Defaults to cpu for deterministic output. Standard builds include GPU support.",
+                        "cpu|gpu|cuda|auto",
+                        "Backend for data-hf-3d scenes. Defaults to cpu for deterministic output. Standard builds include wgpu support; cuda (NVIDIA, Linux) needs a build with the cuda feature and the kernel from tools/build_cuda_kernel.py.",
                     ),
                     opt(
                         "--require-gpu",
                         "",
-                        "With --3d-backend gpu: require an NVIDIA Vulkan adapter, fail the render on any GPU error instead of falling back to the CPU, and print an AETHER_3D_PROOF line on stderr.",
+                        "With --3d-backend gpu or cuda: require an NVIDIA Vulkan adapter (gpu) or CUDA device (cuda), fail the render on any GPU error instead of falling back to the CPU, and print an AETHER_3D_PROOF line on stderr.",
                     ),
                     opt(
                         "--progress",
@@ -518,7 +518,7 @@ pub const COMMANDS: &[Command] = &[
                     opt("--size", "1080p|4k", "Delivery size, as in render."),
                     opt("--scale", "<factor>", "Size factor instead of --size (default 1)."),
                     opt("--priority", "low|normal", "Process priority (default low)."),
-                    opt("--3d-backend", "cpu|gpu|auto", "Backend for data-hf-3d scenes."),
+                    opt("--3d-backend", "cpu|gpu|cuda|auto", "Backend for data-hf-3d scenes."),
                 ],
             },
             VARIABLES,
