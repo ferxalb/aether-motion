@@ -101,7 +101,7 @@ fn run(command: &str, rest: &[String]) -> Result<i32> {
         "captions" => done(captions_cmd::run(rest)),
         "agent" => done(agent_cmd::run(rest)),
         "doctor" => done(doctor::run()),
-        "mcp" => done(crate::agent::serve()),
+        "mcp" => done(crate::agent::run_mcp(rest)),
         // `check` prints JSON when piped, so scripts and agents keep the machine-readable report.
         "check" => check_cmd::run(rest),
         // Project mode without a file, direct mode with one; see `render/mod.rs`.

@@ -51,6 +51,14 @@ claude mcp add aether-motion -- aether-motion mcp
 
 For other agents, add `aether-motion mcp` as a stdio MCP server in their settings.
 
+The agent starts the server; running `aether-motion mcp` by hand in a terminal prints setup help instead of waiting for input. To confirm the server answers without a client, run:
+
+```bash
+aether-motion mcp --selftest
+```
+
+It performs the handshake and lists the tools in workflow order: `aether_guide` (learn), `aether_block` and `aether_write` (author), `aether_check` and `aether_snapshot` (verify), `aether_render` (deliver). Use `aether-motion mcp --stdio` to serve in a terminal anyway.
+
 The server supports MCP `2026-07-28` and legacy clients that begin with `initialize`.
 
 Try a prompt like:

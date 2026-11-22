@@ -9,7 +9,7 @@ use std::path::Path;
 
 pub mod mcp;
 pub mod zones;
-pub use mcp::serve;
+pub use mcp::{run as run_mcp, serve};
 
 fn fix_hint(message: &str) -> &'static str {
     if message.contains("data-hf-3d") || message.contains("<hf-") {

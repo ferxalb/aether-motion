@@ -447,15 +447,24 @@ pub const COMMANDS: &[Command] = &[
         args: "",
         group: Group::Agents,
         summary: "Run the MCP server over stdio",
-        usage: &["aether-motion mcp"],
+        usage: &["aether-motion mcp [--selftest | --stdio]"],
         about: &[
-            "Speaks the Model Context Protocol on stdin and stdout for coding agents. Tools: aether_guide, aether_write, aether_block, aether_check, aether_snapshot, and aether_render.",
+            "Speaks the Model Context Protocol on stdin and stdout for coding agents; the agent starts it, so a run by hand in a terminal prints setup help instead of waiting. Tools in workflow order: aether_guide (learn), aether_block and aether_write (author), aether_check and aether_snapshot (verify), aether_render (deliver).",
         ],
-        sections: &[],
-        examples: &[(
-            "claude mcp add aether-motion -- aether-motion mcp",
-            "Register the server with Claude Code",
-        )],
+        sections: &[Section {
+            title: "Options",
+            options: &[
+                opt("--selftest", "", "Run the handshake and tool list in-process and print them, without a client."),
+                opt("--stdio", "", "Serve even when stdin is a terminal."),
+            ],
+        }],
+        examples: &[
+            (
+                "claude mcp add aether-motion -- aether-motion mcp",
+                "Register the server with Claude Code",
+            ),
+            ("aether-motion mcp --selftest", "Check that the server answers"),
+        ],
     },
     Command {
         name: "doctor",
