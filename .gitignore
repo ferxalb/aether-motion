@@ -18,3 +18,5 @@ aether-motion-api
 
 # Original walk cycle cels.
 !examples/cinematic-walk-assets/*/*.png
+
+*.md

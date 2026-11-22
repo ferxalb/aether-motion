@@ -28,6 +28,8 @@ Inside a project created by `aether-motion init`, `aether.json` supplies the ent
 
 ## Visual review before export
 
+**Render budget.** Never export an MP4 to review a change. Iterate with `check` plus stills of only the touched key frames (`--output 'f-{frame}.png' --frames A,B,C --scale 0.5`, or `aether_snapshot`), compare consecutive key stills for continuity, re-sample only the shot you edited, and export the MP4 once at the end. Estimate long exports with `bench` and tell the user first; do not raise `--threads` on a user's machine. The full rule is in `AGENTS.md` ("Render budget").
+
 Batch the opening, strongest motion or effect, both sides and peak of important transitions, and the final pose at delivery size and FPS. Inspect the frames for stretched artwork, clipped subjects, exposed layer edges, inconsistent lighting, and unreadable text. Review a short motion preview when stills cannot verify gait, contact, or timing. After a fix, resample the affected moments before the full export.
 
 ## Templates with variables

@@ -38,7 +38,7 @@ Use independent, local artwork for each depth plane. Set `data-hf-parallax` on d
 
 After structural edits, run `aether-motion check <file.html>` and fix errors using the reported `fix` guidance until `ok` is true; when `fix` only points to the contract, the `error` itself names the exact problem and remedy (for example the re-encode command for a video with B-frames). Then inspect representative frames, especially the start, midpoint, and end of a transition. Use `aether_snapshot` at absolute times when MCP is available (pass the export's `fps` when the composition has motion blur, so the still matches the exported frame); otherwise render PNG frames with the CLI's `--frame N --fps F`. The companion `aether-motion-cli` skill has the full export workflow when installed.
 
-Render an MP4 when the user requests a file or delivery. Preserve the requested dimensions and frame rate, and inspect the produced frame or video before describing it as complete. For 16:9 and 9:16 outputs, select `--size 1080p` or `--size 4k` and an explicit `--fps` of 30 or 60 when the request does not specify them.
+Never export an MP4 to review work: iterate with `check` and half-scale stills of only the key frames you touched (opening, shot boundaries, both sides and peak of transitions, final frame), then export once. Render an MP4 when the user requests a file or delivery. Preserve the requested dimensions and frame rate, and inspect the produced frame or video before describing it as complete. For 16:9 and 9:16 outputs, select `--size 1080p` or `--size 4k` and an explicit `--fps` of 30 or 60 when the request does not specify them.
 
 ## Keep the result maintainable
 
