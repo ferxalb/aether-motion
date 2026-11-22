@@ -6,11 +6,14 @@ use anyhow::{bail, Context, Result};
 pub(in crate::parse) fn parse_length(raw: &str, property: &str) -> Result<Length> {
     let raw = raw.trim();
     if let Some(s) = raw.strip_suffix('%') {
-        return Ok(Length::Percent(
-            s.trim()
-                .parse()
-                .with_context(|| format!("{property}: invalid percentage"))?,
-        ));
+        let n: f32 = s
+            .trim()
+            .parse()
+            .with_context(|| format!("{property}: invalid percentage"))?;
+        if !n.is_finite() {
+            bail!("{property}: non-finite value");
+        }
+        return Ok(Length::Percent(n));
     }
     let s = raw.strip_suffix("px").unwrap_or(raw).trim();
     let n: f32 = s

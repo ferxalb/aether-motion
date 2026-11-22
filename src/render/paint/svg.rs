@@ -46,7 +46,21 @@ pub(crate) fn read_limited(path: &std::path::Path) -> Result<Vec<u8>> {
     if len > MAX_SVG_BYTES {
         return Err(anyhow!("SVG exceeds 8 MiB: {}", path.display()));
     }
-    std::fs::read(path).with_context(|| format!("could not read image {}", path.display()))
+    // Bound the read itself: the file may grow after the size check, and devices report 0 bytes.
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(
+        &mut std::io::Read::take(
+            std::fs::File::open(path)
+                .with_context(|| format!("could not read image {}", path.display()))?,
+            MAX_SVG_BYTES + 1,
+        ),
+        &mut bytes,
+    )
+    .with_context(|| format!("could not read image {}", path.display()))?;
+    if bytes.len() as u64 > MAX_SVG_BYTES {
+        return Err(anyhow!("SVG exceeds 8 MiB: {}", path.display()));
+    }
+    Ok(bytes)
 }
 
 /// Rasterizes `tree` into a `w` x `h` bitmap using `fit` (`fill`, `contain`, or `cover`).

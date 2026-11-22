@@ -474,9 +474,22 @@ impl<'a> SequenceSources<'a> {
 
 fn decode(path: &Path) -> Result<RgbaImage> {
     check_image(path)?;
-    Ok(image::open(path)
-        .with_context(|| format!("could not open image {}", path.display()))?
-        .to_rgba8())
+    // One reader with decoder limits: the header checked above cannot be swapped for a larger
+    // image before decoding, and a hostile file cannot make the decoder allocate without bound.
+    let mut reader = image::ImageReader::open(path)
+        .and_then(|reader| reader.with_guessed_format())
+        .with_context(|| format!("could not open image {}", path.display()))?;
+    reader.limits(crate::render::image_limits());
+    let image = reader
+        .decode()
+        .with_context(|| format!("could not open image {}", path.display()))?;
+    if u64::from(image.width()) * u64::from(image.height()) > crate::render::MAX_IMAGE_PIXELS {
+        return Err(anyhow!(
+            "image exceeds 16 megapixels: {}; reduce its size",
+            path.display()
+        ));
+    }
+    Ok(image.to_rgba8())
 }
 
 /// Filter premultiplied samples at 16-bit precision so transparent RGB cannot tint the edges.

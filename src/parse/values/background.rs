@@ -164,6 +164,7 @@ fn parse_position(text: &str) -> Result<(f32, f32)> {
             _ => word
                 .strip_suffix('%')
                 .and_then(|n| n.parse::<f32>().ok())
+                .filter(|n| n.is_finite())
                 .map(|n| n / 100.0)
                 .with_context(|| {
                     format!("radial-gradient: position must use keywords or %: {text}")
@@ -245,6 +246,26 @@ fn parse_stops(parts: &[&str]) -> Result<Vec<Stop>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn non_finite_numbers_are_rejected() {
+        for raw in [
+            "radial-gradient(circle at NaN% 50%, red, blue)",
+            "radial-gradient(circle at inf% 50%, red, blue)",
+            "hsl(NaN, 50%, 50%)",
+            "hsl(inf, 50%, 50%)",
+        ] {
+            assert!(parse_background(raw).is_err(), "{raw}");
+        }
+        assert!(parse_background("radial-gradient(circle at 20% 50%, red, blue)").is_ok());
+        assert!(parse_background("hsl(120, 50%, 50%)").is_ok());
+        for raw in ["NaN%", "inf%", "-inf%"] {
+            assert!(
+                crate::parse::values::length::parse_length(raw, "width").is_err(),
+                "{raw}"
+            );
+        }
+    }
 
     #[test]
     fn two_opaque_axis_stops_keep_the_fast_path() {

@@ -22,6 +22,14 @@ CLI/MCP output may still change between minor releases.
 
 ### Fixed
 
+- Images are decoded with bounded dimensions and allocation, in the same reader that checks
+  their size, so a crafted or swapped file cannot exhaust memory. Composition, scene, SVG, and
+  caption transcript reads are capped while reading, so a growing file or a device such as
+  `/dev/zero` fails with a size error instead of exhausting memory.
+- `NaN` and infinite values in `%` lengths, `radial-gradient` positions, and `hsl()` hues are
+  rejected with an error instead of rendering wrong layout or colors.
+- Preview reload fingerprints hash only regular files, with a capped read, so an asset path that
+  points at a device or FIFO no longer hangs the watcher.
 - MP4 and `.aseg` outputs are saved without replacing a file that appeared at the output path
   during the render, and a dangling symlink at the output path now counts as an existing output.
   Temporary `*.partial.*` files (also for `aether_write` with `overwrite`) are created exclusively,

@@ -28,13 +28,18 @@ pub struct Transcript {
 
 /// Reads and normalizes the transcript at `path`.
 pub fn load(path: &Path) -> Result<Transcript> {
-    let meta =
-        std::fs::metadata(path).with_context(|| format!("could not read {}", path.display()))?;
-    if meta.len() > MAX_BYTES {
+    use std::io::Read;
+    // Bound the read itself, not just the reported size: a file that grows after a size check,
+    // or a device such as `/dev/zero` that reports length 0, must not exhaust memory.
+    let file =
+        std::fs::File::open(path).with_context(|| format!("could not read {}", path.display()))?;
+    let mut raw = String::new();
+    file.take(MAX_BYTES + 1)
+        .read_to_string(&mut raw)
+        .with_context(|| format!("could not read {}", path.display()))?;
+    if raw.len() as u64 > MAX_BYTES {
         bail!("{} is larger than {} MiB", path.display(), MAX_BYTES >> 20);
     }
-    let raw = std::fs::read_to_string(path)
-        .with_context(|| format!("could not read {}", path.display()))?;
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
@@ -292,6 +297,13 @@ fn strip_tags(line: &str) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[cfg(unix)]
+    #[test]
+    fn endless_device_is_rejected_without_exhausting_memory() {
+        let error = load(Path::new("/dev/zero")).unwrap_err();
+        assert!(error.to_string().contains("larger than"), "{error:#}");
+    }
 
     #[test]
     fn reads_plain_and_openai_words() {

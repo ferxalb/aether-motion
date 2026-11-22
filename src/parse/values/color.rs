@@ -78,6 +78,9 @@ pub(in crate::parse) fn parse_color_function(name: &str, args: &str, raw: &str) 
                 .trim_end_matches("deg")
                 .parse()
                 .with_context(|| format!("hsl: invalid hue: {raw}"))?;
+            if !hue.is_finite() {
+                bail!("hsl: hue is not finite: {raw}");
+            }
             let percent = |i: usize| -> Result<f32> {
                 if !parts[i].ends_with('%') {
                     bail!("hsl: saturation and lightness need %: {raw}");

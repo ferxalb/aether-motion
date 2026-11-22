@@ -119,7 +119,25 @@ pub(crate) fn read_text_limited(path: &Path, limit: u64, what: &str) -> Result<S
             limit >> 20
         );
     }
-    fs::read_to_string(path).with_context(|| format!("could not read {}", path.display()))
+    // Bound the read too: the file may grow after the size check, and devices or FIFOs
+    // (`/dev/zero`) report a length of 0 but never end.
+    let mut text = String::new();
+    std::io::Read::read_to_string(
+        &mut std::io::Read::take(
+            fs::File::open(path).with_context(|| format!("could not read {}", path.display()))?,
+            limit + 1,
+        ),
+        &mut text,
+    )
+    .with_context(|| format!("could not read {}", path.display()))?;
+    if text.len() as u64 > limit {
+        bail!(
+            "{what} {} is larger than {} MiB",
+            path.display(),
+            limit >> 20
+        );
+    }
+    Ok(text)
 }
 
 /// One parse of the composition, with the wrap breaks of `splits` (empty on the first parse).

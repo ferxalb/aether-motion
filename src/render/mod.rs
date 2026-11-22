@@ -165,10 +165,28 @@ pub struct Renderer<'a> {
     scene3d: crate::scene3d::backend::Workspace,
 }
 
+/// Largest decoded image accepted, in pixels.
+pub(crate) const MAX_IMAGE_PIXELS: u64 = 16_000_000;
+
+/// Decoder limits for untrusted images: at most 16 megapixels of up to 16-bit RGBA (8 bytes per
+/// pixel) plus conversion headroom.
+pub(crate) fn image_limits() -> image::Limits {
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(16_384);
+    limits.max_image_height = Some(16_384);
+    limits.max_alloc = Some(MAX_IMAGE_PIXELS * 8 + (64 << 20));
+    limits
+}
+
 pub(crate) fn check_image(path: &Path) -> Result<()> {
-    let (width, height) = image::image_dimensions(path)
+    let mut reader = image::ImageReader::open(path)
+        .and_then(|reader| reader.with_guessed_format())
         .with_context(|| format!("could not read image {}", path.display()))?;
-    if width as u64 * height as u64 > 16_000_000 {
+    reader.limits(image_limits());
+    let (width, height) = reader
+        .into_dimensions()
+        .with_context(|| format!("could not read image {}", path.display()))?;
+    if width as u64 * height as u64 > MAX_IMAGE_PIXELS {
         return Err(anyhow!(
             "image exceeds 16 megapixels: {}; reduce its size",
             path.display()

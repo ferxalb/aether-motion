@@ -62,8 +62,19 @@ impl Fingerprint {
         let document = path
             .extension()
             .is_some_and(|ext| ext.eq_ignore_ascii_case("html") || ext.eq_ignore_ascii_case("htm"));
-        let hash = (len <= HASHED_BYTES || document)
-            .then(|| fs::read(path).ok())
+        // Only regular files are hashed, and the read is capped: devices and FIFOs report a length
+        // of 0 but never end, and a file may grow after `metadata`.
+        let hash = (meta.is_file() && (len <= HASHED_BYTES || document))
+            .then(|| {
+                let mut bytes = Vec::new();
+                let limit = if document { 16 << 20 } else { HASHED_BYTES };
+                std::io::Read::read_to_end(
+                    &mut std::io::Read::take(fs::File::open(path).ok()?, limit + 1),
+                    &mut bytes,
+                )
+                .ok()?;
+                Some(bytes)
+            })
             .flatten()
             .map(|bytes| {
                 let mut hasher = DefaultHasher::new();
