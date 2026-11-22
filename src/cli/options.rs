@@ -36,7 +36,7 @@ const VALUES: &[&str] = &[
 ];
 
 /// Flags without a value.
-const SWITCHES: &[&str] = &["--force"];
+const SWITCHES: &[&str] = &["--force", "--require-gpu"];
 
 #[derive(Debug)]
 pub struct Options {
@@ -151,6 +151,12 @@ pub fn parse(command: &str, raw: &[String]) -> Result<Options> {
     };
     if let Some(backend) = args.choice("--3d-backend")? {
         crate::scene3d::backend::set_request(backend);
+    }
+    if args.has("--require-gpu") {
+        if !matches!(crate::scene3d::backend::request(), Ok(crate::scene3d::backend::Request::Gpu)) {
+            return Err(usage("--require-gpu needs --3d-backend gpu"));
+        }
+        crate::scene3d::backend::set_strict(true);
     }
     Ok(Options {
         input,

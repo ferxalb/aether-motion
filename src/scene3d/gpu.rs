@@ -86,7 +86,13 @@ pub struct Gpu {
     resolve_layout: wgpu::BindGroupLayout,
     /// Adapter name and backend, for reports.
     pub name: String,
+    /// Graphics API of the adapter (`Vulkan`, `Metal`, ...) and its PCI vendor id.
+    api: String,
+    vendor: u32,
 }
+
+/// PCI vendor id of NVIDIA.
+const NVIDIA: u32 = 0x10DE;
 
 static GPU: OnceLock<Option<Gpu>> = OnceLock::new();
 
@@ -105,6 +111,13 @@ pub fn shared() -> Option<&'static Gpu> {
 /// Whether the GPU has been initialized successfully (never initializes it).
 pub fn available() -> bool {
     GPU.get().is_some_and(Option::is_some)
+}
+
+/// `(name, api, vendor)` of the initialized GPU, if any (the strict-mode proof).
+pub fn adapter_report() -> Option<(String, String, u32)> {
+    GPU.get()
+        .and_then(|g| g.as_ref())
+        .map(|g| (g.name.clone(), g.api.clone(), g.vendor))
 }
 
 /// Adapter description of the initialized GPU, if any.
@@ -127,6 +140,15 @@ impl Gpu {
             .await
             .map_err(|e| anyhow!("no adapter: {e}"))?;
         let info = adapter.get_info();
+        if super::backend::strict() && (info.backend != wgpu::Backend::Vulkan || info.vendor != NVIDIA)
+        {
+            bail!(
+                "--require-gpu needs an NVIDIA Vulkan adapter, found {} ({:?}, vendor {:#06x})",
+                info.name,
+                info.backend,
+                info.vendor
+            );
+        }
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("aether-3d"),
@@ -231,6 +253,8 @@ impl Gpu {
             resolve,
             resolve_layout,
             name: format!("{} ({:?})", info.name, info.backend),
+            api: format!("{:?}", info.backend),
+            vendor: info.vendor,
         })
     }
 }

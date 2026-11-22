@@ -7,13 +7,17 @@
 //! the reason is kept in [`status`]; after a GPU failure the whole process stays on the CPU so a
 //! render never mixes backends from one frame to the next. `auto` uses the GPU when one
 //! initializes and the CPU otherwise.
+//!
+//! Strict mode (`--require-gpu`, [`set_strict`]) is for exports that must not touch the CPU rasterizer:
+//! the adapter must be an NVIDIA Vulkan device, any GPU failure aborts the render with an error
+//! instead of falling back, and [`proof`] reports what drew so a caller can verify it.
 
 use super::camera::Placement;
 use super::frame::Triangle;
 use super::raster::{rasterize, Region, RowSink, Scratch};
 use super::Scene3d;
 use anyhow::{bail, Result};
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::Mutex;
 
 /// The backend a user asked for.
@@ -40,6 +44,35 @@ impl std::str::FromStr for Request {
 const UNSET: u8 = 0;
 static REQUEST: AtomicU8 = AtomicU8::new(UNSET);
 static FALLBACK: Mutex<Option<String>> = Mutex::new(None);
+static STRICT: AtomicBool = AtomicBool::new(false);
+static GPU_DRAWS: AtomicU64 = AtomicU64::new(0);
+
+/// Makes any GPU failure abort the render and requires an NVIDIA Vulkan adapter (`--require-gpu`).
+pub fn set_strict(strict: bool) {
+    STRICT.store(strict, Ordering::Relaxed);
+}
+
+/// Whether strict GPU mode is on.
+pub fn strict() -> bool {
+    STRICT.load(Ordering::Relaxed)
+}
+
+/// One line of JSON for strict mode: the backend that drew, the adapter, how many draws the GPU
+/// made, and whether anything fell back. A caller accepts a GPU export only when `backend` is
+/// `gpu`, `api` is `Vulkan`, `vendor` is 4318 (NVIDIA), `draws` is positive, and `fallbacks` is 0.
+pub fn proof() -> String {
+    let (backend, reason) = status();
+    #[cfg(feature = "gpu")]
+    let adapter = super::gpu::adapter_report();
+    #[cfg(not(feature = "gpu"))]
+    let adapter: Option<(String, String, u32)> = None;
+    let (name, api, vendor) = adapter.unwrap_or_default();
+    format!(
+        "{{\"backend\":{backend:?},\"adapter\":{name:?},\"api\":{api:?},\"vendor\":{vendor},\"draws\":{},\"fallbacks\":{}}}",
+        GPU_DRAWS.load(Ordering::Relaxed),
+        u32::from(reason.is_some())
+    )
+}
 
 fn encode(request: Request) -> u8 {
     match request {
@@ -198,6 +231,14 @@ impl Workspace {
                     &region,
                     &mut record,
                 );
+            if !drawn && strict() {
+                let reason = FALLBACK
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .clone()
+                    .unwrap_or_else(|| "the GPU did not draw".into());
+                bail!("--require-gpu: {reason}");
+            }
             if !drawn {
                 rasterize(
                     &view,
@@ -233,7 +274,10 @@ impl Workspace {
         };
         let target = target.get_or_insert_with(super::gpu::Target::default);
         match target.draw(gpu, view, triangles, placement, region, sink) {
-            Ok(()) => true,
+            Ok(()) => {
+                GPU_DRAWS.fetch_add(1, Ordering::Relaxed);
+                true
+            }
             Err(error) => {
                 fall_back(format!("GPU draw failed: {error:#}"));
                 false

@@ -242,6 +242,11 @@ pub const COMMANDS: &[Command] = &[
                         "Backend for data-hf-3d scenes. Defaults to cpu for deterministic output. Standard builds include GPU support.",
                     ),
                     opt(
+                        "--require-gpu",
+                        "",
+                        "With --3d-backend gpu: require an NVIDIA Vulkan adapter, fail the render on any GPU error instead of falling back to the CPU, and print an AETHER_3D_PROOF line on stderr.",
+                    ),
+                    opt(
                         "--progress",
                         "auto|json|off",
                         "Progress on stderr: a status line on a terminal (auto, default), one JSON object per update, or nothing.",

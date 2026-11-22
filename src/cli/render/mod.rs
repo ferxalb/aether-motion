@@ -284,6 +284,9 @@ fn report(
 
 /// The note printed when 3D scenes fell back from the GPU to the CPU.
 pub fn backend_note() {
+    if crate::scene3d::backend::strict() {
+        eprintln!("AETHER_3D_PROOF {}", crate::scene3d::backend::proof());
+    }
     if let (_, Some(reason)) = crate::scene3d::backend::status() {
         let style = Style::err();
         eprintln!(

@@ -136,43 +136,25 @@ jobs:
           t=x86_64-pc-windows-msvc
           mkdir -p "bins/$t"
           unzip -j -q "dist/aether-motion-${GITHUB_REF_NAME}-$t.zip" '*/aether-motion.exe' -d "bins/$t"
-      - name: Assemble the packages
-        run: node npm/scripts/build-packages.mjs --version "${GITHUB_REF_NAME#v}" --binaries bins --out npm-dist | tee npm-order.txt
-      - name: Pack the npm tarballs
-        shell: bash
+      - name: Assemble the npm package
+        run: node npm/scripts/build-packages.mjs --version "${GITHUB_REF_NAME#v}" --binaries bins --out npm-dist
+      - name: Pack the npm tarball
         run: |
           mkdir npm-tarballs
-          while IFS= read -r dir; do
-            npm pack "./npm-dist/$dir" --pack-destination npm-tarballs
-          done < npm-order.txt
+          npm pack ./npm-dist/cli --pack-destination npm-tarballs
       - uses: actions/upload-artifact@v4
         with:
           name: npm-tarballs
           path: npm-tarballs/*.tgz
           if-no-files-found: error
-      - name: Stage updates with npm Trusted Publishing
+      - name: Stage the package with npm Trusted Publishing
         shell: bash
         run: |
           version="${GITHUB_REF_NAME#v}"
           tag=latest
           case "$version" in *-*) tag=next ;; esac
-          while IFS= read -r dir; do
-            name=$(node -p "encodeURIComponent(require('./npm-dist/$dir/package.json').name)")
-            status=$(curl --silent --show-error --retry 3 --output /dev/null --write-out '%{http_code}' "https://registry.npmjs.org/$name")
-            case "$status" in
-              200) ;;
-              404)
-                echo "First npm release: stage the npm-tarballs artifact from your npm account. See docs/releasing.md."
-                exit 0
-                ;;
-              *) echo "Unexpected npm registry response: HTTP $status" >&2; exit 1 ;;
-            esac
-          done < npm-order.txt
-
-          while IFS= read -r dir; do
-            name=$(node -p "require('./npm-dist/$dir/package.json').name")
-            if npm view "$name@$version" version >/dev/null 2>&1; then
-              echo "$name@$version is already published"; continue
-            fi
-            npm stage publish "./npm-tarballs/aether-motion-${dir}-$version.tgz" --access public --tag "$tag"
-          done < npm-order.txt
+          if npm view "@aether-motion/cli@$version" version >/dev/null 2>&1; then
+            echo "@aether-motion/cli@$version is already published"
+            exit 0
+          fi
+          npm stage publish "./npm-tarballs/aether-motion-cli-$version.tgz" --access public --tag "$tag"
