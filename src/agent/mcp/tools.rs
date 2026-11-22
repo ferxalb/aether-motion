@@ -120,7 +120,14 @@ fn write_composition(path: &Path, html: &str, overwrite: bool) -> Result<()> {
             .map_err(|error| anyhow!("could not write {}: {error}", path.display()));
     }
     let partial = path.with_extension(format!("aether-{}.partial.html", std::process::id()));
-    let written = std::fs::write(&partial, html).and_then(|()| std::fs::rename(&partial, path));
+    // Exclusive create, so a symlink planted at the predictable temporary name is never followed.
+    let _ = std::fs::remove_file(&partial);
+    let written = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&partial)
+        .and_then(|mut file| file.write_all(html.as_bytes()))
+        .and_then(|()| std::fs::rename(&partial, path));
     if let Err(error) = written {
         let _ = std::fs::remove_file(&partial);
         return Err(anyhow!("could not write {}: {error}", path.display()));

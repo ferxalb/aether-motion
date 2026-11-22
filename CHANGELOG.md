@@ -22,6 +22,10 @@ CLI/MCP output may still change between minor releases.
 
 ### Fixed
 
+- MP4 and `.aseg` outputs are saved without replacing a file that appeared at the output path
+  during the render, and a dangling symlink at the output path now counts as an existing output.
+  Temporary `*.partial.*` files (also for `aether_write` with `overwrite`) are created exclusively,
+  so a symlink planted at their predictable name is never followed.
 - The MCP server survives a panic inside a tool handler: the call returns an `isError` result
   naming the tool instead of ending the stdio session.
 - `aether_write` without `overwrite` creates the file exclusively, so it never replaces a file or

@@ -246,7 +246,7 @@ pub fn encode_native_with_progress(
                 (audio, tracker),
             )?;
         }
-        fs::rename(&partial, output).context("could not save MP4")?;
+        persist_new(&partial, output).context("could not save MP4")?;
         Ok(())
     })();
     if result.is_err() {
@@ -283,7 +283,8 @@ fn check_video(renderer: &Renderer<'_>, fps: u32, threads: u32) -> Result<()> {
 /// Checks that `output` does not exist and its directory does, and returns the temporary path the
 /// file is written to before it is renamed into place.
 fn partial_path(output: &Path) -> Result<PathBuf> {
-    if output.exists() {
+    // `symlink_metadata`, so a dangling symlink also counts as an existing output.
+    if fs::symlink_metadata(output).is_ok() {
         bail!("output already exists: {}", output.display());
     }
     let parent = output
@@ -295,6 +296,39 @@ fn partial_path(output: &Path) -> Result<PathBuf> {
     }
     let ext = output.extension().and_then(|x| x.to_str()).unwrap_or("mp4");
     Ok(output.with_extension(format!("aether-{}.partial.{ext}", std::process::id())))
+}
+
+/// Creates the temporary file `partial` fresh: a stale file from an earlier run is removed, and the
+/// exclusive create never follows a symlink planted at the predictable name.
+pub(super) fn create_partial(partial: &Path) -> std::io::Result<File> {
+    let _ = fs::remove_file(partial);
+    fs::OpenOptions::new()
+        .write(true)
+        .read(true)
+        .create_new(true)
+        .open(partial)
+}
+
+/// Moves `partial` to `output` without replacing a file that appeared at `output` while the render
+/// ran: a hard link fails atomically when the target exists. File systems without hard links fall
+/// back to a checked rename.
+pub(super) fn persist_new(partial: &Path, output: &Path) -> Result<()> {
+    match fs::hard_link(partial, output) {
+        Ok(()) => {
+            let _ = fs::remove_file(partial);
+            Ok(())
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            bail!("output already exists: {}", output.display())
+        }
+        Err(_) => {
+            if fs::symlink_metadata(output).is_ok() {
+                bail!("output already exists: {}", output.display());
+            }
+            fs::rename(partial, output)?;
+            Ok(())
+        }
+    }
 }
 
 // Keep a small pool because the encoder can still be reading a previous buffer.
@@ -429,7 +463,7 @@ fn start_mp4<'a>(
     pps: Vec<u8>,
     audio: Option<&'a AacStream>,
 ) -> Result<Muxer<'a>> {
-    let file = File::create(partial).context("could not create MP4")?;
+    let file = create_partial(partial).context("could not create MP4")?;
     let container = Mp4Config {
         major_brand: "isom".parse()?,
         minor_version: 512,

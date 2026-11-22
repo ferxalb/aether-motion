@@ -15,7 +15,10 @@
 
 use super::progress::{ProgressObserver, Tracker};
 use super::segments::{encode_segments, segment_count, segment_frames};
-use super::{check_audio_bitrate, check_video, partial_path, start_mp4, EncodeOptions};
+use super::{
+    check_audio_bitrate, check_video, create_partial, partial_path, persist_new, start_mp4,
+    EncodeOptions,
+};
 use crate::audio;
 use crate::model::Composition;
 use crate::render::Renderer;
@@ -189,7 +192,7 @@ pub fn render_part_with_progress(
     let part_frames = (segments.end * len).min(frames) - segments.start * len;
     let tracker = Tracker::new(observer, part_frames);
     let result = (|| -> Result<()> {
-        let mut out = BufWriter::new(File::create(&partial).context("could not create part")?);
+        let mut out = BufWriter::new(create_partial(&partial).context("could not create part")?);
         let mut written = 0;
         let mut started = false;
         let (rasterized, reused) = encode_segments(
@@ -226,7 +229,7 @@ pub fn render_part_with_progress(
             .sync_all()
             .context("could not write part")?;
         renderer.add_stats(rasterized, reused);
-        fs::rename(&partial, output).context("could not save part")?;
+        persist_new(&partial, output).context("could not save part")?;
         Ok(())
     })();
     if result.is_err() {
@@ -351,7 +354,7 @@ pub fn assemble_parts(
             reader.expect_end()?;
         }
         muxer.finish(&partial, header.frames)?;
-        fs::rename(&partial, output).context("could not save MP4")?;
+        persist_new(&partial, output).context("could not save MP4")?;
         Ok(())
     })();
     if result.is_err() {
