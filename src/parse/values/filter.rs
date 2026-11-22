@@ -1,22 +1,25 @@
 //! `filter` and `backdrop-filter` parsing.
 //!
-//! `filter` is a list of functions in a fixed order: an optional `blur()`, then any color functions
-//! (`brightness`, `contrast`, `saturate`, `grayscale`, `sepia`, `hue-rotate`, `invert`, `opacity`),
-//! then an optional `drop-shadow()`. Other orders are rejected because the renderer applies the
-//! three stages in that sequence. `backdrop-filter` accepts only `blur()`.
+//! `filter` is a list of functions applied in the order written: at most one `blur()`, any color
+//! functions (`brightness`, `contrast`, `saturate`, `grayscale`, `sepia`, `hue-rotate`, `invert`,
+//! `opacity`), and at most one `drop-shadow()`. The usual order (blur, colors, drop-shadow) is
+//! stored without an explicit order; any other one also records its stages
+//! (`FilterChain::order`). `backdrop-filter` accepts only `blur()`.
 
-use crate::model::{ColorFilter, Shadow};
+use crate::model::{ColorFilter, FilterStage, Shadow};
 use crate::parse::values::length::spacing_px;
 use crate::parse::values::shadow::parse_shadow;
 use crate::parse::values::tokens::split_top;
 use anyhow::{anyhow, bail, Context, Result};
 
-/// Parsed `filter` value: the three stages in the order they are applied.
+/// Parsed `filter` value: its blur, color functions, and drop shadow, plus their order when it is
+/// not blur, colors, drop-shadow.
 #[derive(Debug, Default, PartialEq)]
 pub(in crate::parse) struct FilterChain {
     pub(in crate::parse) blur: f32,
     pub(in crate::parse) colors: Vec<ColorFilter>,
     pub(in crate::parse) drop_shadow: Option<Shadow>,
+    pub(in crate::parse) order: Option<Vec<FilterStage>>,
 }
 
 /// Largest blur radius (px) accepted by `filter`, `backdrop-filter`, and `drop-shadow`.
@@ -39,6 +42,16 @@ fn blur_radius(args: &str, property: &str) -> Result<f32> {
         bail!("{property}: blur radius is limited to 200px");
     }
     Ok(blur)
+}
+
+/// The arguments of `drop-shadow()` (`x y [blur] [color]`, no spread), or `none` (`None`); the
+/// blur is at most 200 px.
+pub(in crate::parse) fn parse_drop_shadow(args: &str, property: &str) -> Result<Option<Shadow>> {
+    let shadow = parse_shadow(args.trim(), "drop-shadow")?;
+    if shadow.is_some_and(|s| s.blur > MAX_BLUR) {
+        bail!("{property}: drop-shadow blur is limited to 200px");
+    }
+    Ok(shadow)
 }
 
 /// `backdrop-filter`: only `none` or a single `blur(<px>)`.
@@ -108,31 +121,30 @@ pub(in crate::parse) fn parse_filter(value: &str, property: &str) -> Result<Filt
     if value == "none" {
         return Ok(chain);
     }
-    // 0 = nothing yet, 1 = after blur, 2 = after a color function, 3 = after drop-shadow.
-    let mut stage = 0;
+    let mut stages: Vec<FilterStage> = Vec::new();
+    let (mut blurred, mut shadowed) = (false, false);
     for token in split_top(value, ' ') {
         let (name, args) = function(token)
             .ok_or_else(|| anyhow!("{property}: expected filter functions: {value}"))?;
         let color = match name.as_str() {
             "blur" => {
-                if stage > 0 {
-                    bail!("{property}: blur() must come first and appear once: {value}");
+                if blurred {
+                    bail!("{property}: blur() may appear once: {value}");
                 }
                 chain.blur = blur_radius(args, property)?;
-                stage = 1;
+                blurred = true;
+                stages.push(FilterStage::Blur);
                 continue;
             }
             "drop-shadow" => {
-                if stage == 3 {
+                if shadowed {
                     bail!("{property}: only one drop-shadow() is supported: {value}");
                 }
-                let shadow = parse_shadow(args, "drop-shadow")?
+                let shadow = parse_drop_shadow(args, property)?
                     .ok_or_else(|| anyhow!("{property}: drop-shadow() needs a shadow"))?;
-                if shadow.blur > MAX_BLUR {
-                    bail!("{property}: drop-shadow blur is limited to 200px");
-                }
                 chain.drop_shadow = Some(shadow);
-                stage = 3;
+                shadowed = true;
+                stages.push(FilterStage::DropShadow);
                 continue;
             }
             "brightness" => ColorFilter::Brightness(amount(args, &name, 1.0)?),
@@ -146,11 +158,24 @@ pub(in crate::parse) fn parse_filter(value: &str, property: &str) -> Result<Filt
             "url" => bail!("{property}: url() filters are unsupported"),
             _ => bail!("{property}: unsupported filter function {name}()"),
         };
-        if stage == 3 {
-            bail!("{property}: drop-shadow() must be the last function: {value}");
-        }
         chain.colors.push(color);
-        stage = 2;
+        let end = chain.colors.len();
+        match stages.last_mut() {
+            Some(FilterStage::Colors { end: last, .. }) => *last = end,
+            _ => stages.push(FilterStage::Colors {
+                start: end - 1,
+                end,
+            }),
+        }
+    }
+    // Blur first and drop-shadow last (each optional) is the order the renderer runs by default.
+    let usual = stages.iter().enumerate().all(|(i, stage)| match stage {
+        FilterStage::Blur => i == 0,
+        FilterStage::DropShadow => i + 1 == stages.len(),
+        FilterStage::Colors { .. } => true,
+    });
+    if !usual {
+        chain.order = Some(stages);
     }
     if chain.colors.len() > 16 {
         bail!("{property}: at most 16 color functions are supported");
@@ -192,9 +217,46 @@ mod tests {
     }
 
     #[test]
-    fn rejects_other_orders_and_unknown_functions() {
-        assert!(parse_filter("brightness(2) blur(3px)", "filter").is_err());
-        assert!(parse_filter("drop-shadow(0 0 4px red) sepia(1)", "filter").is_err());
+    fn records_orders_other_than_blur_colors_drop_shadow() {
+        let usual = parse_filter(
+            "blur(2px) sepia(1) invert(1) drop-shadow(0 0 4px red)",
+            "filter",
+        );
+        assert_eq!(usual.unwrap().order, None);
+        assert_eq!(parse_filter("sepia(1)", "filter").unwrap().order, None);
+        let chain = parse_filter("brightness(2) blur(3px) sepia(1) invert(1)", "filter").unwrap();
+        assert_eq!(
+            chain.order,
+            Some(vec![
+                FilterStage::Colors { start: 0, end: 1 },
+                FilterStage::Blur,
+                FilterStage::Colors { start: 1, end: 3 },
+            ])
+        );
+        assert_eq!(chain.blur, 3.0);
+        let chain = parse_filter("drop-shadow(0 0 4px red) sepia(1)", "filter").unwrap();
+        assert_eq!(
+            chain.order,
+            Some(vec![
+                FilterStage::DropShadow,
+                FilterStage::Colors { start: 0, end: 1 },
+            ])
+        );
+        let chain = parse_filter("drop-shadow(1px 1px #000) blur(2px)", "filter").unwrap();
+        assert_eq!(
+            chain.order,
+            Some(vec![FilterStage::DropShadow, FilterStage::Blur])
+        );
+    }
+
+    #[test]
+    fn rejects_repeats_and_unknown_functions() {
+        assert!(parse_filter("blur(1px) sepia(1) blur(3px)", "filter").is_err());
+        assert!(parse_filter(
+            "drop-shadow(0 0 4px red) drop-shadow(0 0 2px blue)",
+            "filter"
+        )
+        .is_err());
         assert!(parse_filter("url(#f)", "filter").is_err());
         assert!(parse_filter("brightness(-1)", "filter").is_err());
         assert!(parse_filter("blur(300px)", "filter").is_err());

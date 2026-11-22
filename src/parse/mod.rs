@@ -98,8 +98,8 @@ fn compile(path: &Path, values: &VariableValues, cache: &mut SceneCache) -> Resu
     } else {
         first
     };
-    crate::render::resolve_percent_translations(&mut composition)
-        .context("transform translate %")?;
+    crate::render::resolve_box_transforms(&mut composition)
+        .context("transform % translation or transform-origin")?;
     crate::render::bind_camera_rigs(&mut composition).context("data-hf-camera-subject")?;
     Ok(composition)
 }
@@ -289,6 +289,10 @@ fn parse_pass(
     let grain = effect("data-hf-grain")?;
     let filmic = filmic::parse(metadata.as_node())?;
     let motion_blur = parse_motion_blur(metadata.as_node())?;
+    let audio_master = parse_audio_master(metadata.as_node())?;
+    if imported && audio_master != crate::audio::master::Master::default() {
+        bail!("data-hf-audio-limiter and data-hf-audio-dither belong on the top-level composition");
+    }
     if imported && (vignette != 0.0 || grain != 0.0 || filmic.is_some() || motion_blur.is_some()) {
         bail!("frame-wide finishing and shutter settings belong on the top-level composition");
     }
@@ -378,14 +382,17 @@ fn parse_pass(
         let label = label.as_str();
         let rest = p.element.motion.base;
         let filter_rest = filter_base(&p.element.style);
+        let shadow_rest = crate::model::shadow_channels(p.element.style.drop_shadow);
         if let Some(spec) = &p.animation {
-            if p.element.style.translate_percent != [0.0; 4]
+            if p.element.style.transform_shape.is_some()
                 && spec.frames.iter().any(|f| f.transform.is_some())
             {
-                bail!("{label}: a CSS animation of transform replaces a % translation; put the % translate on a parent");
+                bail!("{label}: a CSS animation of transform replaces the static skew() or non-uniform scale(); put them on a parent");
             }
-            p.element.motion = build_motion(spec, rest, filter_rest, clip_len)
-                .with_context(|| format!("CSS animation on {label}"))?;
+            let rest_percent = p.element.style.translate_percent;
+            p.element.motion =
+                build_motion(spec, rest, rest_percent, filter_rest, shadow_rest, clip_len)
+                    .with_context(|| format!("CSS animation on {label}"))?;
         } else if !p.keyframes.is_empty() {
             if p.keyframes
                 .last()
@@ -393,12 +400,18 @@ fn parse_pass(
             {
                 bail!("data-hf-keyframes exceeds the duration of {label}");
             }
-            p.element.motion = motion_from_keyframes(rest, filter_rest, &p.keyframes);
+            p.element.motion = motion_from_keyframes(rest, filter_rest, shadow_rest, &p.keyframes);
             clip_from_keyframes(&mut p.element, &p.keyframes)
                 .with_context(|| format!("data-hf-keyframes clipPath on {label}"))?;
         } else if !p.camera.is_empty() {
             if idx == 0 {
                 bail!("data-hf-camera cannot be on the root; add a container inside it");
+            }
+            if p.element.style.transform_origin.is_some() {
+                bail!("transform-origin on camera {label}: a camera zooms and turns around its center; put the origin on a child");
+            }
+            if p.element.style.transform_shape.is_some() {
+                bail!("skew() or non-uniform scale() on camera {label}: a camera only zooms, pans, and rolls; put them on a child");
             }
             if p.camera
                 .frames
@@ -425,6 +438,14 @@ fn parse_pass(
             } else {
                 p.element.motion = motion_from_camera(rest, &p.camera.frames);
             }
+        }
+        if let Some(shape) = p.element.style.transform_shape {
+            if idx == 0 {
+                bail!("skew() or non-uniform scale() cannot be on the root; add a container inside it");
+            }
+            // Static, so every motion built above draws through it; set before the checks below
+            // that treat a skewed element like a rotated one.
+            p.element.motion.shape = Some(shape);
         }
         space::finish_depth(&mut p.element, &p.keyframes, &p.camera, idx == 0, clip_len)
             .with_context(|| format!("2.5D values on {label}"))?;
@@ -490,7 +511,7 @@ fn parse_pass(
                 bail!("data-hf-reveal exceeds the duration of {label}");
             }
             if p.element.style.rotate != 0.0 || p.element.motion.rotates() {
-                bail!("data-hf-reveal cannot be combined with rotate on {label}");
+                bail!("data-hf-reveal cannot be combined with rotate or skew on {label}");
             }
             spec.apply(&mut p.element.motion);
         }
@@ -546,9 +567,30 @@ fn parse_pass(
         elements,
         ids,
         audio,
+        audio_master,
         variables: applied.report,
         dependencies,
     })
+}
+
+/// `data-hf-audio-limiter="<ceiling dBFS>"` and `data-hf-audio-dither="tpdf"|"off"` on the root.
+fn parse_audio_master(node: &kuchiki::NodeRef) -> Result<crate::audio::master::Master> {
+    use crate::audio::master::{Master, MAX_CEILING_DB, MIN_CEILING_DB};
+    let limiter_db = attr(node, "data-hf-audio-limiter")
+        .map(|raw| -> Result<f64> {
+            let db = html::signed_number(raw.trim().trim_end_matches("dB"), "data-hf-audio-limiter")?;
+            if !(MIN_CEILING_DB..=MAX_CEILING_DB).contains(&db) {
+                bail!("data-hf-audio-limiter must be between {MIN_CEILING_DB} and {MAX_CEILING_DB} dBFS");
+            }
+            Ok(db)
+        })
+        .transpose()?;
+    let dither = match attr(node, "data-hf-audio-dither").as_deref().map(str::trim) {
+        None | Some("off") => false,
+        Some("tpdf") => true,
+        Some(other) => bail!("data-hf-audio-dither must be tpdf or off: {other}"),
+    };
+    Ok(Master { limiter_db, dither })
 }
 
 /// `data-motion-blur="on"` with optional `data-motion-blur-shutter` (degrees, default 180) and
@@ -620,7 +662,8 @@ fn clip_from_keyframes(
     Ok(())
 }
 
-/// `clip-path` and `mask-image` draw through an offscreen layer that does not rotate.
+/// `clip-path` and `mask-image` draw through an offscreen layer (inside the turned layer of a
+/// rotated or skewed element, so they follow its rotation).
 fn check_clip_and_mask(element: &crate::model::Element, root: bool) -> Result<()> {
     let style = &element.style;
     if style.clip_path.is_none() && style.mask.is_none() {
@@ -628,9 +671,6 @@ fn check_clip_and_mask(element: &crate::model::Element, root: bool) -> Result<()
     }
     if root {
         bail!("not supported on the root; add a full-size container inside it");
-    }
-    if style.rotate != 0.0 || element.motion.rotates() {
-        bail!("cannot be combined with rotate on the same element; wrap the rotated element in a container");
     }
     if style.blend != BlendMode::Normal {
         bail!("cannot be combined with mix-blend-mode on the same element; wrap it in a container");
@@ -681,7 +721,9 @@ fn check_blend_isolation(elements: &[crate::model::Element]) -> Result<()> {
 }
 
 /// Resting amount of each animatable filter channel: the static `filter` value, else neutral.
-pub(in crate::parse) fn filter_base(style: &crate::model::Style) -> [f32; 8] {
+pub(in crate::parse) fn filter_base(
+    style: &crate::model::Style,
+) -> [f32; crate::model::FilterChannel::COUNT] {
     use crate::model::FilterChannel;
     let mut base = FilterChannel::ALL.map(FilterChannel::neutral);
     base[FilterChannel::Blur.index()] = style.filter_blur;
@@ -724,6 +766,17 @@ fn order_animated_filters(element: &mut crate::model::Element, root: bool) -> Re
                 channel.key()
             ),
         }
+    }
+    if let Some(order) = &element.style.filter_order {
+        if filter.shadow_animated() && !order.contains(&crate::model::FilterStage::DropShadow) {
+            bail!("dropShadow is animated but not listed in a filter written in a custom order; list drop-shadow() in the static filter where it should apply");
+        }
+    }
+    if let (Some(channel), Some(_)) = (filter.appended.first(), &element.style.filter_order) {
+        bail!(
+            "{} is animated but not listed in a filter written in a custom order; list it in the static filter where it should apply",
+            channel.key()
+        );
     }
     Ok(())
 }

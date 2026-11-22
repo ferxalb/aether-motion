@@ -4,10 +4,13 @@
 //!
 //! The element (box, shadows, content, and children) is drawn twice, on black and on white, to
 //! recover premultiplied RGBA. The layer is padded by the reach of the blur and the drop shadow.
-//! The stages then run in a fixed order, matching the order `filter` accepts: gaussian blur
-//! (premultiplied, the backdrop blur's three-pass box approximation), color functions
-//! (`color.rs`, on unpremultiplied values), tint, channel split, glitch, drop shadow (the blurred, offset alpha under the
-//! layer), and finally compositing with the blend function (`blend.rs`) over the frame. A bloom
+//! The stages then run in the usual `filter` order: gaussian blur (premultiplied, the backdrop
+//! blur's three-pass box approximation), color functions (`color.rs`, on unpremultiplied values),
+//! tint, channel split, glitch, drop shadow (the blurred, offset alpha under the layer), and
+//! finally compositing with the blend function (`blend.rs`) over the frame. A `filter` written in
+//! another order (`Style::filter_order`) runs its blur, color runs, and drop shadow in that order
+//! instead, with tint, channel split, and glitch just before its drop shadow (or last without
+//! one). A bloom
 //! halo, computed from the final texels, is then added over the composited element.
 //!
 //! Animated filters read their amounts from the element's `FrameState`. An animated blur uses the
@@ -25,7 +28,7 @@ pub(in crate::render) mod color;
 pub(in crate::render) mod exact_blur;
 mod fx;
 
-use crate::model::{BlendMode, Color, ColorFilter, Content, FilterChannel, Shadow};
+use crate::model::{BlendMode, Color, ColorFilter, Content, FilterChannel, FilterStage, Shadow};
 use crate::render::geometry::{clip_pixels, Rect};
 use crate::render::paint::backdrop::{blur_plane, box_radius};
 use crate::render::paint::Surface;
@@ -73,30 +76,62 @@ fn reach(box_r: usize) -> Result<i32> {
         .ok_or_else(|| anyhow::anyhow!("filter: blur reach is too large; use --scale"))
 }
 
-/// A drop shadow in layer pixels: integer offset, box radius, and color.
+/// A drop shadow in layer pixels: integer offset, box radius, and color. An animated shadow
+/// (`smooth`) instead moves by its exact fractional offset and blurs with the continuous kernel,
+/// so it never steps by whole pixels or radii.
 struct LayerShadow {
     dx: i32,
     dy: i32,
     box_r: usize,
     color: Color,
+    smooth: Option<SmoothShadow>,
+}
+
+/// The fractional offset and continuous blur of an animated drop shadow.
+struct SmoothShadow {
+    dx: f32,
+    dy: f32,
+    kernel: Option<ExactBox>,
 }
 
 impl LayerShadow {
-    fn new(shadow: Shadow, k: f32) -> Result<Self> {
+    fn new(shadow: Shadow, k: f32, animated: bool) -> Result<Self> {
         let offset =
             |v: f32| crate::render::allocation::pixel_edge((v * k).round(), "filter: drop-shadow");
         // Unlike `box-shadow` and `text-shadow`, the `drop-shadow()` length is the gaussian's
         // standard deviation itself (Filter Effects), so it is not halved.
+        let smooth = animated.then(|| SmoothShadow {
+            dx: shadow.x * k,
+            dy: shadow.y * k,
+            kernel: ExactBox::new(shadow.blur * k),
+        });
+        if let Some(smooth) = &smooth {
+            // The fractional offset reaches one pixel past the rounded one.
+            for v in [smooth.dx, smooth.dy] {
+                crate::render::allocation::pixel_edge(v.abs().ceil() + 1.0, "filter: drop-shadow")?;
+            }
+        }
         Ok(Self {
             dx: offset(shadow.x)?,
             dy: offset(shadow.y)?,
             box_r: box_radius(shadow.blur * k),
             color: shadow.color,
+            smooth,
         })
     }
 
     /// Distance in px the shadow can reach past the element's own pixels.
     fn reach(&self) -> Result<i32> {
+        if let Some(smooth) = &self.smooth {
+            let spread = smooth
+                .kernel
+                .map_or(Ok(0), |pass| i32::try_from(pass.reach() + 1))
+                .map_err(|_| anyhow::anyhow!("filter: drop-shadow reach is too large"))?;
+            let shift = smooth.dx.abs().max(smooth.dy.abs()).ceil() as i32 + 1;
+            return spread
+                .checked_add(shift)
+                .ok_or_else(|| anyhow::anyhow!("filter: drop-shadow reach is too large"));
+        }
         let spread = reach(self.box_r)?;
         spread
             .checked_add(self.dx.abs().max(self.dy.abs()))
@@ -139,6 +174,17 @@ impl<'a> Renderer<'a> {
         } else {
             element.style.filter_blur
         }
+    }
+
+    /// The element's `drop-shadow()` at the current instant and whether it animates; `None` when
+    /// it has none (or an animated one is fully transparent at this instant).
+    fn drop_shadow(&self, idx: usize) -> Option<(Shadow, bool)> {
+        let element = &self.composition.elements[idx];
+        if element.motion.filter.shadow_animated() {
+            return crate::model::shadow_from_channels(self.current[idx].shadow)
+                .map(|shadow| (shadow, true));
+        }
+        element.style.drop_shadow.map(|shadow| (shadow, false))
     }
 
     /// The element's color functions at the current instant (see the module notes for the order).
@@ -205,18 +251,18 @@ impl<'a> Renderer<'a> {
         let split = (fx[2] * cumulative * k).round();
         let has_fx = tint.is_some() || fx[1] > 0.0 || split != 0.0;
         let bloom = self.bloom_pass(idx, cumulative);
+        let drop_shadow = self.drop_shadow(idx);
         if kernel.is_none()
             && colors.is_identity()
-            && style.drop_shadow.is_none()
+            && drop_shadow.is_none()
             && blend == BlendMode::Normal
             && !has_fx
             && bloom.is_none()
         {
             return self.draw_posed(idx, rect, cumulative);
         }
-        let shadow = style
-            .drop_shadow
-            .map(|s| LayerShadow::new(s, k * cumulative))
+        let shadow = drop_shadow
+            .map(|(s, animated)| LayerShadow::new(s, k * cumulative, animated))
             .transpose()?;
         let shadow_pad = shadow.as_ref().map_or(Ok(0), LayerShadow::reach)?;
         let pad = kernel
@@ -240,11 +286,13 @@ impl<'a> Renderer<'a> {
             .ok_or_else(|| anyhow::anyhow!("filter layer height is too large"))?;
         let edge =
             |value: f32| crate::render::allocation::pixel_edge(value, "filter").map(i64::from);
-        // A rotated element is drawn around its center, so the layer must hold its rotated bounds.
-        let (sin, cos) = self.current[idx].rotate.to_radians().sin_cos();
+        // A rotated or skewed element is drawn around its center, so the layer must hold its
+        // mapped bounds. For a rotation `[cos, -sin, sin, cos]` these are the rotated bounds.
+        let shape = self.composition.elements[idx].motion.shape;
+        let [a, b, c, d] = crate::model::linear_map(self.current[idx].rotate, shape);
         let (half_w, half_h) = (
-            (rect.w * cos.abs() + rect.h * sin.abs()) / 2.0,
-            (rect.w * sin.abs() + rect.h * cos.abs()) / 2.0,
+            (rect.w * a.abs() + rect.h * b.abs()) / 2.0,
+            (rect.w * c.abs() + rect.h * d.abs()) / 2.0,
         );
         let (cx, cy) = (rect.x + rect.w / 2.0, rect.y + rect.h / 2.0);
         let wanted = [
@@ -344,33 +392,72 @@ impl<'a> Renderer<'a> {
             }
         }
         drop(layers);
-        if !kernel.is_none() {
-            for plane in &mut planes {
-                kernel.apply(plane, lw, lh);
+        let apply_fx = |planes: &mut Vec<Vec<f32>>| {
+            if let Some((color, amount)) = tint {
+                fx::apply_tint(planes, color, amount);
             }
-        }
-        if !colors.is_identity() {
-            apply_colors(&mut planes, &colors);
-        }
-        if let Some((color, amount)) = tint {
-            fx::apply_tint(&mut planes, color, amount);
-        }
-        if split != 0.0 {
-            fx::apply_rgb_split(&mut planes, lw, split);
-        }
-        if fx[1] > 0.0 {
-            // The element's box in layer pixels, so slices read from inside it only.
-            let edge = |v: f32, hi: usize| ((v * k).round().max(0.0) as usize).min(hi);
-            let span = fx::Span {
-                x0: edge(shifted.x, lw),
-                y0: edge(shifted.y, lh),
-                x1: edge(shifted.x + shifted.w, lw),
-                y1: edge(shifted.y + shifted.h, lh),
-            };
-            fx::apply_glitch(&mut planes, lw, span, fx[1], fx_seed);
-        }
-        if let Some(shadow) = &shadow {
-            apply_drop_shadow(&mut planes, lw, lh, shadow);
+            if split != 0.0 {
+                fx::apply_rgb_split(planes, lw, split);
+            }
+            if fx[1] > 0.0 {
+                // The element's box in layer pixels, so slices read from inside it only.
+                let edge = |v: f32, hi: usize| ((v * k).round().max(0.0) as usize).min(hi);
+                let span = fx::Span {
+                    x0: edge(shifted.x, lw),
+                    y0: edge(shifted.y, lh),
+                    x1: edge(shifted.x + shifted.w, lw),
+                    y1: edge(shifted.y + shifted.h, lh),
+                };
+                fx::apply_glitch(planes, lw, span, fx[1], fx_seed);
+            }
+        };
+        let order = self.composition.elements[idx].style.filter_order.as_deref();
+        if let Some(order) = order {
+            // A custom order: the color list is aligned with `Style::filter_colors` (a custom order
+            // never appends animated functions, see `parse::order_animated_filters`).
+            let filters = self.color_filters(idx);
+            let mut fx_done = false;
+            for &stage in order {
+                match stage {
+                    FilterStage::Blur if !kernel.is_none() => {
+                        for plane in &mut planes {
+                            kernel.apply(plane, lw, lh);
+                        }
+                    }
+                    FilterStage::Blur => {}
+                    FilterStage::Colors { start, end } => {
+                        let run = ColorChain::new(&filters[start..end]);
+                        if !run.is_identity() {
+                            apply_colors(&mut planes, &run);
+                        }
+                    }
+                    FilterStage::DropShadow => {
+                        if !fx_done {
+                            apply_fx(&mut planes);
+                            fx_done = true;
+                        }
+                        if let Some(shadow) = &shadow {
+                            apply_drop_shadow(&mut planes, lw, lh, shadow);
+                        }
+                    }
+                }
+            }
+            if !fx_done {
+                apply_fx(&mut planes);
+            }
+        } else {
+            if !kernel.is_none() {
+                for plane in &mut planes {
+                    kernel.apply(plane, lw, lh);
+                }
+            }
+            if !colors.is_identity() {
+                apply_colors(&mut planes, &colors);
+            }
+            apply_fx(&mut planes);
+            if let Some(shadow) = &shadow {
+                apply_drop_shadow(&mut planes, lw, lh, shadow);
+            }
         }
         self.surface.mark_painted(bounds);
         let layer = blend::Layer {
@@ -449,21 +536,24 @@ fn apply_colors(planes: &mut [Vec<f32>], colors: &ColorChain) {
 fn apply_drop_shadow(planes: &mut [Vec<f32>], width: usize, height: usize, shadow: &LayerShadow) {
     let tint = f32::from(shadow.color.a) / 255.0;
     let mut cast = vec![0.0_f32; width * height];
-    for y in 0..height {
-        let sy = y as i64 - i64::from(shadow.dy);
-        if sy < 0 || sy >= height as i64 {
-            continue;
-        }
-        for x in 0..width {
-            let sx = x as i64 - i64::from(shadow.dx);
-            if sx < 0 || sx >= width as i64 {
-                continue;
-            }
-            cast[y * width + x] = planes[3][sy as usize * width + sx as usize] * tint;
-        }
+    match &shadow.smooth {
+        Some(smooth) => cast_smooth(&planes[3], &mut cast, width, height, smooth, tint),
+        None => cast_whole(
+            &planes[3],
+            &mut cast,
+            width,
+            height,
+            (shadow.dx, shadow.dy),
+            tint,
+        ),
     }
-    if shadow.box_r > 0 {
-        blur_plane(&mut cast, width, height, shadow.box_r);
+    match &shadow.smooth {
+        Some(SmoothShadow {
+            kernel: Some(pass), ..
+        }) => blur_plane_exact(&mut cast, width, height, *pass),
+        Some(_) => {}
+        None if shadow.box_r > 0 => blur_plane(&mut cast, width, height, shadow.box_r),
+        None => {}
     }
     let rgb = [shadow.color.r, shadow.color.g, shadow.color.b].map(|c| f32::from(c) / 255.0);
     for (i, &s) in cast.iter().enumerate() {
@@ -478,6 +568,60 @@ fn apply_drop_shadow(planes: &mut [Vec<f32>], width: usize, height: usize, shado
             plane[i] += c * s * under;
         }
         planes[3][i] += s * under;
+    }
+}
+
+/// The layer's alpha moved by a whole-pixel `(dx, dy)` (zero outside), times `tint`.
+fn cast_whole(
+    alpha: &[f32],
+    cast: &mut [f32],
+    width: usize,
+    height: usize,
+    (dx, dy): (i32, i32),
+    tint: f32,
+) {
+    for y in 0..height {
+        let sy = y as i64 - i64::from(dy);
+        if sy < 0 || sy >= height as i64 {
+            continue;
+        }
+        for x in 0..width {
+            let sx = x as i64 - i64::from(dx);
+            if sx < 0 || sx >= width as i64 {
+                continue;
+            }
+            cast[y * width + x] = alpha[sy as usize * width + sx as usize] * tint;
+        }
+    }
+}
+
+/// The layer's alpha moved by a fractional `(dx, dy)` (bilinear, zero outside), times `tint`.
+fn cast_smooth(
+    alpha: &[f32],
+    cast: &mut [f32],
+    width: usize,
+    height: usize,
+    smooth: &SmoothShadow,
+    tint: f32,
+) {
+    let (fx, fy) = (smooth.dx.floor(), smooth.dy.floor());
+    let (wx, wy) = (smooth.dx - fx, smooth.dy - fy);
+    let (ix, iy) = (fx as i64, fy as i64);
+    let tap = |x: i64, y: i64| -> f32 {
+        if x < 0 || y < 0 || x >= width as i64 || y >= height as i64 {
+            0.0
+        } else {
+            alpha[y as usize * width + x as usize]
+        }
+    };
+    for y in 0..height {
+        for x in 0..width {
+            // The target at x takes the source at x - dx: between x - ix - 1 and x - ix.
+            let (sx, sy) = (x as i64 - ix, y as i64 - iy);
+            let top = tap(sx, sy) * (1.0 - wx) + tap(sx - 1, sy) * wx;
+            let bottom = tap(sx, sy - 1) * (1.0 - wx) + tap(sx - 1, sy - 1) * wx;
+            cast[y * width + x] = (top * (1.0 - wy) + bottom * wy) * tint;
+        }
     }
 }
 

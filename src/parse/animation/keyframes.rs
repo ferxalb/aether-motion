@@ -1,11 +1,13 @@
 //! `data-hf-keyframes` JSON attribute parsing: offsets, opacity, easing, and filter amounts
-//! (`blur`, `brightness`, `contrast`, `saturate`, `grayscale`, `sepia`, `hueRotate`, `invert`), and
+//! (`blur`, `brightness`, `contrast`, `saturate`, `grayscale`, `sepia`, `hueRotate`, `invert`,
+//! `filterOpacity`) and the `dropShadow` of `filter`, and
 //! the `glitch` (0 to 1) and `rgbSplit` (px) pixel effects, the `data-hf-bloom` intensity
 //! (`bloom`, 0 to 8), `clipPath` shapes, and the 3D values of planes in a `data-hf-space` (`z` in
 //! px, `rotateX` and `rotateY` in degrees).
-use crate::model::{Easing, FilterChannel, Keyframe};
+use crate::model::{shadow_channels, Easing, FilterChannel, Keyframe};
 use crate::parse::animation::timing::parse_keyframe_easing;
 use crate::parse::values::clip::parse_clip_path;
+use crate::parse::values::filter::parse_drop_shadow;
 use anyhow::{anyhow, bail, Context, Result};
 use std::collections::BTreeMap;
 
@@ -21,7 +23,8 @@ pub(in crate::parse) fn parse_keyframes(raw: &str) -> Result<Vec<Keyframe>> {
         y: 0.0,
         opacity: 1.0,
         easing: Easing::Linear,
-        filters: [None; 8],
+        filters: [None; FilterChannel::COUNT],
+        drop_shadow: None,
         effects: [None; 3],
         clip: None,
         depth: [None; 3],
@@ -33,7 +36,7 @@ pub(in crate::parse) fn parse_keyframes(raw: &str) -> Result<Vec<Keyframe>> {
                 let filter = FilterChannel::ALL.iter().any(|c| c.key() == key);
                 if !filter && !matches!(
                         key.as_str(),
-                        "at" | "x" | "y" | "opacity" | "easing" | "glitch" | "rgbSplit" | "bloom" | "clipPath"
+                        "at" | "x" | "y" | "opacity" | "easing" | "glitch" | "rgbSplit" | "bloom" | "clipPath" | "dropShadow"
                         | "z" | "rotateX" | "rotateY"
                     ) {
                     bail!("unknown field: {key}");
@@ -68,7 +71,7 @@ pub(in crate::parse) fn parse_keyframes(raw: &str) -> Result<Vec<Keyframe>> {
                         .ok_or_else(|| anyhow!("easing must be a string"))?,
                 )?,
             };
-            let mut filters = [None; 8];
+            let mut filters = [None; FilterChannel::COUNT];
             for channel in FilterChannel::ALL {
                 let Some(value) = frame.get(channel.key()) else {
                     continue;
@@ -79,15 +82,16 @@ pub(in crate::parse) fn parse_keyframes(raw: &str) -> Result<Vec<Keyframe>> {
                     .ok_or_else(|| anyhow!("{key} must be a number"))?;
                 let valid = match channel {
                     FilterChannel::Blur => (0.0..=200.0).contains(&n),
-                    FilterChannel::Grayscale | FilterChannel::Sepia | FilterChannel::Invert => {
-                        (0.0..=1.0).contains(&n)
-                    }
+                    FilterChannel::Grayscale
+                    | FilterChannel::Sepia
+                    | FilterChannel::Invert
+                    | FilterChannel::Opacity => (0.0..=1.0).contains(&n),
                     FilterChannel::HueRotate => n.abs() <= 36_000.0,
                     _ => (0.0..=100.0).contains(&n),
                 };
                 if !valid {
                     bail!(
-                        "{key} is out of range (blur 0 to 200 px; grayscale, sepia, invert 0 to 1; brightness, contrast, saturate 0 to 100; hueRotate in degrees up to 36000)"
+                        "{key} is out of range (blur 0 to 200 px; grayscale, sepia, invert, filterOpacity 0 to 1; brightness, contrast, saturate 0 to 100; hueRotate in degrees up to 36000)"
                     );
                 }
                 filters[channel.index()] = Some(n as f32);
@@ -121,6 +125,15 @@ pub(in crate::parse) fn parse_keyframes(raw: &str) -> Result<Vec<Keyframe>> {
                     *slot = Some(n as f32);
                 }
             }
+            let drop_shadow = match frame.get("dropShadow") {
+                None => None,
+                Some(value) => {
+                    let raw = value.as_str().ok_or_else(|| {
+                        anyhow!("dropShadow must be a string such as \"0 8px 12px rgba(0,0,0,0.5)\" or \"none\"")
+                    })?;
+                    Some(shadow_channels(parse_drop_shadow(raw, "dropShadow")?))
+                }
+            };
             let clip = match frame.get("clipPath") {
                 None => None,
                 Some(value) => {
@@ -140,6 +153,7 @@ pub(in crate::parse) fn parse_keyframes(raw: &str) -> Result<Vec<Keyframe>> {
                 opacity: opacity as f32,
                 easing,
                 filters,
+                drop_shadow,
                 effects,
                 clip,
                 depth,

@@ -121,11 +121,11 @@ fn blend_inside_an_isolating_ancestor_is_rejected() {
     let message = error("fx_blend_root", r#"style="mix-blend-mode: screen""#, "");
     assert!(message.contains("root"), "{message}");
     let message = error(
-        "fx_blend_hue",
+        "fx_blend_unknown",
         "",
-        &format!(r#"<div {BOX} style="mix-blend-mode:hue"></div>"#),
+        &format!(r#"<div {BOX} style="mix-blend-mode:vivid-light"></div>"#),
     );
-    assert!(message.contains("hue"), "{message}");
+    assert!(message.contains("vivid-light"), "{message}");
 }
 
 #[test]
@@ -300,11 +300,30 @@ fn invalid_filter_animations_are_rejected() {
         ),
         (
             "",
-            format!(
-                r#"<style>@keyframes s {{ to {{ filter: drop-shadow(0 0 4px red) }} }} .a {{ animation: s 1s }}</style>{}"#,
-                animated_box("#fff", "", "").replacen(r#"class="clip""#, r#"class="clip a""#, 1)
+            animated_box(
+                "#fff",
+                "filter: sepia(1) blur(2px)",
+                r#"data-hf-keyframes='[{"at":0,"dropShadow":"0 0 4px red"}]'"#,
             ),
-            "not animatable",
+            "list drop-shadow()",
+        ),
+        (
+            "",
+            animated_box(
+                "#fff",
+                "",
+                r#"data-hf-keyframes='[{"at":0,"dropShadow":"0 0 4px 2px red"}]'"#,
+            ),
+            "spread",
+        ),
+        (
+            "",
+            animated_box(
+                "#fff",
+                "",
+                r#"data-hf-keyframes='[{"at":0,"dropShadow":4}]'"#,
+            ),
+            "must be a string",
         ),
     ];
     for (i, (root, body, expected)) in cases.iter().enumerate() {
@@ -376,4 +395,223 @@ fn shared_tile_caches_keep_layers_consistent_across_frames() {
             .unwrap();
         assert!(worst <= 1, "frame {frame}: cached layer differs by {worst}");
     }
+}
+
+/// Renders a 100x100 composition at time 0 and returns all of its RGBA pixels.
+fn frame(name: &str, root: &str, body: &str) -> Vec<u8> {
+    let html = format!(
+        r#"<div id="root" data-composition-id="x" data-width="100" data-height="100" data-duration="2" {root}>{body}</div>"#
+    );
+    let path = scratch(name).join("c.html");
+    std::fs::write(&path, html).unwrap();
+    let composition = parse_file(&path).unwrap();
+    let mut renderer = Renderer::new(&composition, 1.0).unwrap();
+    renderer.render_at(0.0).unwrap().to_vec()
+}
+
+#[test]
+fn filter_functions_run_in_the_order_written() {
+    let shadowed = |name: &str, filter: &str| {
+        let body = format!(
+            r#"<div {BOX} style="position:absolute; left:20px; top:20px; width:40px; height:40px; background:#ffffff; filter: {filter}"></div>"#
+        );
+        pixels(
+            name,
+            r#"style="background:#808080""#,
+            &body,
+            0.0,
+            &[(40, 40), (65, 65)],
+        )
+    };
+    // Grayscale after the drop shadow also grays the shadow: Rec. 709 luma of blue is 0.0722.
+    assert_eq!(
+        shadowed(
+            "fx_order_late",
+            "drop-shadow(10px 10px 0 #0000ff) grayscale(1)"
+        ),
+        vec![[255, 255, 255], [18, 18, 18]]
+    );
+    assert_eq!(
+        shadowed(
+            "fx_order_usual",
+            "grayscale(1) drop-shadow(10px 10px 0 #0000ff)"
+        ),
+        vec![[255, 255, 255], [0, 0, 255]]
+    );
+    // A blur after the drop shadow blurs the element and its shadow together, like a blurred
+    // wrapper around an element with that shadow (which rounds once more to 8 bits in between).
+    let single = frame(
+        "fx_order_blur",
+        r#"style="background:#808080""#,
+        &format!(
+            r#"<div {BOX} style="position:absolute; left:20px; top:20px; width:40px; height:40px; background:#ffffff; filter: drop-shadow(3px 3px 0 #000000) blur(3px)"></div>"#
+        ),
+    );
+    let nested = frame(
+        "fx_order_nested",
+        r#"style="background:#808080""#,
+        &format!(
+            r#"<div {BOX} style="position:absolute; left:20px; top:20px; width:40px; height:40px; filter: blur(3px)"><div style="position:absolute; left:0; top:0; width:40px; height:40px; background:#ffffff; filter: drop-shadow(3px 3px 0 #000000)"></div></div>"#
+        ),
+    );
+    let worst = single
+        .iter()
+        .zip(&nested)
+        .map(|(a, b)| a.abs_diff(*b))
+        .max()
+        .unwrap();
+    assert!(worst <= 2, "largest channel difference {worst}");
+    // The shadow's far corner is soft, not the hard edge of the usual order without blur.
+    let corner = (62 * 100 + 62) * 4;
+    assert!(
+        single[corner] > 0 && single[corner] < 128,
+        "{}",
+        single[corner]
+    );
+}
+
+#[test]
+fn a_custom_filter_order_lists_its_animated_functions() {
+    let message = error(
+        "fx_order_appended",
+        "",
+        &animated_box(
+            "#fff",
+            "filter: drop-shadow(1px 1px 0 #000) sepia(1)",
+            r#"data-hf-keyframes='[{"at":0,"invert":0},{"at":1,"invert":1}]'"#,
+        ),
+    );
+    assert!(message.contains("custom order"), "{message}");
+    // Listed functions animate in place.
+    let body = animated_box(
+        "#fff",
+        "filter: drop-shadow(1px 1px 0 #000) invert(0)",
+        r#"data-hf-keyframes='[{"at":0,"invert":0},{"at":1,"invert":1}]'"#,
+    );
+    let html = format!(
+        r#"<div data-composition-id="x" data-width="100" data-height="100" data-duration="2">{body}</div>"#
+    );
+    let path = scratch("fx_order_listed").join("c.html");
+    std::fs::write(&path, html).unwrap();
+    assert!(parse_file(&path).is_ok());
+}
+
+#[test]
+fn opacity_filter_animates_and_fades_a_later_drop_shadow() {
+    // White over black: the filter's opacity scales the element's alpha.
+    let at = |name: &str, style: &str, attrs: &str, time: f64, points: &[(usize, usize)]| {
+        pixels(
+            name,
+            r#"style="background:#000000""#,
+            &format!(
+                r#"<div {BOX} style="position:absolute; left:20px; top:20px; width:40px; height:40px; background:#ffffff; {style}" {attrs}></div>"#
+            ),
+            time,
+            points,
+        )
+    };
+    let keys = r#"data-hf-keyframes='[{"at":0,"filterOpacity":1},{"at":1,"filterOpacity":0}]'"#;
+    assert_eq!(at("fx_op0", "", keys, 0.0, &[(40, 40)]), vec![[255; 3]]);
+    assert_eq!(at("fx_op5", "", keys, 0.5, &[(40, 40)]), vec![[128; 3]]);
+    assert_eq!(at("fx_op1", "", keys, 1.0, &[(40, 40)]), vec![[0; 3]]);
+    // An opacity listed before a white drop shadow fades the shadow with the element: half
+    // alpha alone at (65, 65), and over the half-alpha shadow 0.5 + 0.5 * 0.5 at (40, 40).
+    let style = "filter: opacity(1) drop-shadow(10px 10px 0 #ffffff)";
+    assert_eq!(
+        at("fx_op_shadow", style, keys, 0.5, &[(40, 40), (65, 65)]),
+        vec![[191; 3], [128; 3]]
+    );
+    // CSS @keyframes interpolate opacity() like the other color functions.
+    let css = pixels(
+        "fx_op_css",
+        r#"style="background:#000000""#,
+        r#"<style>@keyframes f { from { filter: opacity(1) } to { filter: opacity(0) } } .a { animation: f 1s linear both }</style><div class="clip a" data-start="0" data-duration="2" style="position:absolute; left:20px; top:20px; width:40px; height:40px; background:#ffffff"></div>"#,
+        0.25,
+        &[(40, 40)],
+    );
+    assert_eq!(css, vec![[191; 3]]);
+    let message = error(
+        "fx_op_range",
+        "",
+        &animated_box(
+            "#fff",
+            "",
+            r#"data-hf-keyframes='[{"at":0,"filterOpacity":2}]'"#,
+        ),
+    );
+    assert!(message.contains("out of range"), "{message}");
+}
+
+#[test]
+fn drop_shadow_animates_smoothly_and_lands_on_the_static_shadow() {
+    let render = |name: &str, style: &str, attrs: &str, time: f64| {
+        let html = format!(
+            r#"<div data-composition-id="x" data-width="100" data-height="100" data-duration="2" style="background:#808080"><div {BOX} style="position:absolute; left:20px; top:20px; width:40px; height:40px; background:#ffffff; {style}" {attrs}></div></div>"#
+        );
+        let path = scratch(name).join("c.html");
+        std::fs::write(&path, html).unwrap();
+        let composition = parse_file(&path).unwrap();
+        let mut renderer = Renderer::new(&composition, 1.0).unwrap();
+        renderer.render_at(time).unwrap().to_vec()
+    };
+    let red = |frame: &[u8], x: usize, y: usize| frame[(y * 100 + x) * 4];
+    let keys = r#"data-hf-keyframes='[{"at":0,"dropShadow":"0 0 0 #000"},{"at":1,"dropShadow":"10px 10px 0 #000"}]'"#;
+    // At the end it is exactly the static shadow.
+    assert_eq!(
+        render("fx_ds_end", "", keys, 1.0),
+        render(
+            "fx_ds_static",
+            "filter: drop-shadow(10px 10px 0 #000)",
+            "",
+            0.0
+        )
+    );
+    // A quarter of the way, the offset is 2.5 px: the shadow's right edge at x = 62.5 covers
+    // pixel 61 fully and pixel 62 half (black over gray 128).
+    let quarter = render("fx_ds_quarter", "", keys, 0.25);
+    assert_eq!(red(&quarter, 61, 45), 0);
+    assert_eq!(red(&quarter, 62, 45), 64);
+    assert_eq!(red(&quarter, 63, 45), 128);
+    // CSS @keyframes interpolate the color premultiplied, from a transparent shadow.
+    let html = r#"<div data-composition-id="x" data-width="100" data-height="100" data-duration="2" style="background:#808080"><style>@keyframes s { from { filter: drop-shadow(0 0 0 transparent) } to { filter: drop-shadow(10px 10px 0 #000) } } .a { animation: s 1s linear both }</style><div class="clip a" data-start="0" data-duration="2" style="position:absolute; left:20px; top:20px; width:40px; height:40px; background:#ffffff"></div></div>"#;
+    let path = scratch("fx_ds_css").join("c.html");
+    std::fs::write(&path, html).unwrap();
+    let composition = parse_file(&path).unwrap();
+    let css = Renderer::new(&composition, 1.0)
+        .unwrap()
+        .render_at(0.5)
+        .unwrap()
+        .to_vec();
+    assert_eq!(red(&css, 63, 63), 64, "half alpha at a 5 px offset");
+    assert_eq!(red(&css, 66, 66), 128, "nothing past the 5 px offset");
+    // `none` fades the static shadow out.
+    let gone = render(
+        "fx_ds_none",
+        "filter: drop-shadow(10px 10px 0 #000)",
+        r#"data-hf-keyframes='[{"at":0},{"at":1,"dropShadow":"none"}]'"#,
+        1.0,
+    );
+    assert_eq!(red(&gone, 65, 65), 128);
+}
+
+#[test]
+fn non_separable_blend_modes_parse_and_render() {
+    let blended = |mode: &str| {
+        let body = format!(
+            r#"<div {BOX} style="position:absolute; left:20px; top:20px; width:40px; height:40px; background:#ff0000; mix-blend-mode: {mode}"></div>"#
+        );
+        pixels(
+            &format!("fx_blend_{mode}"),
+            r#"style="background:#808080""#,
+            &body,
+            0.0,
+            &[(40, 40), (5, 5)],
+        )
+    };
+    // Red has luminosity 0.3; gray has no saturation.
+    assert_eq!(blended("luminosity"), vec![[77; 3], [128; 3]]);
+    assert_eq!(blended("hue"), vec![[128; 3], [128; 3]]);
+    assert_eq!(blended("saturation"), vec![[128; 3], [128; 3]]);
+    let color = blended("color")[0];
+    assert!(color[0] > color[1] && color[1] == color[2], "{color:?}");
 }

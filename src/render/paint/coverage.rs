@@ -1,34 +1,65 @@
-//! Antialiased polygon coverage with exact signed-area accumulation (nonzero winding, clamped), used
-//! by `clip-path`. Each edge deposits the area it covers in each pixel into an accumulation buffer; a
+//! Antialiased polygon coverage with exact signed-area accumulation (nonzero winding clamped to 1,
+//! or even-odd), used by `clip-path`. Each edge deposits the area it covers in each pixel into an accumulation buffer; a
 //! running sum along every row then gives the covered share of each pixel. Pure arithmetic in a
 //! fixed order, so the result is deterministic.
 
 /// Coverage (0..=1) of a closed polygon over a `width` x `height` grid of pixels whose top-left
 /// corner is the origin. Points are in pixel units; parts outside the grid are clipped exactly.
+#[cfg(test)]
 pub(in crate::render) fn polygon_coverage(
     points: &[(f32, f32)],
     width: usize,
     height: usize,
 ) -> Vec<f32> {
+    contours_coverage(std::slice::from_ref(&points), width, height, false)
+}
+
+/// Coverage (0..=1) of several closed outlines filled together, by the nonzero rule (`even_odd`
+/// false; the winding is clamped to 1) or the even-odd rule. Outlines with fewer than three points
+/// are skipped. A single outline under the nonzero rule matches `polygon_coverage` exactly.
+pub(in crate::render) fn contours_coverage<P: AsRef<[(f32, f32)]>>(
+    contours: &[P],
+    width: usize,
+    height: usize,
+    even_odd: bool,
+) -> Vec<f32> {
     let stride = width + 2;
     let mut acc = vec![0.0_f32; stride * height + 2];
-    if width == 0 || height == 0 || points.len() < 3 {
+    let contours: Vec<&[(f32, f32)]> = contours
+        .iter()
+        .map(AsRef::as_ref)
+        .filter(|points| points.len() >= 3)
+        .collect();
+    if width == 0 || height == 0 || contours.is_empty() {
         return vec![0.0; width * height];
     }
     // Clamping x to the grid keeps each row's winding exact: an edge left of the grid adds to every
     // pixel of its rows (as it does at x = 0) and one right of it adds to none.
     let clamp = |(x, y): (f32, f32)| (x.clamp(0.0, width as f32), y);
-    for i in 0..points.len() {
-        let p0 = clamp(points[i]);
-        let p1 = clamp(points[(i + 1) % points.len()]);
-        line(&mut acc, stride, height, p0, p1);
+    for points in contours {
+        for i in 0..points.len() {
+            let p0 = clamp(points[i]);
+            let p1 = clamp(points[(i + 1) % points.len()]);
+            line(&mut acc, stride, height, p0, p1);
+        }
     }
     let mut out = Vec::with_capacity(width * height);
     for row in acc.chunks_exact(stride).take(height) {
         let mut sum = 0.0_f32;
         for &a in &row[..width] {
             sum += a;
-            out.push(sum.abs().min(1.0));
+            out.push(if even_odd {
+                // The winding's distance from the nearest even number: a pixel half inside one
+                // hole edge covers 0.5, fully inside a hole 0.
+                let w = sum.abs() % 2.0;
+                if w > 1.0 {
+                    2.0 - w
+                } else {
+                    w
+                }
+            } else {
+                sum.abs().min(1.0)
+            });
         }
     }
     out

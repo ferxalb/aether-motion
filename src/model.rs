@@ -154,6 +154,15 @@ pub enum ColorFilter {
     Opacity(f32),
 }
 
+/// One step of a `filter` written in an order other than blur, color functions, drop-shadow
+/// (`Style::filter_order`). `Colors` runs `Style::filter_colors[start..end]`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FilterStage {
+    Blur,
+    Colors { start: usize, end: usize },
+    DropShadow,
+}
+
 /// A `filter` function whose amount can be animated, in the order used for animated functions that
 /// the static `filter` does not list. `HueRotate` is in degrees and `Blur` in px; the rest are amounts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -166,10 +175,16 @@ pub enum FilterChannel {
     Sepia,
     HueRotate,
     Invert,
+    /// `opacity()`: an amount in 0..=1 that multiplies alpha inside the filter chain (so a later
+    /// `drop-shadow()` fades with it), unlike element opacity.
+    Opacity,
 }
 
 impl FilterChannel {
-    pub const ALL: [Self; 8] = [
+    /// Number of channels: the length of per-channel arrays.
+    pub const COUNT: usize = 9;
+
+    pub const ALL: [Self; Self::COUNT] = [
         Self::Blur,
         Self::Brightness,
         Self::Contrast,
@@ -178,6 +193,7 @@ impl FilterChannel {
         Self::Sepia,
         Self::HueRotate,
         Self::Invert,
+        Self::Opacity,
     ];
 
     /// Index into per-channel arrays (`FilterMotion::tracks`, values).
@@ -188,7 +204,7 @@ impl FilterChannel {
     /// The amount that leaves pixels unchanged.
     pub fn neutral(self) -> f32 {
         match self {
-            Self::Brightness | Self::Contrast | Self::Saturate => 1.0,
+            Self::Brightness | Self::Contrast | Self::Saturate | Self::Opacity => 1.0,
             _ => 0.0,
         }
     }
@@ -197,13 +213,13 @@ impl FilterChannel {
     pub fn clamp(self, value: f32) -> f32 {
         match self {
             Self::Blur => value.clamp(0.0, 200.0),
-            Self::Grayscale | Self::Sepia | Self::Invert => value.clamp(0.0, 1.0),
+            Self::Grayscale | Self::Sepia | Self::Invert | Self::Opacity => value.clamp(0.0, 1.0),
             Self::HueRotate => value,
             Self::Brightness | Self::Contrast | Self::Saturate => value.max(0.0),
         }
     }
 
-    /// The channel of a color function; `opacity()` has none (it is not animatable).
+    /// The channel of a color function.
     pub fn of(filter: ColorFilter) -> Option<Self> {
         Some(match filter {
             ColorFilter::Brightness(_) => Self::Brightness,
@@ -213,7 +229,7 @@ impl FilterChannel {
             ColorFilter::Sepia(_) => Self::Sepia,
             ColorFilter::HueRotate(_) => Self::HueRotate,
             ColorFilter::Invert(_) => Self::Invert,
-            ColorFilter::Opacity(_) => return None,
+            ColorFilter::Opacity(_) => Self::Opacity,
         })
     }
 
@@ -242,6 +258,7 @@ impl FilterChannel {
             Self::Sepia => ColorFilter::Sepia(value),
             Self::HueRotate => ColorFilter::HueRotate(value),
             Self::Invert => ColorFilter::Invert(value),
+            Self::Opacity => ColorFilter::Opacity(value),
         })
     }
 
@@ -256,11 +273,13 @@ impl FilterChannel {
             Self::Sepia => "sepia",
             Self::HueRotate => "hueRotate",
             Self::Invert => "invert",
+            Self::Opacity => "filterOpacity",
         }
     }
 }
 
-/// `mix-blend-mode` separable blend functions (W3C Compositing Level 1), plus `plus-lighter`.
+/// `mix-blend-mode` blend functions (W3C Compositing Level 1: separable and non-separable),
+/// plus `plus-lighter`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum BlendMode {
     #[default]
@@ -277,6 +296,10 @@ pub enum BlendMode {
     Difference,
     Exclusion,
     PlusLighter,
+    Hue,
+    Saturation,
+    Color,
+    Luminosity,
 }
 
 /// Shape function of a `clip-path`.
@@ -291,6 +314,34 @@ pub enum ClipKind {
     Ellipse,
     /// `polygon(x y, ...)`: params `[x0, y0, x1, y1, ...]`.
     Polygon,
+    /// `path("...")`: no params; `ClipPath::contours` holds the flattened outline in px of the
+    /// reference box. Not animatable.
+    Path,
+}
+
+/// Fill rule of a `polygon()` or `path()` clip.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FillRule {
+    #[default]
+    NonZero,
+    EvenOdd,
+}
+
+/// Reference box of a `clip-path`: the box its % values and px origin are measured in.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ClipBox {
+    Margin,
+    #[default]
+    Border,
+    Padding,
+    Content,
+}
+
+/// A `circle()` or `ellipse()` radius keyword, resolved from the center at render time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RadiusKeyword {
+    ClosestSide,
+    FarthestSide,
 }
 
 /// A `clip-path` basic shape in the element's border box. Each parameter keeps the unit it was
@@ -300,12 +351,43 @@ pub enum ClipKind {
 pub struct ClipPath {
     pub kind: ClipKind,
     pub params: Vec<Length>,
+    pub rule: FillRule,
+    pub reference: ClipBox,
+    /// Radius keywords of a `circle()` (first only) or `ellipse()` (x, y), which replace the
+    /// matching radius params (kept as `0px`).
+    pub radii: [Option<RadiusKeyword>; 2],
+    /// A box keyword alone (`clip-path: padding-box`): an `inset(0)` of the reference box rounded
+    /// like the element's `border-radius` (reduced by the inset of that box).
+    pub box_only: bool,
+    /// The flattened outline of a `path()`, in px of the reference box.
+    pub contours: Option<std::sync::Arc<Contours>>,
 }
 
+/// Closed polylines (each a list of `(x, y)` points) that a clip path fills.
+pub type Contours = Vec<Vec<(f32, f32)>>;
+
 impl ClipPath {
+    /// A shape with `kind` and `params` and every other field at its default.
+    pub fn basic(kind: ClipKind, params: Vec<Length>) -> Self {
+        Self {
+            kind,
+            params,
+            rule: FillRule::NonZero,
+            reference: ClipBox::Border,
+            radii: [None; 2],
+            box_only: false,
+            contours: None,
+        }
+    }
+
     /// The parameters with `values` in place of their numbers (same units), as animated.
     pub fn with_values(&self, values: &[f32]) -> Self {
         Self {
+            rule: self.rule,
+            reference: self.reference,
+            radii: self.radii,
+            box_only: self.box_only,
+            contours: self.contours.clone(),
             kind: self.kind,
             params: self
                 .params
@@ -430,6 +512,12 @@ pub struct Style {
     pub scale: Option<f32>,
     /// Static `transform: rotate()` in degrees, clockwise, around the element center.
     pub rotate: f32,
+    /// `transform-origin` as `[x, y]` within the border box (`%` of its width and height, or px
+    /// from its top-left corner); `None` is the default center. Resolved into `Motion::origin`.
+    pub transform_origin: Option<[Length; 2]>,
+    /// What a static `skew()` or non-uniform `scale()` adds beyond `scale` and `rotate`: a
+    /// row-major 2x2 matrix with determinant 1, applied before them. Copied into `Motion::shape`.
+    pub transform_shape: Option<[f32; 4]>,
     /// `box-shadow` layers (outer and inset) in CSS order (the first is painted on top); empty means none.
     pub shadows: Vec<Shadow>,
     /// `backdrop-filter: blur(<px>)` radius (standard deviation) in composition px; 0 means none.
@@ -441,6 +529,9 @@ pub struct Style {
     pub filter_colors: Vec<ColorFilter>,
     /// `filter: drop-shadow()`: a shadow of the element's painted shape (alpha), drawn under it.
     pub drop_shadow: Option<Shadow>,
+    /// The order of the `filter` functions when it is not blur, color functions, drop-shadow;
+    /// `None` is that order.
+    pub filter_order: Option<Vec<FilterStage>>,
     /// `mix-blend-mode`: how the element (with its subtree) combines with what is behind it.
     pub blend: BlendMode,
     /// `clip-path`: only the part of the element inside this shape is drawn.
@@ -736,7 +827,9 @@ pub struct Keyframe {
     pub opacity: f32,
     pub easing: Easing,
     /// Filter amounts given explicitly at this keyframe, indexed by [`FilterChannel::index`].
-    pub filters: [Option<f32>; 8],
+    pub filters: [Option<f32>; FilterChannel::COUNT],
+    /// `dropShadow` given explicitly at this keyframe (`none` is [`NO_SHADOW`]).
+    pub drop_shadow: Option<ShadowChannels>,
     /// `glitch`, `rgbSplit`, and `bloom` given explicitly at this keyframe.
     pub effects: [Option<f32>; 3],
     /// `clipPath` given explicitly at this keyframe.
@@ -882,6 +975,8 @@ pub struct Composition {
     pub ids: HashMap<String, usize>,
     /// `<audio>` clips in document order; they take no part in layout or painting.
     pub audio: Vec<AudioClip>,
+    /// `data-hf-audio-limiter` and `data-hf-audio-dither` on the root.
+    pub audio_master: crate::audio::master::Master,
     /// `data-composition-variables`: the declared variables and the values this parse used.
     pub variables: Variables,
     /// Local files this composition reads, sorted and without duplicates: its HTML documents
@@ -1007,8 +1102,13 @@ pub struct AudioClip {
     pub volume: f32,
     pub fade_in: f64,
     pub fade_out: f64,
+    /// `data-hf-fade-curve`: the gain shape of `fade_in` and `fade_out`.
+    pub fade_curve: FadeCurve,
     /// `data-hf-loop`: repeat the source to fill `duration`.
     pub looped: bool,
+    /// `data-hf-loop-crossfade`: seconds over which the end of each loop pass blends into the
+    /// start of the next (equal power); 0 is a hard cut.
+    pub loop_crossfade: f64,
     /// Source seconds where each loop pass restarts: the trim for `<audio>`, and 0 for a video's
     /// sound, so it wraps exactly like the picture (which loops over the whole source).
     pub loop_from: f64,
@@ -1016,6 +1116,16 @@ pub struct AudioClip {
     pub speed: Option<std::sync::Arc<crate::speed::SpeedCurve>>,
     /// `data-hf-volume-ramp`, `data-hf-eq`, and `data-hf-duck` (see `crate::audio::effects`).
     pub effects: crate::audio::effects::AudioEffects,
+}
+
+/// Gain shape of an audio fade.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FadeCurve {
+    /// Gain proportional to time.
+    #[default]
+    Linear,
+    /// `sin(t · π/2)`: constant power when a fade-out overlaps a fade-in (a crossfade).
+    EqualPower,
 }
 
 /// Edge a reveal grows from: `Left` uncovers the element starting at its left edge, and so on.
@@ -1089,6 +1199,13 @@ pub struct Motion {
     /// Constant translation in px added to every pose: the percent part of the static
     /// `transform`, resolved from the resting border box after parsing.
     pub offset: (f32, f32),
+    /// `transform-origin` as a px offset from the border box center at rest, resolved after
+    /// parsing (`(0, 0)` is the center). Scale and rotation pivot around it instead of the center.
+    pub origin: (f32, f32),
+    /// Static skew and non-uniform scale (`Style::transform_shape`), applied in the element's own
+    /// space before its scale and rotation: the element draws through `scale · R(rotate) · shape`.
+    /// Set after parsing, with `origin`.
+    pub shape: Option<[f32; 4]>,
     /// Percent parts of an animated translation, `[x per width, x per height, y per width, y per
     /// height]`, with the same points as `x` and `y`. Folded into `x` and `y` from the resting
     /// border box after parsing, so it is `None` in a loaded composition.
@@ -1124,15 +1241,84 @@ pub struct Motion {
 #[derive(Clone, Debug, Default)]
 pub struct FilterMotion {
     /// Resting amount of each channel (the static `filter`, or the neutral amount).
-    pub base: [f32; 8],
-    pub tracks: [Track; 8],
+    pub base: [f32; FilterChannel::COUNT],
+    pub tracks: [Track; FilterChannel::COUNT],
     /// Animated color channels the static `filter` does not list, applied after its functions.
     pub appended: Vec<FilterChannel>,
+    /// Animated `drop-shadow()` as [`ShadowChannels`] tracks; all empty when it does not animate.
+    pub shadow: [Track; SHADOW_CHANNELS],
+    /// Resting `drop-shadow()` channels: the static one, or [`NO_SHADOW`].
+    pub shadow_base: ShadowChannels,
+}
+
+/// Number of animated `drop-shadow()` channels.
+pub const SHADOW_CHANNELS: usize = 7;
+
+/// A `drop-shadow()` as interpolable channels: `[x, y, blur, r·a, g·a, b·a, a]`, lengths in px and
+/// the color premultiplied in 0..=1, so colors interpolate premultiplied as in CSS.
+pub type ShadowChannels = [f32; SHADOW_CHANNELS];
+
+/// The neutral `drop-shadow(0 0 0 transparent)` that a missing shadow interpolates from.
+pub const NO_SHADOW: ShadowChannels = [0.0; SHADOW_CHANNELS];
+
+/// `drop-shadow()` channels of `shadow` (`None` is [`NO_SHADOW`]).
+pub fn shadow_channels(shadow: Option<Shadow>) -> ShadowChannels {
+    let Some(s) = shadow else {
+        return NO_SHADOW;
+    };
+    let a = f32::from(s.color.a) / 255.0;
+    let premultiplied = |c: u8| f32::from(c) / 255.0 * a;
+    [
+        s.x,
+        s.y,
+        s.blur,
+        premultiplied(s.color.r),
+        premultiplied(s.color.g),
+        premultiplied(s.color.b),
+        a,
+    ]
+}
+
+/// The `drop-shadow()` of interpolated channels (blur kept in 0..=200 px, alpha in 0..=1, color
+/// unpremultiplied and rounded to 8 bits); `None` when it is fully transparent.
+pub fn shadow_from_channels(channels: ShadowChannels) -> Option<Shadow> {
+    let [x, y, blur, r, g, b, a] = channels;
+    let a = a.clamp(0.0, 1.0);
+    let byte = |v: f32| (v * 255.0).round().clamp(0.0, 255.0) as u8;
+    if byte(a) == 0 {
+        return None;
+    }
+    let channel = |c: f32| byte((c / a).clamp(0.0, 1.0));
+    Some(Shadow {
+        x,
+        y,
+        blur: blur.clamp(0.0, 200.0),
+        spread: 0.0,
+        color: Color {
+            r: channel(r),
+            g: channel(g),
+            b: channel(b),
+            a: byte(a),
+        },
+        inset: false,
+    })
 }
 
 impl FilterMotion {
     pub fn is_static(&self) -> bool {
-        self.tracks.iter().all(|track| track.0.is_empty())
+        self.tracks.iter().all(|track| track.0.is_empty()) && !self.shadow_animated()
+    }
+
+    /// Whether `drop-shadow()` animates.
+    pub fn shadow_animated(&self) -> bool {
+        self.shadow.iter().any(|track| !track.0.is_empty())
+    }
+
+    /// The `drop-shadow()` channels `elapsed` seconds after the clip start.
+    pub fn eval_shadow(&self, elapsed: f64, hold_before: bool, hold_after: bool) -> ShadowChannels {
+        std::array::from_fn(|i| {
+            self.shadow[i].eval(elapsed, self.shadow_base[i], hold_before, hold_after)
+        })
     }
 
     pub fn is_animated(&self, channel: FilterChannel) -> bool {
@@ -1140,7 +1326,12 @@ impl FilterMotion {
     }
 
     /// Every channel's amount `elapsed` seconds after the clip start, clamped to its range.
-    pub fn eval(&self, elapsed: f64, hold_before: bool, hold_after: bool) -> [f32; 8] {
+    pub fn eval(
+        &self,
+        elapsed: f64,
+        hold_before: bool,
+        hold_after: bool,
+    ) -> [f32; FilterChannel::COUNT] {
         FilterChannel::ALL.map(|channel| {
             let i = channel.index();
             let value = self.tracks[i].eval(elapsed, self.base[i], hold_before, hold_after);
@@ -1200,6 +1391,22 @@ impl MotionPath {
     }
 }
 
+/// The linear map `R(degrees) · shape` (row-major 2x2, without the uniform scale) through which an
+/// element is drawn around its center. A plain rotation is `[cos, -sin, sin, cos]`, with `sin` and
+/// `cos` from `f32::sin_cos`, so the rotation path stays bit-identical.
+pub fn linear_map(degrees: f32, shape: Option<[f32; 4]>) -> [f32; 4] {
+    let (sin, cos) = degrees.to_radians().sin_cos();
+    let Some([e, f, g, h]) = shape else {
+        return [cos, -sin, sin, cos];
+    };
+    [
+        cos * e - sin * g,
+        cos * f - sin * h,
+        sin * e + cos * g,
+        sin * f + cos * h,
+    ]
+}
+
 /// Rate at which the glitch pattern changes, independent of the output frame rate.
 pub const GLITCH_RATE: f64 = 24.0;
 
@@ -1241,9 +1448,11 @@ impl Motion {
         Some(base.with_values(&values))
     }
 
-    /// Whether the element can be drawn rotated (static, animated, or turning along a path).
+    /// Whether the element can be drawn rotated (static, animated, or turning along a path) or
+    /// skewed: either way it is drawn through a turned layer.
     pub fn rotates(&self) -> bool {
-        self.base.rotate != 0.0
+        self.shape.is_some()
+            || self.base.rotate != 0.0
             || !self.rotate.0.is_empty()
             || self.path.as_ref().is_some_and(|path| path.rotate.is_some())
     }
@@ -1265,6 +1474,13 @@ impl Motion {
         }
         pose.x += self.offset.0;
         pose.y += self.offset.1;
+        let (dx, dy) = self.origin;
+        if (dx, dy) != (0.0, 0.0) {
+            // Mapping by `A = s·R·K` around `c + d` instead of `c` adds `d - A·d`.
+            let [a, b, c, d] = linear_map(pose.rotate, self.shape);
+            pose.x += dx - pose.scale * (a * dx + b * dy);
+            pose.y += dy - pose.scale * (c * dx + d * dy);
+        }
         pose
     }
 

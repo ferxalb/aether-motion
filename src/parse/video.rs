@@ -85,6 +85,9 @@ pub(in crate::parse) fn parse_video(
         );
     }
     let looped = flag(node, "loop")? || flag(node, "data-hf-loop")?;
+    if attr(node, "data-hf-loop-crossfade").is_some() {
+        bail!("data-hf-loop-crossfade is for <audio>: a <video>'s sound loops with its picture");
+    }
     if looped && !has_duration {
         bail!("a looping <video> requires data-duration");
     }
@@ -125,7 +128,11 @@ pub(in crate::parse) fn parse_video(
             volume: volume as f32,
             fade_in: seconds("data-hf-fade-in")?,
             fade_out: seconds("data-hf-fade-out")?,
+            fade_curve: crate::parse::audio::parse_fade_curve(node)?,
             looped,
+            // The picture loops with a hard cut; a crossfade would shorten the sound's loop and
+            // let it drift from the picture (rejected below).
+            loop_crossfade: 0.0,
             loop_from: 0.0,
             speed: speed.clone(),
             effects,

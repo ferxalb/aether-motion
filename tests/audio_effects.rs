@@ -315,3 +315,84 @@ fn the_mp4_carries_the_ducked_mix_and_is_deterministic() {
         "released"
     );
 }
+
+#[test]
+fn master_limiter_dither_and_fade_options_parse_and_apply() {
+    let dir = scratch("fx-master");
+    write_wav(&dir.join("loud.wav"), 48_000, 1, &constant(30_000, 1.0));
+    write_wav(
+        &dir.join("tone.wav"),
+        48_000,
+        1,
+        &tone(440.0, 0.5, 0.5, 0.0, 0.5),
+    );
+    // Two loud clips sum past full scale; the limiter keeps the mix at -1 dBFS.
+    let body = "<audio src='loud.wav'></audio><audio src='loud.wav'></audio>";
+    let html = dir.join("limit.html");
+    std::fs::write(
+        &html,
+        format!("<div data-composition-id='x' data-width='64' data-height='36' data-duration='1' data-hf-audio-limiter='-1' data-hf-audio-dither='tpdf' style='background:#123'>{body}</div>"),
+    )
+    .unwrap();
+    let composition_ = parse_file(&html).unwrap();
+    assert!(composition_.audio_master.dither);
+    let limited = mix(&composition_, RATE).unwrap();
+    let ceiling = 10f32.powf(-1.0 / 20.0);
+    assert!(limited.peak <= ceiling + 1e-6, "{}", limited.peak);
+    assert_eq!(limited.clipped, 0);
+    assert!(limited.limiter.unwrap().max_reduction_db > 5.0);
+    let unlimited = mixed(&composition(&dir, body, 1), 1);
+    assert!(unlimited.clipped > 0 && unlimited.limiter.is_none());
+    // Dither is deterministic and changes only the 16-bit conversion, by at most one step.
+    let (a, b) = (
+        limited.to_i16_interleaved(true),
+        limited.to_i16_interleaved(true),
+    );
+    assert_eq!(a, b);
+    let plain = limited.to_i16_interleaved(false);
+    assert!(a.iter().zip(&plain).all(|(x, y)| (x - y).abs() <= 1));
+    assert_ne!(a, plain);
+    // A looped clip with a crossfaded seam fills the duration.
+    let looped = mixed(
+        &composition(
+            &dir,
+            "<audio src='tone.wav' data-duration='1' data-hf-loop data-hf-loop-crossfade='0.05' data-hf-fade-in='0.1' data-hf-fade-curve='equal-power'></audio>",
+            1,
+        ),
+        1,
+    );
+    assert!(rms(&looped.left[40_000..44_000]) > 0.3);
+}
+
+#[test]
+fn rejects_invalid_master_and_fade_options() {
+    let dir = scratch("fx-master-errors");
+    write_wav(&dir.join("a.wav"), 48_000, 1, &[0; 48_000]);
+    let cases = [
+        ("<audio src='a.wav' data-hf-fade-curve='log'></audio>", "data-hf-fade-curve"),
+        ("<audio src='a.wav' data-duration='1' data-hf-loop-crossfade='0.1'></audio>", "needs data-hf-loop"),
+        ("<audio src='a.wav' data-duration='1' data-hf-loop data-hf-loop-crossfade='3'></audio>", "between 0 and 2"),
+        ("<audio src='a.wav' data-duration='2' data-hf-loop data-hf-loop-crossfade='0.6'></audio>", "half the looped part"),
+        ("<audio src='a.wav' data-duration='1' data-hf-loop data-hf-speed='2' data-hf-loop-crossfade='0.1'></audio>", "data-hf-speed"),
+        ("<audio id='v' src='a.wav'></audio><audio src='a.wav' data-hf-duck='v' data-hf-duck-detector='lufs'></audio>", "peak or rms"),
+        ("<audio id='v' src='a.wav'></audio><audio src='a.wav' data-hf-duck='v' data-hf-duck-window='0.1'></audio>", "needs data-hf-duck-detector"),
+        ("<audio id='v' src='a.wav'></audio><audio src='a.wav' data-hf-duck='v' data-hf-duck-detector='rms' data-hf-duck-window='5'></audio>", "data-hf-duck-window"),
+    ];
+    for (body, expected) in cases {
+        let html = composition(&dir, body, 2);
+        let error = match parse_file(&html) {
+            Err(e) => format!("{e:#}"),
+            Ok(c) => format!("{:#}", mix(&c, 2 * RATE).err().expect(body)),
+        };
+        assert!(error.contains(expected), "{body}: {error}");
+    }
+    for (root, expected) in [
+        ("data-hf-audio-limiter='3'", "data-hf-audio-limiter"),
+        ("data-hf-audio-dither='rect'", "tpdf or off"),
+    ] {
+        let html = dir.join("root.html");
+        std::fs::write(&html, format!("<div data-composition-id='x' data-width='64' data-height='36' data-duration='1' {root}></div>")).unwrap();
+        let error = format!("{:#}", parse_file(&html).unwrap_err());
+        assert!(error.contains(expected), "{root}: {error}");
+    }
+}

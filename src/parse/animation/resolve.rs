@@ -41,6 +41,7 @@ pub(in crate::parse) fn resolve_animation(
                 transform: None,
                 opacity: None,
                 filter: None,
+                drop_shadow: None,
                 easing: None,
             });
         }
@@ -58,10 +59,10 @@ pub(in crate::parse) fn resolve_animation(
                 }
                 "animation-timing-function" => current.easing = Some(parse_timing(&value)?),
                 "filter" | "-webkit-filter" => {
-                    current.filter = Some(
-                        keyframe_filter(&value)
-                            .with_context(|| format!("@keyframes {name}: filter"))?,
-                    )
+                    let (amounts, shadow) = keyframe_filter(&value)
+                        .with_context(|| format!("@keyframes {name}: filter"))?;
+                    current.filter = Some(amounts);
+                    current.drop_shadow = shadow;
                 }
                 _ => bail!(
                     "@keyframes {name}: unsupported property: {key} (only transform, opacity, filter, and animation-timing-function)"
@@ -77,20 +78,26 @@ pub(in crate::parse) fn resolve_animation(
     }))
 }
 
-/// Amounts of a keyframe's `filter` list by channel. `blur()` and each color function may appear
-/// once; `opacity()` and `drop-shadow()` are not animatable.
-fn keyframe_filter(value: &str) -> Result<[Option<f32>; 8]> {
+/// Amounts of a keyframe's `filter` list by channel, and its `drop-shadow()` as channels. `blur()`,
+/// each color function (including `opacity()`), and `drop-shadow()` may appear once.
+#[allow(clippy::type_complexity)]
+fn keyframe_filter(
+    value: &str,
+) -> Result<(
+    [Option<f32>; FilterChannel::COUNT],
+    Option<crate::model::ShadowChannels>,
+)> {
     let chain = parse_filter(value, "filter")?;
-    if chain.drop_shadow.is_some() {
-        bail!("drop-shadow() is not animatable; set it in the element's static filter");
-    }
-    let mut values = [None; 8];
+    let shadow = chain
+        .drop_shadow
+        .map(|shadow| crate::model::shadow_channels(Some(shadow)));
+    let mut values = [None; FilterChannel::COUNT];
     if value.contains("blur(") {
         values[FilterChannel::Blur.index()] = Some(chain.blur);
     }
     for filter in chain.colors {
         let channel = FilterChannel::of(filter)
-            .ok_or_else(|| anyhow!("opacity() is not animatable; animate opacity instead"))?;
+            .ok_or_else(|| anyhow!("internal: {filter:?} has no filter channel"))?;
         if values[channel.index()]
             .replace(FilterChannel::amount(filter))
             .is_some()
@@ -98,5 +105,5 @@ fn keyframe_filter(value: &str) -> Result<[Option<f32>; 8]> {
             bail!("each filter function may appear once per keyframe: {value}");
         }
     }
-    Ok(values)
+    Ok((values, shadow))
 }

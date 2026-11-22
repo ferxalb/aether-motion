@@ -24,8 +24,8 @@ use anyhow::{anyhow, Context, Result};
 use fontdb::Database;
 use frame_state::FrameState;
 use geometry::Rect;
+pub use layout::box_transform::resolve_box_transforms;
 pub use layout::camera_subjects::bind_camera_rigs;
-pub use layout::percent_translate::resolve_percent_translations;
 pub use layout::split_wrap::split_wrap_breaks;
 pub(crate) use paint::svg;
 use paint::{CachedImage, ImageKey, SequenceSources, Surface};
@@ -146,6 +146,9 @@ pub struct Renderer<'a> {
     time: f64,
     /// Element whose clip-path or mask layer is being drawn, so it is not masked twice.
     mask_guard: Option<usize>,
+    /// Element whose rotation (or skew) is already applied by the enclosing layer: a rotated
+    /// element with a `clip-path` or `mask-image` is clipped unrotated inside its rotated layer.
+    turn_guard: Option<usize>,
     /// Reduced halo planes of `data-hf-bloom`, reused across frames.
     bloom_scratch: paint::BloomScratch,
     /// Frame rate of the frame being drawn; per-element shutter windows are fractions of it.
@@ -301,6 +304,7 @@ impl<'a> Renderer<'a> {
             shutter_sums: Vec::new(),
             time: 0.0,
             mask_guard: None,
+            turn_guard: None,
             bloom_scratch: paint::BloomScratch::default(),
             fps: shutter::SNAPSHOT_FPS,
             layer_blur: layer_blur::LayerBlur::new(composition),

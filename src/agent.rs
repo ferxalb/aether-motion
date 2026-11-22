@@ -49,15 +49,15 @@ fn fix_hint(message: &str) -> &'static str {
         || message.contains("mask-image")
         || message.contains("mask shorthand")
     {
-        "use clip-path: inset(t r b l [round Npx]) | circle(r [at x y]) | ellipse(rx ry [at x y]) | polygon(x y, ...) with px or %, animate it with clipPath in data-hf-keyframes using the same function, point count, and units, and use mask-image with one linear-gradient() or radial-gradient(); not on the root and not with rotate or mix-blend-mode on the same element"
+        "use clip-path: inset(t r b l [round Npx]) | circle(r|closest-side|farthest-side [at x y]) | ellipse(rx ry [at x y]) | polygon([evenodd,] x y, ...) | path([evenodd,] 'M...') with px or %, optionally with a box keyword (margin-box, border-box, padding-box, content-box), or a box keyword alone; animate basic shapes with clipPath in data-hf-keyframes using the same function, point count, units, fill rule, and box; use mask-image with one linear-gradient() or radial-gradient(); not on the root and not with mix-blend-mode on the same element"
     } else if message.contains("backdrop-filter") {
         "use backdrop-filter: blur(<px>) or none (at most 200px); no other filter functions are supported"
     } else if message.contains("animated filter") || message.contains("not animatable") {
-        "animate filters with blur, brightness, contrast, saturate, grayscale, sepia, hueRotate, or invert in data-hf-keyframes, or with filter in CSS @keyframes, on a non-root element; list each animated function at most once in the static filter; opacity() and drop-shadow() are not animatable"
+        "animate filters with blur, brightness, contrast, saturate, grayscale, sepia, hueRotate, invert, filterOpacity, or dropShadow in data-hf-keyframes, or with filter in CSS @keyframes, on a non-root element; list each animated function at most once in the static filter, and when the static filter uses a custom order, list every animated function in it"
     } else if message.contains("mix-blend-mode") {
-        "use mix-blend-mode: normal|multiply|screen|overlay|darken|lighten|color-dodge|color-burn|hard-light|soft-light|difference|exclusion|plus-lighter on a non-root element that is not inside overflow: hidden, rotation, a reveal, a wipe, or another filter"
+        "use mix-blend-mode: normal|multiply|screen|overlay|darken|lighten|color-dodge|color-burn|hard-light|soft-light|difference|exclusion|hue|saturation|color|luminosity|plus-lighter on a non-root element that is not inside overflow: hidden, rotation, a reveal, a wipe, or another filter"
     } else if message.contains("filter") || message.contains("drop-shadow") {
-        "write filter as [blur(<px>)] [brightness|contrast|saturate|grayscale|sepia|invert|opacity(<n or %>)] [hue-rotate(<angle>)] [drop-shadow(x y [blur] color)], in that order; on the root only color functions (except opacity) are allowed"
+        "write filter as blur(<px>), brightness|contrast|saturate|grayscale|sepia|invert|opacity(<n or %>), hue-rotate(<angle>), and drop-shadow(x y [blur] color) in any order, with blur() and drop-shadow() at most once; on the root only color functions (except opacity) are allowed"
     } else if message.contains("data-hf-motion-blur") {
         "use data-hf-motion-blur=\"on\" on one non-root element (not nested in another blurred element, and not together with data-motion-blur on the root), with optional data-hf-motion-blur-shutter (degrees, above 0 to 720) and data-hf-motion-blur-samples (2 to 64)"
     } else if message.contains("data-hf-bloom") || message.contains("keyframe bloom") {
@@ -79,7 +79,7 @@ fn fix_hint(message: &str) -> &'static str {
     } else if message.contains("data-hf-camera") || message.contains("camera keyframe") {
         "use a JSON array of {at, zoom, x, y, easing} on a non-root container (easing may be smooth; anchorX, anchorY, and follow need data-hf-camera-subject); at in local seconds, strictly increasing; zoom between 0.05 and 50"
     } else if message.contains("data-hf-keyframes") {
-        "use a JSON array of {at, x, y, opacity, easing} plus optional filter amounts blur (0 to 200 px), brightness, contrast, saturate (0 to 100), grayscale, sepia, invert (0 to 1), and hueRotate (degrees), and the effects glitch (0 to 1) and rgbSplit (-500 to 500 px); at in local seconds, strictly increasing and within the clip; check the indicated field"
+        "use a JSON array of {at, x, y, opacity, easing} plus optional filter amounts blur (0 to 200 px), brightness, contrast, saturate (0 to 100), grayscale, sepia, invert (0 to 1), and hueRotate (degrees), filterOpacity (0 to 1), and dropShadow (a drop-shadow() string), and the effects glitch (0 to 1) and rgbSplit (-500 to 500 px); at in local seconds, strictly increasing and within the clip; check the indicated field"
     } else if message.contains("CSS variable") || message.contains("var()") {
         "define --name on :root or an ancestor, or add a fallback: var(--name, value)"
     } else if message.contains("animation") || message.contains("@keyframes") {
@@ -252,7 +252,16 @@ fn check_audio(c: &Composition) -> Result<Value> {
             })
         })
         .collect();
-    Ok(json!({"clips": clips, "peak": mix.peak, "clippedSamples": mix.clipped}))
+    let limiter = mix.limiter.map(|l| {
+        json!({"ceilingDb": l.ceiling_db, "maxReductionDb": l.max_reduction_db, "limitedSamples": l.limited_samples})
+    });
+    Ok(json!({
+        "clips": clips,
+        "peak": mix.peak,
+        "clippedSamples": mix.clipped,
+        "limiter": limiter,
+        "dither": c.audio_master.dither,
+    }))
 }
 
 /// The declared variables with the values in use, for the `check` report.

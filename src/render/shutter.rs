@@ -175,7 +175,7 @@ mod tests {
     fn only_geometry_counts_as_movement() {
         let faded = FrameState {
             alpha: 0.5,
-            filters: [3.0; 8],
+            filters: [3.0; crate::model::FilterChannel::COUNT],
             ..at(10.0, 0.0)
         };
         let hidden = FrameState::default();

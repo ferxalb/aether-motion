@@ -64,7 +64,9 @@ pub(in crate::parse) struct CssFrame {
     pub(in crate::parse) transform: Option<(f32, f32, f32, f32, [f32; 4])>,
     pub(in crate::parse) opacity: Option<f32>,
     /// `filter` amounts listed at this keyframe, by [`crate::model::FilterChannel::index`].
-    pub(in crate::parse) filter: Option<[Option<f32>; 8]>,
+    pub(in crate::parse) filter: Option<[Option<f32>; crate::model::FilterChannel::COUNT]>,
+    /// The `drop-shadow()` of this keyframe's `filter` list, when it lists one.
+    pub(in crate::parse) drop_shadow: Option<crate::model::ShadowChannels>,
     pub(in crate::parse) easing: Option<Easing>,
 }
 

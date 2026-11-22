@@ -123,6 +123,14 @@ fn reach(element: &Element, moving: bool) -> f64 {
         reach = reach.max(s.x.abs().max(s.y.abs()) + s.blur * 1.5);
     }
     let motion = &element.motion;
+    if motion.filter.shadow_animated() {
+        // The farthest an animated `drop-shadow()` reaches: its largest offset plus blur.
+        let far = |i: usize| {
+            extremes(&motion.filter.shadow[i], motion.filter.shadow_base[i])
+                .map_or(0.0, |(low, high)| low.abs().max(high.abs()))
+        };
+        reach = reach.max(far(0).max(far(1)) + far(2).min(200.0) * 1.5);
+    }
     let blur = style.filter_blur.max(motion.filter.base[0]).max(
         motion.filter.tracks[0]
             .0
@@ -144,6 +152,12 @@ fn reach(element: &Element, moving: bool) -> f64 {
     let mut motion_reach = travel(&motion.x, motion.base.x).max(travel(&motion.y, motion.base.y));
     if let Some(path) = &motion.path {
         motion_reach += path.measure.length();
+    }
+    // Scaling or turning around a `transform-origin` away from the center moves the center by
+    // `d - s·R·d`, at most `|d| · (1 + s)`.
+    let (dx, dy) = motion.origin;
+    if (dx, dy) != (0.0, 0.0) {
+        motion_reach += dx.hypot(dy) * (1.0 + largest_scale(element));
     }
     f64::from(reach + motion_reach)
 }
@@ -313,8 +327,16 @@ impl SpaceIndex {
             let mut grow = reach(element, !own);
             let scale = largest_scale(element);
             if !own && (element.motion.rotates() || scale != 1.0 || element.motion.rig.is_some()) {
-                // A turning or scaled element may sweep its half-diagonal around its center.
-                grow += f64::from(rect.w.hypot(rect.h)) * f64::from(scale.max(1.0)) / 2.0;
+                // A turning or scaled element may sweep its half-diagonal around its center; a
+                // skewed one sweeps the half-diagonal of its skewed box.
+                let (w, h) = match element.motion.shape {
+                    Some([a, b, c, d]) => (
+                        a.abs() * rect.w + b.abs() * rect.h,
+                        c.abs() * rect.w + d.abs() * rect.h,
+                    ),
+                    None => (rect.w, rect.h),
+                };
+                grow += f64::from(w.hypot(h)) * f64::from(scale.max(1.0)) / 2.0;
             }
             let box_extent = [
                 f64::from(rect.x) - origin[0] - grow,

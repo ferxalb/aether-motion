@@ -16,12 +16,15 @@ pub struct PathMeasure {
     /// `(x, y, distance from the start)` of every polyline vertex in order. A jump between subpaths
     /// repeats the distance, so it adds no length.
     points: Vec<(f32, f32, f32)>,
+    /// Index into `points` where each subpath starts.
+    starts: Vec<usize>,
 }
 
 impl PathMeasure {
     /// Flattens `path` (in its own coordinates).
     pub fn new(path: &Path) -> Result<Self> {
         let mut points: Vec<(f32, f32, f32)> = Vec::new();
+        let mut starts: Vec<usize> = Vec::new();
         let mut total = 0.0_f32;
         let mut current = Point::zero();
         let mut start = Point::zero();
@@ -40,6 +43,7 @@ impl PathMeasure {
         for segment in path.segments() {
             match segment {
                 PathSegment::MoveTo(p) => {
+                    starts.push(points.len());
                     push(&mut points, p, false)?;
                     (current, start) = (p, p);
                 }
@@ -81,7 +85,23 @@ impl PathMeasure {
         if points.is_empty() {
             bail!("path has no points");
         }
-        Ok(Self { points })
+        Ok(Self { points, starts })
+    }
+
+    /// The flattened subpaths as closed outlines (`(x, y)` vertices), for filling.
+    pub fn contours(&self) -> Vec<Vec<(f32, f32)>> {
+        let ends = self
+            .starts
+            .iter()
+            .skip(1)
+            .copied()
+            .chain([self.points.len()]);
+        self.starts
+            .iter()
+            .zip(ends)
+            .map(|(&start, end)| self.points[start..end].iter().map(|p| (p.0, p.1)).collect())
+            .filter(|contour: &Vec<(f32, f32)>| contour.len() >= 3)
+            .collect()
     }
 
     /// Parses SVG path data (`M`, `L`, `H`, `V`, `C`, `S`, `Q`, `T`, `A`, `Z`, absolute or relative).

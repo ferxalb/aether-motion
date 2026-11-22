@@ -8,6 +8,11 @@
 //! ahead), so the music is already down when the first word lands. The 0..1 reduction is shaped
 //! with smoothstep and applied in decibels (`gain = 10^(-amount * r / 20)`). Everything is integer
 //! sample arithmetic plus two linear scans, so the envelope is exact and deterministic.
+//!
+//! The detector is the key's sample peak by default; `data-hf-duck-detector="rms"` uses the root
+//! mean square over a trailing window instead (`data-hf-duck-window`), which ignores brief
+//! transients and follows loudness more closely. Its running sum is one fixed sequence of f64
+//! operations, so it stays deterministic.
 use super::super::SAMPLE_RATE;
 
 /// Defaults and limits of the `data-hf-duck-*` options.
@@ -19,6 +24,18 @@ pub const DEFAULT_ATTACK: f64 = 0.15;
 pub const DEFAULT_HOLD: f64 = 0.15;
 pub const DEFAULT_RELEASE: f64 = 0.5;
 pub const MAX_TIME: f64 = 5.0;
+pub const DEFAULT_WINDOW: f64 = 0.05;
+pub const MIN_WINDOW: f64 = 0.001;
+pub const MAX_WINDOW: f64 = 1.0;
+
+/// How a trigger's level is measured against the threshold.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Detector {
+    /// The louder channel's absolute sample.
+    Peak,
+    /// The root mean square of the louder channel over a trailing window, in seconds.
+    Rms { window: f64 },
+}
 /// Most ducked regions listed in a report.
 const MAX_REPORTED_REGIONS: usize = 64;
 
@@ -33,6 +50,7 @@ pub struct Duck {
     pub attack: f64,
     pub hold: f64,
     pub release: f64,
+    pub detector: Detector,
 }
 
 /// Post-effects level (louder channel, absolute) of one trigger clip, from `start` on the timeline.
@@ -67,9 +85,32 @@ impl Duck {
         for key in keys {
             let from = key.start.max(lo);
             let to = (key.start + key.level.len()).min(hi);
-            for n in from..to {
-                if key.level[n - key.start] > threshold {
-                    active[n - lo] = true;
+            match self.detector {
+                Detector::Peak => {
+                    for n in from..to {
+                        if key.level[n - key.start] > threshold {
+                            active[n - lo] = true;
+                        }
+                    }
+                }
+                Detector::Rms { window } => {
+                    let width = samples(window).max(1);
+                    let limit = f64::from(threshold) * f64::from(threshold);
+                    // Running sum of squares over the `width` samples ending at `i`, from the
+                    // start of the key so the value at `from` does not depend on `lo`.
+                    let mut sum = 0.0_f64;
+                    for i in 0..to.saturating_sub(key.start) {
+                        let v = f64::from(key.level[i]);
+                        sum += v * v;
+                        if i >= width {
+                            let old = f64::from(key.level[i - width]);
+                            sum -= old * old;
+                        }
+                        let n = key.start + i;
+                        if n >= from && sum.max(0.0) / width as f64 > limit {
+                            active[n - lo] = true;
+                        }
+                    }
                 }
             }
         }
@@ -160,6 +201,10 @@ impl Envelope {
             "attack": duck.attack,
             "hold": duck.hold,
             "release": duck.release,
+            "detector": match duck.detector {
+                Detector::Peak => serde_json::json!("peak"),
+                Detector::Rms { window } => serde_json::json!({ "rms": window }),
+            },
             "duckedSeconds": ducked as f64 / rate,
             "regions": regions,
             "deepestDb": super::gain_db(f64::from(deepest)),
@@ -212,7 +257,30 @@ mod tests {
             attack,
             hold,
             release,
+            detector: Detector::Peak,
         }
+    }
+
+    #[test]
+    fn rms_detector_ignores_a_click_but_follows_sustained_sound() {
+        // A single full-scale sample at 1000, then 0.1 s of a steady 0.1 (-20 dBFS) from 0.5 s.
+        let mut level = vec![0.0_f32; 48_000];
+        level[1000] = 1.0;
+        level[24_000..28_800].fill(0.1);
+        let key = Key { start: 0, level };
+        // Threshold -21 dBFS (0.089): over a 10 ms window the click's RMS is 0.046, the tone's 0.1.
+        let mut peak = duck(0.0, 0.0, 0.0);
+        peak.threshold_db = -21.0;
+        let mut rms = peak.clone();
+        rms.detector = Detector::Rms { window: 0.01 };
+        let by_peak = peak.envelope(&[&key], 0, 48_000, 48_000);
+        let by_rms = rms.envelope(&[&key], 0, 48_000, 48_000);
+        assert!(
+            by_peak.gains[1000] < 0.2,
+            "the peak detector ducks on the click"
+        );
+        assert_eq!(by_rms.gains[1000], 1.0, "the RMS detector does not");
+        assert!(by_rms.gains[26_000] < 0.2, "sustained sound ducks");
     }
 
     #[test]

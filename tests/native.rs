@@ -668,12 +668,10 @@ fn percent_translate_matches_the_px_translation_of_the_own_box() {
 
 #[test]
 fn percent_translate_is_rejected_where_it_cannot_be_resolved() {
-    let cases = [
-        (
-            "@keyframes k { to { transform: translate(1px, 0) } } .box { transform: translate(-50%, 0); animation: k 1s both }",
-            "replaces a % translation",
-        ),
-    ];
+    let cases = [(
+        "main { transform: translate(-50%, 0) }",
+        "not supported on the root",
+    )];
     for (css, expected) in cases {
         let css =
             format!(".box {{ left: 0; top: 0; width: 4px; height: 4px; background: #f00 }} {css}");
@@ -684,6 +682,61 @@ fn percent_translate_is_rejected_where_it_cannot_be_resolved() {
         );
         let error = format!("{:#}", parse_file(&path).unwrap_err());
         assert!(error.contains(expected), "{css}: {error}");
+    }
+}
+
+#[test]
+fn css_animation_of_transform_replaces_a_static_percent_translation() {
+    // A 6x4 box: the static translate(-50%, 25%) is (-3px, 1px). The animation replaces it while
+    // it applies, and the implied `from` keyframe and the time outside the animation keep it.
+    let frames = |name: &str, rest: &str, keys: &str, fill: &str| {
+        let css = format!(
+            "@keyframes k {{ {keys} }}
+             .box {{ left: 4px; top: 4px; width: 6px; height: 4px; background: #f00;
+                     transform: {rest}; animation: k 1s linear 0.25s {fill} }}"
+        );
+        let path = css_composition(
+            name,
+            &css,
+            r#"<div class="clip box" data-start="0" data-duration="2"></div>"#,
+        );
+        let composition = parse_file(&path).unwrap();
+        let mut r = Renderer::new(&composition, 1.0).unwrap();
+        [0.0, 0.25, 0.75, 1.0, 1.5]
+            .map(|t| r.render_at(t).unwrap().to_vec())
+            .to_vec()
+    };
+    for fill in ["none", "both", "forwards", "backwards"] {
+        assert_eq!(
+            frames(
+                "rest-pct",
+                "translate(-50%, 25%)",
+                "to { transform: translate(4px, 0) }",
+                fill
+            ),
+            frames(
+                "rest-px",
+                "translate(-3px, 1px)",
+                "to { transform: translate(4px, 0) }",
+                fill
+            ),
+            "{fill}"
+        );
+        assert_eq!(
+            frames(
+                "both-pct",
+                "translate(-50%, 25%)",
+                "50% { transform: translateX(100%) } to { transform: scale(1.5) }",
+                fill
+            ),
+            frames(
+                "both-px",
+                "translate(-3px, 1px)",
+                "50% { transform: translateX(6px) } to { transform: scale(1.5) }",
+                fill
+            ),
+            "{fill}"
+        );
     }
 }
 
@@ -723,4 +776,319 @@ fn percent_translate_in_keyframes_matches_the_px_animation() {
             "rotate(90deg) translateX(0)"
         ),
     );
+}
+
+/// Renders a 16x16 composition with a red 6x4 `.box` at (4, 4) styled by `extra` at each time.
+fn origin_frames(name: &str, extra: &str, times: &[f64]) -> Vec<Vec<u8>> {
+    let css = format!(
+        ".box {{ left: 4px; top: 4px; width: 6px; height: 4px; background: #f00 }} {extra}"
+    );
+    let path = css_composition(
+        name,
+        &css,
+        r#"<div class="clip box" data-start="0" data-duration="2"></div>"#,
+    );
+    let composition = parse_file(&path).unwrap();
+    let mut r = Renderer::new(&composition, 1.0).unwrap();
+    times
+        .iter()
+        .map(|&t| r.render_at(t).unwrap().to_vec())
+        .collect()
+}
+
+/// Inclusive `(left, top, right, bottom)` of pixels whose red channel exceeds 127.
+fn red_bbox(frame: &[u8]) -> Option<(usize, usize, usize, usize)> {
+    let mut found: Option<(usize, usize, usize, usize)> = None;
+    for y in 0..16 {
+        for x in 0..16 {
+            if frame[(y * 16 + x) * 4] > 127 {
+                found = Some(found.map_or((x, y, x, y), |(l, t, r, b)| {
+                    (l.min(x), t.min(y), r.max(x), b.max(y))
+                }));
+            }
+        }
+    }
+    found
+}
+
+#[test]
+fn transform_origin_matches_the_equivalent_center_translation() {
+    // Around the center c, pivoting at c + d adds the translation d - s·R·d. For the 6x4 box:
+    // `0 0` is d = (-3, -2), `right bottom` is d = (3, 2).
+    for (origin, center) in [
+        (
+            "transform-origin: 0 0; transform: scale(2)",
+            "transform: translate(3px, 2px) scale(2)",
+        ),
+        (
+            "transform-origin: right bottom; transform: scale(0.5)",
+            "transform: translate(1.5px, 1px) scale(0.5)",
+        ),
+        (
+            "transform-origin: 100% 0; transform: translate(1px, 1px) scale(1.5)",
+            "transform: translate(-0.5px, 2px) scale(1.5)",
+        ),
+        (
+            "transform-origin: 3px 2px; transform: scale(3)",
+            "transform: scale(3)",
+        ),
+    ] {
+        assert_eq!(
+            origin_frames("origin", &format!(".box {{ {origin} }}"), &[0.5]),
+            origin_frames("center", &format!(".box {{ {center} }}"), &[0.5]),
+            "{origin}"
+        );
+    }
+}
+
+#[test]
+fn transform_origin_pivots_rotation() {
+    // rotate(90deg) around the top-left corner: d = (-3, -2), R·d = (2, -3), so the box moves by
+    // (-5, 1) relative to a turn around its center. sin and cos of 90 degrees are not exact in
+    // floating point, so allow one level per channel.
+    let origin = origin_frames(
+        "rot-origin",
+        ".box { transform-origin: left top; transform: rotate(90deg) }",
+        &[0.5],
+    );
+    let center = origin_frames(
+        "rot-center",
+        ".box { transform: translate(-5px, 1px) rotate(90deg) }",
+        &[0.5],
+    );
+    let worst = origin[0]
+        .iter()
+        .zip(&center[0])
+        .map(|(a, b)| a.abs_diff(*b))
+        .max()
+        .unwrap();
+    assert!(worst <= 1, "largest channel difference {worst}");
+    // The turned 4x6 box hangs to the left of the pivot at (4, 4): x 0..=3, y 4..=9.
+    assert_eq!(red_bbox(&origin[0]), Some((0, 4, 3, 9)));
+}
+
+#[test]
+fn transform_origin_holds_the_pivot_while_scale_animates() {
+    // Scale animates 0.5 -> 2 over 1 s around the top-left corner, which never moves.
+    let frames = origin_frames(
+        "origin-anim",
+        "@keyframes grow { from { transform: scale(0.5) } to { transform: scale(2) } }
+         .box { transform-origin: 0 0; animation: grow 1s linear both }",
+        &[0.0, 2.0 / 3.0, 1.5],
+    );
+    assert_eq!(red_bbox(&frames[0]), Some((4, 4, 6, 5)));
+    assert_eq!(red_bbox(&frames[1]), Some((4, 4, 12, 9)));
+    assert_eq!(red_bbox(&frames[2]), Some((4, 4, 15, 11)));
+    // The default center origin grows symmetrically instead.
+    let centered = origin_frames(
+        "center-anim",
+        "@keyframes grow { from { transform: scale(0.5) } to { transform: scale(2) } }
+         .box { animation: grow 1s linear both }",
+        &[1.5],
+    );
+    assert_eq!(red_bbox(&centered[0]), Some((1, 2, 12, 9)));
+}
+
+#[test]
+fn transform_origin_is_rejected_where_it_has_no_pivot() {
+    let cases = [
+        (
+            "main { transform-origin: 0 0 }",
+            r#"<div class="clip box" data-start="0" data-duration="1"></div>"#,
+            "not supported on the root",
+        ),
+        (
+            ".box { transform-origin: 0 0 }",
+            r#"<div class="clip box" data-start="0" data-duration="1" data-hf-camera='[{"at":0,"zoom":1},{"at":1,"zoom":2}]'></div>"#,
+            "a camera zooms and turns around its center",
+        ),
+        (
+            ".box { transform-origin: 0 0 0 4px }",
+            r#"<div class="clip box" data-start="0" data-duration="1"></div>"#,
+            "one to three values",
+        ),
+        (
+            ".box { transform-origin: 0 0 10px }",
+            r#"<div class="clip box" data-start="0" data-duration="1"></div>"#,
+            "3D origin",
+        ),
+        (
+            ".box { transform-origin: top 4px }",
+            r#"<div class="clip box" data-start="0" data-duration="1"></div>"#,
+            "horizontal value first",
+        ),
+        (
+            "span { transform-origin: 0 0 }",
+            r#"<div class="clip box" data-start="0" data-duration="1">Hi <span>there</span></div>"#,
+            "transform",
+        ),
+    ];
+    for (css, body, expected) in cases {
+        let css =
+            format!(".box {{ left: 0; top: 0; width: 4px; height: 4px; background: #f00 }} {css}");
+        let path = css_composition("origin-err", &css, body);
+        let error = format!("{:#}", parse_file(&path).unwrap_err());
+        assert!(error.contains(expected), "{css}: {error}");
+    }
+}
+
+/// Red-weighted x centroid of each row `rows` of a 16x16 frame.
+fn row_centroids(frame: &[u8], rows: std::ops::Range<usize>) -> Vec<f32> {
+    rows.map(|y| {
+        let (mut mass, mut moment) = (0.0_f32, 0.0_f32);
+        for x in 0..16 {
+            let red = f32::from(frame[(y * 16 + x) * 4]);
+            mass += red;
+            moment += red * (x as f32 + 0.5);
+        }
+        moment / mass
+    })
+    .collect()
+}
+
+/// Total red coverage of a 16x16 frame, in pixels.
+fn red_area(frame: &[u8]) -> f32 {
+    frame.chunks(4).map(|p| f32::from(p[0]) / 255.0).sum()
+}
+
+fn skew_frame(name: &str, css: &str) -> Vec<u8> {
+    let css =
+        format!(".box {{ left: 6px; top: 6px; width: 4px; height: 4px; background: #f00 }} {css}");
+    let path = css_composition(
+        name,
+        &css,
+        r#"<div class="clip box" data-start="0" data-duration="1"></div>"#,
+    );
+    let composition = parse_file(&path).unwrap();
+    let mut r = Renderer::new(&composition, 1.0).unwrap();
+    r.render_at(0.5).unwrap().to_vec()
+}
+
+#[test]
+fn skew_shears_the_box_around_its_center_and_keeps_its_area() {
+    // skewX(45deg) moves each row by its height from the center (8, 8): rows 6..=9 have their
+    // centers at y - 8 = -1.5, -0.5, 0.5, 1.5.
+    let frame = skew_frame("skewx", ".box { transform: skewX(45deg) }");
+    for (got, want) in row_centroids(&frame, 6..10)
+        .iter()
+        .zip([6.5, 7.5, 8.5, 9.5])
+    {
+        assert!((got - want).abs() < 0.1, "row centroid {got} vs {want}");
+    }
+    assert!(
+        (red_area(&frame) - 16.0).abs() < 0.3,
+        "area {}",
+        red_area(&frame)
+    );
+    // skewY shears columns instead: the frame is skewX's transposed (to one level, since skewY
+    // is drawn as a rotation times a shear).
+    let transposed = skew_frame("skewy", ".box { transform: skewY(45deg) }");
+    for y in 0..16 {
+        for x in 0..16 {
+            let (a, b) = (frame[(y * 16 + x) * 4], transposed[(x * 16 + y) * 4]);
+            assert!(a.abs_diff(b) <= 1, "({x}, {y}): {a} vs {b}");
+        }
+    }
+    // A non-uniform scale doubles the area and keeps the center. The box is drawn at the uniform
+    // scale sqrt(2) and resampled by (sqrt(2), 1/sqrt(2)), so its soft edges lose a little
+    // coverage (bilinear minification), as a rotated layer's do.
+    let wide = skew_frame("scale-xy", ".box { transform: scale(2, 1) }");
+    assert!(
+        (red_area(&wide) - 32.0).abs() < 1.6,
+        "area {}",
+        red_area(&wide)
+    );
+    assert_eq!(red_bbox(&wide), Some((4, 6, 11, 9)));
+    assert_eq!(wide, skew_frame("scale-x", ".box { transform: scaleX(2) }"));
+}
+
+#[test]
+fn skew_follows_transform_origin_and_effect_layers() {
+    // Around the top-left corner, d = (-2, -2) and A·d = (-4, -2): the box moves 2 px right.
+    let frame = skew_frame(
+        "skew-origin",
+        ".box { transform-origin: 0 0; transform: skewX(45deg) }",
+    );
+    for (got, want) in row_centroids(&frame, 6..10)
+        .iter()
+        .zip([8.5, 9.5, 10.5, 11.5])
+    {
+        assert!((got - want).abs() < 0.1, "row centroid {got} vs {want}");
+    }
+    // The filter layer holds the whole skewed box, so nothing is cut.
+    let plain = skew_frame("skew-plain", ".box { transform: skewX(45deg) }");
+    let filtered = skew_frame(
+        "skew-filter",
+        ".box { transform: skewX(45deg); filter: saturate(1.5) }",
+    );
+    assert!(
+        (red_area(&plain) - red_area(&filtered)).abs() < 0.2,
+        "{} vs {}",
+        red_area(&plain),
+        red_area(&filtered)
+    );
+}
+
+#[test]
+fn transforms_without_skew_render_exactly_as_before() {
+    for (shaped, plain) in [
+        ("rotate(30deg) skewX(0deg)", "rotate(30deg)"),
+        ("skew(0, 0) rotate(90deg) scaleX(1)", "rotate(90deg)"),
+        (
+            "scale(1.5, 1.5) rotate(-15deg)",
+            "scale(1.5) rotate(-15deg)",
+        ),
+    ] {
+        assert_eq!(
+            skew_frame("shaped", &format!(".box {{ transform: {shaped} }}")),
+            skew_frame("plain", &format!(".box {{ transform: {plain} }}")),
+            "{shaped}"
+        );
+    }
+}
+
+#[test]
+fn skew_is_rejected_where_it_cannot_be_drawn() {
+    let clip = r#"<div class="clip box" data-start="0" data-duration="1"></div>"#;
+    let cases = [
+        ("main { transform: skewX(10deg) }", clip.to_string(), "cannot be on the root"),
+        (
+            ".box { transform: skewX(10deg) }",
+            r#"<div class="clip box" data-start="0" data-duration="1" data-hf-camera='[{"at":0,"zoom":1},{"at":1,"zoom":2}]'></div>"#.to_string(),
+            "on camera",
+        ),
+        (
+            "@keyframes k { to { transform: translate(1px, 0) } } .box { transform: skewX(10deg); animation: k 1s both }",
+            clip.to_string(),
+            "replaces the static skew()",
+        ),
+        (
+            "@keyframes k { to { transform: skewX(10deg) } } .box { animation: k 1s both }",
+            clip.to_string(),
+            "cannot be animated",
+        ),
+        (
+            ".box { transform: skewX(10deg) }",
+            r#"<div class="clip box" data-start="0" data-duration="1" data-hf-reveal="from-left"></div>"#.to_string(),
+            "combined with rotate or skew",
+        ),
+        (".box { transform: skewX(90deg) }", clip.to_string(), "flattens"),
+        (
+            "span { transform: skewX(10deg) }",
+            r#"<div class="clip box" data-start="0" data-duration="1">Hi <span>there</span></div>"#.to_string(),
+            "transform",
+        ),
+        (
+            ".plane { width: 4px; height: 4px; transform: skewX(10deg) }",
+            r#"<div class="clip box" data-start="0" data-duration="1" data-hf-space><div class="plane" data-hf-z="10"></div></div>"#.to_string(),
+            "data-hf-space stage or plane",
+        ),
+    ];
+    for (css, body, expected) in cases {
+        let css =
+            format!(".box {{ left: 0; top: 0; width: 4px; height: 4px; background: #f00 }} {css}");
+        let path = css_composition("skew-err", &css, &body);
+        let error = format!("{:#}", parse_file(&path).unwrap_err());
+        assert!(error.contains(expected), "{css}: {error}");
+    }
 }

@@ -1,4 +1,6 @@
-//! Rotated subtrees: render on an offscreen layer, then composite around the box center.
+//! Rotated and skewed subtrees: render on an offscreen layer, then composite it through a linear
+//! map (`R(rotate) · shape`, see `model::linear_map`) around the box center. For a plain rotation
+//! the arithmetic is exactly that of a rotation, so rotated output is unchanged.
 
 use crate::model::{Color, Content};
 use crate::render::geometry::{clip_pixels, Rect};
@@ -7,14 +9,15 @@ use crate::render::Renderer;
 use anyhow::Result;
 
 impl<'a> Renderer<'a> {
-    /// Renders the subtree on its own surface and composites it rotated around the box center.
-    /// Descendants are clipped to the box plus its shadow reach.
+    /// Renders the subtree on its own surface and composites it through `map` (row-major 2x2,
+    /// `[a, b, c, d]` maps a local offset `(x, y)` from the box center to `(a·x + b·y, c·x + d·y)`)
+    /// around the box center. Descendants are clipped to the box plus its shadow reach.
     pub(in crate::render) fn draw_rotated(
         &mut self,
         idx: usize,
         rect: Rect,
         cumulative: f32,
-        degrees: f32,
+        map: [f32; 4],
     ) -> Result<()> {
         let k = self.scale;
         let element = &self.composition.elements[idx];
@@ -61,7 +64,19 @@ impl<'a> Renderer<'a> {
             let outer = std::mem::replace(&mut self.surface, layer);
             self.layer_depth += 1;
             self.isolated += 1;
-            outcome = outcome.and_then(|()| self.draw_body(idx, shifted, cumulative));
+            outcome = outcome.and_then(|()| {
+                if self.needs_mask(idx) {
+                    // The clip and mask (and the filter inside them) apply in the element's own
+                    // space; the layer turns the result.
+                    let outer = self.turn_guard.replace(idx);
+                    let sigma = self.filter_blur(idx) * cumulative * k;
+                    let drawn = self.draw_masked(idx, shifted, cumulative, sigma);
+                    self.turn_guard = outer;
+                    drawn
+                } else {
+                    self.draw_body(idx, shifted, cumulative)
+                }
+            });
             self.isolated -= 1;
             self.layer_depth -= 1;
             layers.push(std::mem::replace(&mut self.surface, outer).pixels);
@@ -69,13 +84,22 @@ impl<'a> Renderer<'a> {
         outcome?;
         // Premultiplied color from the black pass; alpha from how much white shows through.
         let premultiplied = super::clip::premultiply(&layers[0], &layers[1]);
-        let (sin, cos) = degrees.to_radians().sin_cos();
+        // Inverse map, from the target back into the layer. For a rotation `[cos, -sin, sin, cos]`
+        // it is exactly `[cos, sin, -sin, cos]`.
+        let [f00, f01, f10, f11] = map;
+        let inverse = if f00 == f11 && f01 == -f10 {
+            [f00, f10, f01, f11]
+        } else {
+            let det = f00 * f11 - f01 * f10;
+            [f11 / det, -f01 / det, -f10 / det, f00 / det]
+        };
+        let [i00, i01, i10, i11] = inverse;
         let center = ((rect.x + rect.w / 2.0) * k, (rect.y + rect.h / 2.0) * k);
         let corners = [(x0, y0), (x1, y0), (x0, y1), (x1, y1)].map(|(x, y)| {
             let (dx, dy) = (x as f32 - center.0, y as f32 - center.1);
             (
-                center.0 + dx * cos - dy * sin,
-                center.1 + dx * sin + dy * cos,
+                center.0 + dx * f00 + dy * f01,
+                center.1 + dx * f10 + dy * f11,
             )
         });
         let low = |f: fn(&(f32, f32)) -> f32| corners.iter().map(f).fold(f32::INFINITY, f32::min);
@@ -98,7 +122,7 @@ impl<'a> Renderer<'a> {
             premultiplied[y as usize * lw + x as usize].map(f32::from)
         };
         let stride = self.surface.width as usize;
-        // Layer coordinates are linear in x on each row: sx = ax + x*cos, sy = ay - x*sin.
+        // Layer coordinates are linear in x on each row: sx = ax + x*i00, sy = ay + x*i10.
         let (limit_x, limit_y) = (lw as f32, lh as f32);
         let span = |origin: f32, slope: f32, limit: f32| -> (f32, f32) {
             if slope.abs() < 1e-6 {
@@ -113,17 +137,17 @@ impl<'a> Renderer<'a> {
         };
         for y in bounds.y0..bounds.y1 {
             let dy = y as f32 + 0.5 - center.1;
-            let ax = center.0 + (0.5 - center.0) * cos + dy * sin - x0 as f32 - 0.5;
-            let ay = center.1 - (0.5 - center.0) * sin + dy * cos - y0 as f32 - 0.5;
-            let ((x_lo, x_hi), (y_lo, y_hi)) = (span(ax, cos, limit_x), span(ay, -sin, limit_y));
+            let ax = center.0 + (0.5 - center.0) * i00 + dy * i01 - x0 as f32 - 0.5;
+            let ay = center.1 + (0.5 - center.0) * i10 + dy * i11 - y0 as f32 - 0.5;
+            let ((x_lo, x_hi), (y_lo, y_hi)) = (span(ax, i00, limit_x), span(ay, i10, limit_y));
             let first = (x_lo.max(y_lo).max(bounds.x0 as f32 - 1.0).floor() as i64 - 1)
                 .max(bounds.x0 as i64) as usize;
             let last = ((x_hi.min(y_hi).min(bounds.x1 as f32).ceil() as i64) + 1)
                 .min(bounds.x1 as i64)
                 .max(0) as usize;
             for x in first..last {
-                let sx = ax + x as f32 * cos;
-                let sy = ay - x as f32 * sin;
+                let sx = ax + x as f32 * i00;
+                let sy = ay + x as f32 * i10;
                 let (ix, iy) = (sx.floor(), sy.floor());
                 let (fx, fy) = (sx - ix, sy - iy);
                 let (ix, iy) = (ix as i32, iy as i32);

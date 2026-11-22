@@ -15,8 +15,25 @@ CLI/MCP output may still change between minor releases.
   `--require-gpu` works with it and its `AETHER_3D_PROOF` names the backend, device, and completed
   launches. See [docs/3d.md](docs/3d.md).
 
+- `transform` accepts `skew()`, `skewX()`, `skewY()`, and non-uniform `scale()` in static
+  transforms, and `transform-origin` moves the point scale, rotate, and skew turn around.
+- `clip-path` accepts `path()`, the `evenodd` fill rule, `closest-side`/`farthest-side` radii, and
+  box keywords (`margin-box`, `border-box`, `padding-box`, `content-box`, alone or with a shape).
+- `mix-blend-mode` accepts the non-separable modes `hue`, `saturation`, `color`, and `luminosity`.
+- `opacity()` and `drop-shadow()` filters animate (`filterOpacity` and `dropShadow` in
+  `data-hf-keyframes`, or `filter` in CSS `@keyframes`).
+- Audio: `data-hf-fade-curve="equal-power"`, `data-hf-loop-crossfade` for seamless loops,
+  `data-hf-duck-detector="rms"` with `data-hf-duck-window`, and on the root a look-ahead peak
+  limiter (`data-hf-audio-limiter`) and TPDF dither (`data-hf-audio-dither="tpdf"`), reported by
+  `check` as `audio.limiter` and `audio.dither`.
+
 ### Changed
 
+- `filter` functions may come in any order and apply in the order written; `blur()` and
+  `drop-shadow()` still appear at most once.
+- `clip-path` and `mask-image` work on rotated and skewed elements and turn with them; they were
+  an error before.
+- Percent translation works alongside a CSS animation of `transform`; it was an error before.
 - `transform` accepts percent translation (`translate(-50%, -50%)`), static or in `@keyframes`,
   resolved from the element's resting border box; it was an error before.
 - `text-shadow` accepts a list of up to 8 layers (first on top); it took one shadow before.

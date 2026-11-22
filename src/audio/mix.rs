@@ -2,7 +2,9 @@
 //!
 //! Every time is converted to a whole sample with `round(seconds * 48000)`, and a clip's length is
 //! the difference of its rounded end and start, so adjacent clips neither overlap nor leave gaps.
-//! Fades are linear in amplitude and evaluated per sample. Mono sources play on both channels at
+//! Fades are linear in amplitude (or equal power with `data-hf-fade-curve`) and evaluated per
+//! sample. A loop with `data-hf-loop-crossfade` blends the last samples of each pass into the first
+//! samples of the next with equal-power gains, so the seam has no click. Mono sources play on both channels at
 //! unity gain. Mixing is plain summation in `f32` in document order, so output is deterministic.
 //! Clips with `data-hf-speed` or `data-hf-speed-ramp` read the source through `varispeed`; clips at
 //! 1x keep the direct sample copy. Clips with effects (`data-hf-volume-ramp`, `data-hf-eq`,
@@ -13,7 +15,7 @@ use super::effects::Chain;
 use super::resample::resample;
 use super::varispeed::{Edge, Varispeed, SILENT_BELOW};
 use super::SAMPLE_RATE;
-use crate::model::{AudioClip, Composition};
+use crate::model::{AudioClip, Composition, FadeCurve};
 use anyhow::{anyhow, bail, Context, Result};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -65,6 +67,8 @@ pub struct Mix {
     /// Samples (per channel) whose absolute value exceeds full scale and will be clamped.
     pub clipped: usize,
     pub clips: Vec<ClipReport>,
+    /// What `data-hf-audio-limiter` did; `peak` and `clipped` are measured after it.
+    pub limiter: Option<super::master::LimiterReport>,
 }
 
 impl Mix {
@@ -72,13 +76,22 @@ impl Mix {
         self.left.len()
     }
 
-    /// Interleaved 16-bit samples, rounded to nearest and clamped.
-    pub fn to_i16_interleaved(&self) -> Vec<i16> {
-        let convert = |x: f32| (x * 32768.0).round().clamp(-32768.0, 32767.0) as i16;
+    /// Interleaved 16-bit samples, rounded to nearest (after TPDF dither when `dither`) and
+    /// clamped.
+    pub fn to_i16_interleaved(&self, dither: bool) -> Vec<i16> {
+        let convert = |x: f32, i: usize, c: usize| {
+            let noise = if dither {
+                super::master::dither(i, c)
+            } else {
+                0.0
+            };
+            (x * 32768.0 + noise).round().clamp(-32768.0, 32767.0) as i16
+        };
         self.left
             .iter()
             .zip(&self.right)
-            .flat_map(|(l, r)| [convert(*l), convert(*r)])
+            .enumerate()
+            .flat_map(|(i, (l, r))| [convert(*l, i, 0), convert(*r, i, 1)])
             .collect()
     }
 }
@@ -165,6 +178,10 @@ pub fn mix(composition: &Composition, total_frames: usize) -> Result<Mix> {
         .with_context(|| format!("audio clip {}", label(clip)))?;
         reports[index] = Some(report);
     }
+    let limiter = composition
+        .audio_master
+        .limiter_db
+        .map(|db| super::master::limit(&mut left, &mut right, db));
     let (mut peak, mut clipped) = (0.0_f32, 0);
     for (l, r) in left.iter().zip(&right) {
         let loudest = l.abs().max(r.abs());
@@ -176,6 +193,7 @@ pub fn mix(composition: &Composition, total_frames: usize) -> Result<Mix> {
         right,
         peak,
         clipped,
+        limiter,
         clips: reports
             .into_iter()
             .map(|r| r.expect("every clip is mixed"))
@@ -282,13 +300,17 @@ fn render(
     let (fade_in, fade_out) = (frames_for(clip.fade_in), frames_for(clip.fade_out));
     let volume = f64::from(clip.volume);
     let right_plane = source.channels.get(1).unwrap_or(&source.channels[0]);
+    let shape = |t: f64| match clip.fade_curve {
+        FadeCurve::Linear => t,
+        FadeCurve::EqualPower => (t * std::f64::consts::FRAC_PI_2).sin(),
+    };
     let fade = |k: usize| {
         let mut gain = volume;
         if k < fade_in {
-            gain *= k as f64 / fade_in as f64;
+            gain *= shape(k as f64 / fade_in as f64);
         }
         if k + fade_out > length {
-            gain *= (length - k) as f64 / fade_out as f64;
+            gain *= shape((length - k) as f64 / fade_out as f64);
         }
         gain
     };
@@ -376,6 +398,15 @@ fn render(
         };
         return Ok(report(end));
     }
+    let seam = frames_for(clip.loop_crossfade);
+    if clip.looped && seam > 0 {
+        let schedule = LoopSeam::new(trim, loop_start, source.frames(), seam)?;
+        for k in 0..length {
+            let (l, r) = schedule.sample(k, &source.channels[0], right_plane);
+            emit(k, l, r, fade(k));
+        }
+        return Ok(report(length as f64 / rate));
+    }
     for k in 0..length {
         let index = if clip.looped {
             wrap((trim + k) as f64) as usize
@@ -392,6 +423,62 @@ fn render(
         length.min(available)
     };
     Ok(report(played as f64 / rate))
+}
+
+/// The read schedule of a loop whose seams are crossfaded over `seam` samples: the first pass plays
+/// from the trim up to `seam` samples before the source end; every pass then blends the source's
+/// last `seam` samples (fading out) with the first `seam` samples after `loop_start` (fading in)
+/// and continues from there, so each later pass is `span - seam` samples long.
+struct LoopSeam {
+    trim: usize,
+    loop_start: usize,
+    end: usize,
+    seam: usize,
+}
+
+impl LoopSeam {
+    fn new(trim: usize, loop_start: usize, end: usize, seam: usize) -> Result<Self> {
+        let span = end - loop_start;
+        if seam * 2 >= span {
+            bail!(
+                "data-hf-loop-crossfade ({:.3} s) must be shorter than half the looped part of the source ({:.3} s)",
+                seam as f64 / f64::from(SAMPLE_RATE),
+                span as f64 / f64::from(SAMPLE_RATE)
+            );
+        }
+        if trim + seam >= end {
+            bail!("data-hf-trim-start leaves less than data-hf-loop-crossfade before the end of the source");
+        }
+        Ok(Self {
+            trim,
+            loop_start,
+            end,
+            seam,
+        })
+    }
+
+    /// The stereo sample `k` samples after the clip start.
+    fn sample(&self, k: usize, left: &[f32], right: &[f32]) -> (f32, f32) {
+        let first = self.end - self.seam - self.trim;
+        if k < first {
+            let i = self.trim + k;
+            return (left[i], right[i]);
+        }
+        let period = self.end - self.loop_start - self.seam;
+        let m = (k - first) % period;
+        if m >= self.seam {
+            let i = self.loop_start + m;
+            return (left[i], right[i]);
+        }
+        // Equal power: the outgoing tail and the incoming head keep a constant total power.
+        let u = (m as f64 + 0.5) / self.seam as f64 * std::f64::consts::FRAC_PI_2;
+        let (fade_in, fade_out) = u.sin_cos();
+        let (tail, head) = (self.end - self.seam + m, self.loop_start + m);
+        let mix = |plane: &[f32]| {
+            (f64::from(plane[tail]) * fade_out + f64::from(plane[head]) * fade_in) as f32
+        };
+        (mix(left), mix(right))
+    }
 }
 
 #[cfg(test)]
@@ -416,11 +503,65 @@ mod tests {
             volume: 1.0,
             fade_in: 0.0,
             fade_out: 0.0,
+            fade_curve: FadeCurve::Linear,
             looped: false,
+            loop_crossfade: 0.0,
             loop_from: 0.0,
             speed: None,
             effects: Default::default(),
         }
+    }
+
+    #[test]
+    fn equal_power_fades_follow_a_sine() {
+        let src = source(vec![1.0; 4800]);
+        let mut c = clip();
+        c.duration = Some(0.1);
+        c.fade_in = 0.05;
+        c.fade_curve = FadeCurve::EqualPower;
+        let (mut l, mut r) = (vec![0.0; 4800], vec![0.0; 4800]);
+        add_clip(&c, &src, None, &mut l, &mut r).unwrap();
+        // Halfway through the fade the gain is sin(π/4), not 0.5.
+        assert!(
+            (l[1200] - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-6,
+            "{}",
+            l[1200]
+        );
+        assert_eq!(l[0], 0.0);
+        assert_eq!(l[2400], 1.0);
+    }
+
+    #[test]
+    fn loop_crossfade_blends_the_seam_with_constant_power() {
+        // A 1000-sample source of 1.0 looped with a 100-sample seam: every sample keeps the
+        // power of the source (sin² + cos² = 1); a hard cut of a ramp would jump.
+        let src = source(vec![1.0; 1000]);
+        let mut c = clip();
+        c.duration = Some(3000.0 / 48_000.0);
+        c.looped = true;
+        c.loop_crossfade = 100.0 / 48_000.0;
+        let (mut l, mut r) = (vec![0.0; 3000], vec![0.0; 3000]);
+        add_clip(&c, &src, None, &mut l, &mut r).unwrap();
+        // Inside the first seam (900..1000) the two unit signals sum to sin + cos, >= 1.
+        assert!(
+            l[900..1000].iter().all(|&v| (1.0..=1.4143).contains(&v)),
+            "{:?}",
+            &l[900..905]
+        );
+        assert_eq!(l[899], 1.0);
+        assert_eq!(l[1000], 1.0);
+        // With a ramp source, the samples around the seam continue smoothly.
+        let ramp: Vec<f32> = (0..1000).map(|i| i as f32 / 1000.0).collect();
+        let schedule = LoopSeam::new(0, 0, 1000, 100).unwrap();
+        let a = schedule.sample(899, &ramp, &ramp).0;
+        let b = schedule.sample(900, &ramp, &ramp).0;
+        assert!((a - b).abs() < 0.02, "{a} {b}");
+        // Each later pass is 900 samples long.
+        assert_eq!(
+            schedule.sample(1000, &ramp, &ramp),
+            schedule.sample(1900, &ramp, &ramp)
+        );
+        assert!(LoopSeam::new(0, 0, 1000, 500).is_err());
     }
 
     fn run(clip: &AudioClip, source: &Source, total: usize) -> (Vec<f32>, ClipReport) {
@@ -597,9 +738,10 @@ mod tests {
             peak: 1.5,
             clipped: 2,
             clips: Vec::new(),
+            limiter: None,
         };
         assert_eq!(
-            mix.to_i16_interleaved(),
+            mix.to_i16_interleaved(false),
             [0, 0, 32767, 0, -32768, 0, 16384, -16384]
         );
     }

@@ -1,13 +1,14 @@
 //! Audio for compositions: `<audio>` clips are decoded (`decode`), converted to 48 kHz
 //! (`resample`), read at variable speed when a clip sets one (`varispeed`), shaped by per-clip
 //! effects (volume automation, equalizer, ducking: `effects`), mixed sample-accurately onto one stereo timeline (`mix`), encoded to AAC-LC
-//! (`aac`), and attached to the MP4 with the edit list that trims encoder delay (`mux`).
+//! (`aac`) after optional master limiting and dither (`master`), and attached to the MP4 with the edit list that trims encoder delay (`mux`).
 //!
 //! `build_track` is the facade used by the encoder and by `check`.
 
 pub mod aac;
 pub mod decode;
 pub mod effects;
+pub mod master;
 pub mod mix;
 pub mod mux;
 pub mod resample;
@@ -39,5 +40,9 @@ pub fn build_track(
         return Ok(None);
     }
     let mix = mix::mix(composition, frames_for_video(frame_count, fps))?;
-    aac::encode(&mix.to_i16_interleaved(), bitrate).map(Some)
+    aac::encode(
+        &mix.to_i16_interleaved(composition.audio_master.dither),
+        bitrate,
+    )
+    .map(Some)
 }

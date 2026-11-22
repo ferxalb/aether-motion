@@ -1,7 +1,8 @@
 //! Audio effect attributes shared by `<audio>` and the sound of `<video>`:
 //! `data-hf-volume-ramp` (JSON keyframes of `at` plus `volume` or `db`), `data-hf-eq` (a preset
 //! name or a JSON band list), and `data-hf-duck` (comma list of trigger clip ids) with its
-//! `-amount`, `-threshold`, `-attack`, `-hold`, and `-release` options. Trigger ids are resolved
+//! `-amount`, `-threshold`, `-attack`, `-hold`, `-release`, `-detector` (`peak` or `rms`), and
+//! `-window` (the RMS window) options. Trigger ids are resolved
 //! to clip indices by `resolve_ducking` once every clip is known.
 use crate::audio::effects::automation::{VolumeCurve, VolumeKey, MAX_GAIN};
 use crate::audio::effects::duck::{self, Duck};
@@ -15,12 +16,14 @@ use kuchiki::NodeRef;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
-const DUCK_OPTIONS: [&str; 5] = [
+const DUCK_OPTIONS: [&str; 7] = [
     "data-hf-duck-amount",
     "data-hf-duck-threshold",
     "data-hf-duck-attack",
     "data-hf-duck-hold",
     "data-hf-duck-release",
+    "data-hf-duck-detector",
+    "data-hf-duck-window",
 ];
 
 pub(in crate::parse) fn parse_audio_effects(node: &NodeRef) -> Result<AudioEffects> {
@@ -117,6 +120,27 @@ fn parse_duck(node: &NodeRef) -> Result<Option<Duck>> {
             0.0,
             duck::MAX_TIME,
         )?,
+        detector: match attr(node, "data-hf-duck-detector")
+            .as_deref()
+            .map(str::trim)
+        {
+            None | Some("peak") => {
+                if attr(node, "data-hf-duck-window").is_some() {
+                    bail!("data-hf-duck-window needs data-hf-duck-detector=\"rms\"");
+                }
+                duck::Detector::Peak
+            }
+            Some("rms") => duck::Detector::Rms {
+                window: ranged(
+                    node,
+                    "data-hf-duck-window",
+                    duck::DEFAULT_WINDOW,
+                    duck::MIN_WINDOW,
+                    duck::MAX_WINDOW,
+                )?,
+            },
+            Some(other) => bail!("data-hf-duck-detector must be peak or rms: {other}"),
+        },
     }))
 }
 

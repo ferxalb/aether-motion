@@ -77,6 +77,7 @@ impl<'a> Renderer<'a> {
         let element = &self.composition.elements[idx];
         state.alpha >= 1.0
             && state.rotate == 0.0
+            && element.motion.shape.is_none()
             && (state.reveal >= 1.0 || element.motion.wipe.is_none())
             && self.filter_blur(idx) == 0.0
             && !self.is_layer_blurred(idx)

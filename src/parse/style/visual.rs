@@ -9,7 +9,7 @@ use crate::parse::values::filter::{parse_backdrop_filter, parse_filter};
 use crate::parse::values::length::{parse_length, spacing_px};
 use crate::parse::values::shadow::parse_box_shadows;
 use crate::parse::values::tokens::split_top;
-use crate::parse::values::transform::parse_transform_with_percent;
+use crate::parse::values::transform::{parse_transform, parse_transform_origin};
 use anyhow::{bail, Context, Result};
 
 /// `mix-blend-mode` keywords; the non-separable modes (`hue`, `color`, ...) are rejected.
@@ -28,7 +28,11 @@ fn parse_blend_mode(value: &str) -> Result<BlendMode> {
         "difference" => BlendMode::Difference,
         "exclusion" => BlendMode::Exclusion,
         "plus-lighter" => BlendMode::PlusLighter,
-        other => bail!("unsupported mix-blend-mode: {other} (hue, saturation, color, and luminosity are not supported)"),
+        "hue" => BlendMode::Hue,
+        "saturation" => BlendMode::Saturation,
+        "color" => BlendMode::Color,
+        "luminosity" => BlendMode::Luminosity,
+        other => bail!("unsupported mix-blend-mode: {other}"),
     })
 }
 
@@ -66,6 +70,7 @@ pub(super) fn apply(key: &str, value: &str, style: &mut Style) -> Result<bool> {
             style.filter_blur = chain.blur;
             style.filter_colors = chain.colors;
             style.drop_shadow = chain.drop_shadow;
+            style.filter_order = chain.order;
         }
         "mix-blend-mode" => style.blend = parse_blend_mode(value)?,
         "background-clip" | "-webkit-background-clip" => {
@@ -107,13 +112,14 @@ pub(super) fn apply(key: &str, value: &str, style: &mut Style) -> Result<bool> {
             style.object_fit = Some(value.to_string());
         }
         "transform" => {
-            let (tx, ty, scale, rotate, percent) = parse_transform_with_percent(value)?;
-            style.rotate = rotate;
-            style.translate = (tx, ty);
-            style.translate_percent = percent;
-            style.scale = Some(scale);
+            let parts = parse_transform(value)?;
+            style.rotate = parts.rotate;
+            style.translate = (parts.tx, parts.ty);
+            style.translate_percent = parts.percent;
+            style.scale = Some(parts.scale);
+            style.transform_shape = parts.shape;
         }
-        "transform-origin" if matches!(value, "center" | "center center" | "50% 50%") => {}
+        "transform-origin" => style.transform_origin = parse_transform_origin(value)?,
         _ => return Ok(false),
     }
     Ok(true)

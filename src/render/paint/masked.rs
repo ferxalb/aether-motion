@@ -4,25 +4,45 @@
 //!
 //! As in CSS, the element's `filter` runs first (inside the layer) and the clip and mask apply to its
 //! result, so a blurred or drop-shadowed element is cut by its clip path. Shapes are evaluated in
-//! the element's border box after scale; rotation is rejected at parse time.
+//! the element's reference box (border box by default) after scale. A rotated or skewed element is
+//! clipped in its own space inside its turned layer (`rotate.rs`), so the clip turns with it.
 
-use super::coverage::{ellipse_points, polygon_coverage, rounded_rect_points};
+use super::coverage::{contours_coverage, ellipse_points, rounded_rect_points};
 use super::gradient::alpha_plane;
-use crate::model::{ClipKind, ClipPath, Color, Length};
+use crate::model::{ClipBox, ClipKind, ClipPath, Color, FillRule, Length, RadiusKeyword};
 use crate::render::geometry::{clip_pixels, Rect};
 use crate::render::paint::Surface;
 use crate::render::Renderer;
 use anyhow::Result;
 
-/// Outline of `shape` in output pixels, for a border box `rect` (composition px) at `k` output px
-/// per composition px; `cumulative` scales px values like the rest of the element.
-fn outline(shape: &ClipPath, rect: Rect, k: f32, cumulative: f32) -> Vec<(f32, f32)> {
+/// Outlines of `shape` in output pixels, for its reference box `rect` (composition px) at `k`
+/// output px per composition px; `cumulative` scales px values like the rest of the element.
+/// `box_radius` is the rounding of a box-only clip, in composition px.
+fn outline(
+    shape: &ClipPath,
+    rect: Rect,
+    k: f32,
+    cumulative: f32,
+    box_radius: f32,
+) -> Vec<Vec<(f32, f32)>> {
     let (x0, y0, w, h) = (rect.x * k, rect.y * k, rect.w * k, rect.h * k);
     let resolve = |length: Length, basis: f32| match length {
         Length::Px(n) => n * cumulative * k,
         Length::Percent(n) => basis * n / 100.0,
     };
+    // A radius keyword measured from the center `c` to the sides `0` and `side` of one axis.
+    let keyword = |word: RadiusKeyword, c: f32, side: f32| match word {
+        RadiusKeyword::ClosestSide => c.abs().min((side - c).abs()),
+        RadiusKeyword::FarthestSide => c.abs().max((side - c).abs()),
+    };
     let p = &shape.params;
+    let single = |points: Vec<(f32, f32)>| {
+        if points.is_empty() {
+            Vec::new()
+        } else {
+            vec![points]
+        }
+    };
     match shape.kind {
         ClipKind::Inset => {
             let (top, right, bottom, left) = (
@@ -35,24 +55,52 @@ fn outline(shape: &ClipPath, rect: Rect, k: f32, cumulative: f32) -> Vec<(f32, f
             if edges[2] <= edges[0] || edges[3] <= edges[1] {
                 return Vec::new();
             }
-            rounded_rect_points(edges, resolve(p[4], 0.0))
+            let radius = if shape.box_only {
+                box_radius * k
+            } else {
+                resolve(p[4], 0.0)
+            };
+            single(rounded_rect_points(edges, radius))
         }
         ClipKind::Circle => {
-            let r = resolve(p[0], w.hypot(h) / std::f32::consts::SQRT_2);
-            ellipse_points(x0 + resolve(p[1], w), y0 + resolve(p[2], h), r, r)
+            let (cx, cy) = (resolve(p[1], w), resolve(p[2], h));
+            let r = match shape.radii[0] {
+                Some(word) => {
+                    let (a, b) = (keyword(word, cx, w), keyword(word, cy, h));
+                    match word {
+                        RadiusKeyword::ClosestSide => a.min(b),
+                        RadiusKeyword::FarthestSide => a.max(b),
+                    }
+                }
+                None => resolve(p[0], w.hypot(h) / std::f32::consts::SQRT_2),
+            };
+            single(ellipse_points(x0 + cx, y0 + cy, r, r))
         }
-        ClipKind::Ellipse => ellipse_points(
-            x0 + resolve(p[2], w),
-            y0 + resolve(p[3], h),
-            resolve(p[0], w),
-            resolve(p[1], h),
+        ClipKind::Ellipse => {
+            let (cx, cy) = (resolve(p[2], w), resolve(p[3], h));
+            let rx = shape.radii[0].map_or_else(|| resolve(p[0], w), |word| keyword(word, cx, w));
+            let ry = shape.radii[1].map_or_else(|| resolve(p[1], h), |word| keyword(word, cy, h));
+            single(ellipse_points(x0 + cx, y0 + cy, rx, ry))
+        }
+        ClipKind::Polygon => single(
+            p.as_chunks::<2>()
+                .0
+                .iter()
+                .map(|xy| (x0 + resolve(xy[0], w), y0 + resolve(xy[1], h)))
+                .collect(),
         ),
-        ClipKind::Polygon => p
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .map(|xy| (x0 + resolve(xy[0], w), y0 + resolve(xy[1], h)))
-            .collect(),
+        ClipKind::Path => shape.contours.as_deref().map_or_else(Vec::new, |contours| {
+            let unit = cumulative * k;
+            contours
+                .iter()
+                .map(|contour| {
+                    contour
+                        .iter()
+                        .map(|&(x, y)| (x0 + x * unit, y0 + y * unit))
+                        .collect()
+                })
+                .collect()
+        }),
     }
 }
 
@@ -81,9 +129,52 @@ impl<'a> Renderer<'a> {
             .motion
             .clip_at(element.style.clip_path.as_ref(), elapsed);
         let mask = element.style.mask.as_ref();
+        let style = &element.style;
+        // The reference box and, for a box keyword alone, its rounding (the element's radius,
+        // reduced by the inset of an inner box or grown by the margin).
+        let (reference, box_radius) = match shape.as_ref().map(|shape| shape.reference) {
+            None | Some(ClipBox::Border) => (rect, style.border_radius * cumulative),
+            Some(ClipBox::Padding) => {
+                let border = style.border_width * cumulative;
+                let inner = Rect {
+                    x: rect.x + border,
+                    y: rect.y + border,
+                    w: (rect.w - 2.0 * border).max(0.0),
+                    h: (rect.h - 2.0 * border).max(0.0),
+                };
+                (
+                    inner,
+                    (style.border_radius - style.border_width).max(0.0) * cumulative,
+                )
+            }
+            Some(ClipBox::Content) => {
+                let inset =
+                    style.border_width + style.padding.iter().fold(0.0_f32, |a, &b| a.max(b));
+                (
+                    self.content_box(idx, rect, cumulative),
+                    (style.border_radius - inset).max(0.0) * cumulative,
+                )
+            }
+            Some(ClipBox::Margin) => {
+                let [top, right, bottom, left] = style.margin.map(|m| m * cumulative);
+                let outer = Rect {
+                    x: rect.x - left,
+                    y: rect.y - top,
+                    w: rect.w + left + right,
+                    h: rect.h + top + bottom,
+                };
+                let grow = style.margin.iter().fold(0.0_f32, |a, &b| a.max(b));
+                let radius = if style.border_radius > 0.0 {
+                    style.border_radius + grow
+                } else {
+                    0.0
+                };
+                (outer, radius * cumulative)
+            }
+        };
         let points = shape
             .as_ref()
-            .map(|shape| outline(shape, rect, k, cumulative));
+            .map(|shape| outline(shape, reference, k, cumulative, box_radius));
         // The visible region: the shape's bounds, or the border box for a mask alone (the mask
         // covers the border box and hides everything outside it).
         let box_edges = [
@@ -94,7 +185,7 @@ impl<'a> Renderer<'a> {
         ];
         let mut region = match &points {
             Some(points) if points.is_empty() => return Ok(()),
-            Some(points) => points.iter().fold(
+            Some(points) => points.iter().flatten().fold(
                 [
                     f32::INFINITY,
                     f32::INFINITY,
@@ -127,11 +218,17 @@ impl<'a> Renderer<'a> {
         crate::render::allocation::rgba_bytes(lw, lh, "clip-path")?;
         let mut coverage = match &points {
             Some(points) => {
-                let local: Vec<(f32, f32)> = points
+                let local: Vec<Vec<(f32, f32)>> = points
                     .iter()
-                    .map(|&(x, y)| (x - bounds.x0 as f32, y - bounds.y0 as f32))
+                    .map(|contour| {
+                        contour
+                            .iter()
+                            .map(|&(x, y)| (x - bounds.x0 as f32, y - bounds.y0 as f32))
+                            .collect()
+                    })
                     .collect();
-                polygon_coverage(&local, lw, lh)
+                let even_odd = shape.as_ref().is_some_and(|s| s.rule == FillRule::EvenOdd);
+                contours_coverage(&local, lw, lh, even_odd)
             }
             None => vec![1.0; lw * lh],
         };

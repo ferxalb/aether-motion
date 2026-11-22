@@ -242,7 +242,9 @@ fn box_property(style: &Style) -> Option<&'static str> {
             style.translate != (0.0, 0.0)
                 || style.translate_percent != [0.0; 4]
                 || style.scale.is_some()
-                || style.rotate != 0.0,
+                || style.rotate != 0.0
+                || style.transform_origin.is_some()
+                || style.transform_shape.is_some(),
             "transform",
         ),
         (style.clip_path.is_some(), "clip-path"),

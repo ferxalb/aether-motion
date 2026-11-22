@@ -1,4 +1,4 @@
-//! Per-element visual state (alpha, pose, 2.5D depth, 3D scene key, image-sequence or video frame, animated filter, pixel-effect, and clip-path values) sampled at one
+//! Per-element visual state (alpha, pose, 2.5D depth, 3D scene key, image-sequence or video frame, animated filter and drop-shadow, pixel-effect, and clip-path values) sampled at one
 //! instant; compared across frames to reuse pixels.
 
 use crate::model::{Content, Element};
@@ -15,7 +15,9 @@ pub(in crate::render) struct FrameState {
     /// Source frame of a video or image sequence, so a new frame is never mistaken for an unchanged one.
     pub(in crate::render) media: u32,
     /// Animated `filter` amounts by `FilterChannel::index`; all zero when the filter is static.
-    pub(in crate::render) filters: [f32; 8],
+    pub(in crate::render) filters: [f32; crate::model::FilterChannel::COUNT],
+    /// Animated `drop-shadow()` channels (see `model::ShadowChannels`); all zero when static.
+    pub(in crate::render) shadow: crate::model::ShadowChannels,
     /// `[tint, glitch, rgb_split, bloom]` (see `model::FxMotion`); all zero when there are none.
     pub(in crate::render) fx: [f32; 4],
     /// Glitch pattern index (`GLITCH_RATE` steps since the clip start); 0 without a glitch.
@@ -48,11 +50,18 @@ impl FrameState {
         let pose = element.motion.pose(elapsed);
         let motion = &element.motion;
         let filters = if motion.filter.is_static() {
-            [0.0; 8]
+            [0.0; crate::model::FilterChannel::COUNT]
         } else {
             motion
                 .filter
                 .eval(elapsed, motion.hold_before, motion.hold_after)
+        };
+        let shadow = if motion.filter.shadow_animated() {
+            motion
+                .filter
+                .eval_shadow(elapsed, motion.hold_before, motion.hold_after)
+        } else {
+            crate::model::NO_SHADOW
         };
         let fx = if motion.fx.is_static() {
             [0.0; 4]
@@ -90,6 +99,7 @@ impl FrameState {
                 _ => 0,
             },
             filters,
+            shadow,
             fx,
             fx_seed,
             clip_key,

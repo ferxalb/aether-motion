@@ -157,7 +157,7 @@ struct Channels {
     reveal: Track,
     wipe: Option<RevealFrom>,
     /// `filter` amounts, indexed by [`FilterChannel::index`].
-    filters: [Track; 8],
+    filters: [Track; crate::model::FilterChannel::COUNT],
     glitch: Track,
     rgb_split: Track,
     /// Mix toward a solid color, and that color.
@@ -231,7 +231,7 @@ fn merge_track(existing: &Track, new: Track) -> Option<Track> {
 fn merge_into(
     motion: &mut Motion,
     channels: Channels,
-    filter_base: [f32; 8],
+    filter_base: [f32; crate::model::FilterChannel::COUNT],
     label: &str,
 ) -> Result<()> {
     let overlap = || {
@@ -344,7 +344,7 @@ pub(in crate::parse) fn apply_transitions(
             Kind::Cover(dir) => enter(&mut inc, dir),
             Kind::Wipe(dir) => {
                 if elements[b].style.rotate != 0.0 || elements[b].motion.rotates() {
-                    bail!("transition {label_b}: a wipe cannot be combined with rotate");
+                    bail!("transition {label_b}: a wipe cannot be combined with rotate or skew");
                 }
                 // An edge travelling left uncovers the incoming scene from its right side.
                 inc.wipe = Some(match dir {

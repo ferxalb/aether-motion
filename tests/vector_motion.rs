@@ -113,14 +113,15 @@ fn rejects_invalid_vector_motion() {
         r#"<svg class="clip" data-start="0" data-duration="2" data-hf-draw data-hf-draw-duration="3" viewBox="0 0 10 10" style="width:10px;height:10px"><path d="M0 0 H10" stroke="red"/></svg>"#
     )
     .contains("after the clip"));
-    assert!(error(
+    // A clip on an element the path turns now turns with it.
+    parse_file(&write(
         "mp_clip",
         &mover(r#"data-hf-motion-path-rotate="auto""#, (10, 10)).replace(
             "background:#ff0000",
-            "background:#ff0000; clip-path: circle(5px)"
-        )
-    )
-    .contains("rotate"));
+            "background:#ff0000; clip-path: circle(5px)",
+        ),
+    ))
+    .unwrap();
     assert!(error(
         "mp_orphan",
         r#"<div class="clip" data-start="0" data-duration="2" data-hf-draw-at="1"></div>"#

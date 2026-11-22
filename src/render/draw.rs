@@ -25,6 +25,11 @@ impl<'a> Renderer<'a> {
         let (rect, cumulative) = self.posed_rect(idx, parent, parent_scale, assigned);
         let sigma = self.filter_blur(idx) * cumulative * self.scale;
         if self.needs_mask(idx) {
+            if self.turns(idx) {
+                // Clip in the element's own space, then turn the clipped result (see
+                // `draw_rotated`).
+                return self.draw_posed(idx, rect, cumulative);
+            }
             return self.draw_masked(idx, rect, cumulative, sigma);
         }
         if self.has_effects(idx, sigma) {
@@ -132,7 +137,7 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    /// Draws a placed element through its reveal, rotation, or plain box path.
+    /// Draws a placed element through its reveal, rotation (or skew), or plain box path.
     pub(in crate::render) fn draw_posed(
         &mut self,
         idx: usize,
@@ -145,10 +150,21 @@ impl<'a> Renderer<'a> {
                 return self.draw_revealed(idx, rect, cumulative, state.reveal, from);
             }
         }
-        if idx != 0 && state.rotate != 0.0 {
-            return self.draw_rotated(idx, rect, cumulative, state.rotate);
+        if self.turns(idx) {
+            let shape = self.composition.elements[idx].motion.shape;
+            let map = crate::model::linear_map(state.rotate, shape);
+            return self.draw_rotated(idx, rect, cumulative, map);
         }
         self.draw_body(idx, rect, cumulative)
+    }
+
+    /// Whether element `idx` is drawn through a turned layer at this instant (rotated or skewed,
+    /// and not already inside its own turned layer).
+    pub(in crate::render) fn turns(&self, idx: usize) -> bool {
+        idx != 0
+            && self.turn_guard != Some(idx)
+            && (self.current[idx].rotate != 0.0
+                || self.composition.elements[idx].motion.shape.is_some())
     }
 
     /// Draws one element and its subtree into `rect` with no rotation.

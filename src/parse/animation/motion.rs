@@ -9,7 +9,9 @@ use anyhow::{bail, Result};
 pub(in crate::parse) fn build_motion(
     spec: &AnimationSpec,
     base: Pose,
-    filter_base: [f32; 8],
+    base_percent: [f32; 4],
+    filter_base: [f32; crate::model::FilterChannel::COUNT],
+    shadow_base: crate::model::ShadowChannels,
     clip_len: f64,
 ) -> Result<Motion> {
     let decl = &spec.decl;
@@ -84,7 +86,7 @@ pub(in crate::parse) fn build_motion(
     };
     // A function missing from a keyframe's `filter` list takes its neutral amount there; keyframes
     // without `filter` do not constrain the filter channels.
-    let mut tracks: [Track; 8] = Default::default();
+    let mut tracks: [Track; crate::model::FilterChannel::COUNT] = Default::default();
     for kind in FilterChannel::ALL {
         let i = kind.index();
         if !spec
@@ -100,20 +102,41 @@ pub(in crate::parse) fn build_motion(
         )?;
     }
     // Percent translation is folded into `x` and `y` once the resting box is known
-    // (`render/layout/percent_translate.rs`); its tracks share the x/y point layout.
-    let percent = if spec
-        .frames
-        .iter()
-        .any(|f| f.transform.is_some_and(|t| t.4 != [0.0; 4]))
+    // (`render/layout/box_transform.rs`); its tracks share the x/y point layout. The animation
+    // replaces the static transform, so the implied first and last keyframes (and the element
+    // outside the animation) keep the static percent part, `base_percent`, as they keep `base`.
+    let animates_transform = spec.frames.iter().any(|f| f.transform.is_some());
+    let percent = if animates_transform
+        && (base_percent != [0.0; 4]
+            || spec
+                .frames
+                .iter()
+                .any(|f| f.transform.is_some_and(|t| t.4 != [0.0; 4])))
     {
-        let part = |i: usize| channel(&|f| f.transform.map(|t| t.4[i]), 0.0);
+        let part = |i: usize| channel(&|f| f.transform.map(|t| t.4[i]), base_percent[i]);
         Some(Box::new([part(0)?, part(1)?, part(2)?, part(3)?]))
     } else {
         None
     };
+    // `drop-shadow()` animates only when a keyframe lists one; a keyframe whose `filter` lists
+    // other functions only takes the neutral shadow there, as for the other functions.
+    let mut shadow: [Track; crate::model::SHADOW_CHANNELS] = Default::default();
+    if spec.frames.iter().any(|f| f.drop_shadow.is_some()) {
+        for (i, track) in shadow.iter_mut().enumerate() {
+            *track = channel(
+                &|f| {
+                    f.filter
+                        .map(|_| f.drop_shadow.unwrap_or(crate::model::NO_SHADOW)[i])
+                },
+                shadow_base[i],
+            )?;
+        }
+    }
     Ok(Motion {
         base,
         offset: (0.0, 0.0),
+        origin: (0.0, 0.0),
+        shape: None,
         percent,
         x: channel(&|f| f.transform.map(|t| t.0), base.x)?,
         y: channel(&|f| f.transform.map(|t| t.1), base.y)?,
@@ -126,6 +149,8 @@ pub(in crate::parse) fn build_motion(
             base: filter_base,
             tracks,
             appended: Vec::new(),
+            shadow,
+            shadow_base,
         },
         fx: FxMotion::default(),
         clip: Vec::new(),
@@ -138,7 +163,11 @@ pub(in crate::parse) fn build_motion(
 
 /// `data-hf-keyframes` filter amounts: a channel named in any keyframe gets a point at every
 /// keyframe, inheriting the previous keyframe's amount (the static amount before the first one).
-fn filter_from_keyframes(filter_base: [f32; 8], frames: &[Keyframe]) -> FilterMotion {
+fn filter_from_keyframes(
+    filter_base: [f32; crate::model::FilterChannel::COUNT],
+    shadow_base: crate::model::ShadowChannels,
+    frames: &[Keyframe],
+) -> FilterMotion {
     let tracks = FilterChannel::ALL.map(|channel| {
         let i = channel.index();
         if frames.iter().all(|k| k.filters[i].is_none()) {
@@ -159,10 +188,36 @@ fn filter_from_keyframes(filter_base: [f32; 8], frames: &[Keyframe]) -> FilterMo
                 .collect(),
         )
     });
+    // A `dropShadow` in any keyframe gives every keyframe a shadow, inherited like the amounts.
+    let mut shadow: [Track; crate::model::SHADOW_CHANNELS] = Default::default();
+    if frames.iter().any(|k| k.drop_shadow.is_some()) {
+        let mut value = shadow_base;
+        let points: Vec<_> = frames
+            .iter()
+            .map(|k| {
+                value = k.drop_shadow.unwrap_or(value);
+                (k.at, value, k.easing)
+            })
+            .collect();
+        for (i, track) in shadow.iter_mut().enumerate() {
+            *track = Track(
+                points
+                    .iter()
+                    .map(|&(at, value, easing)| TrackPoint {
+                        at,
+                        value: value[i],
+                        easing,
+                    })
+                    .collect(),
+            );
+        }
+    }
     FilterMotion {
         base: filter_base,
         tracks,
         appended: Vec::new(),
+        shadow,
+        shadow_base,
     }
 }
 
@@ -200,7 +255,8 @@ fn fx_from_keyframes(frames: &[Keyframe]) -> FxMotion {
 /// absolute.
 pub(in crate::parse) fn motion_from_keyframes(
     base: Pose,
-    filter_base: [f32; 8],
+    filter_base: [f32; crate::model::FilterChannel::COUNT],
+    shadow_base: crate::model::ShadowChannels,
     frames: &[Keyframe],
 ) -> Motion {
     let track = |value: &dyn Fn(&Keyframe) -> f32| {
@@ -218,6 +274,8 @@ pub(in crate::parse) fn motion_from_keyframes(
     Motion {
         base,
         offset: (0.0, 0.0),
+        origin: (0.0, 0.0),
+        shape: None,
         percent: None,
         x: track(&|k| base.x + k.x),
         y: track(&|k| base.y + k.y),
@@ -226,7 +284,7 @@ pub(in crate::parse) fn motion_from_keyframes(
         opacity: track(&|k| base.opacity * k.opacity),
         reveal: Track::default(),
         wipe: None,
-        filter: filter_from_keyframes(filter_base, frames),
+        filter: filter_from_keyframes(filter_base, shadow_base, frames),
         fx: fx_from_keyframes(frames),
         clip: Vec::new(),
         path: None,

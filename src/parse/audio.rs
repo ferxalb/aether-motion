@@ -2,6 +2,7 @@
 //! element tree (no layout, no painting); its start is resolved with the other clips' timeline.
 //! `data-hf-speed` and `data-hf-speed-ramp` are read by `parse/speed.rs`, and the effect
 //! attributes (`data-hf-volume-ramp`, `data-hf-eq`, `data-hf-duck`) by `parse/audio_effects.rs`.
+//! `data-hf-fade-curve` shapes the fades and `data-hf-loop-crossfade` blends loop seams.
 use crate::model::AudioClip;
 use crate::parse::audio_effects::parse_audio_effects;
 use crate::parse::html::{attr, number};
@@ -12,6 +13,19 @@ use std::path::Path;
 
 /// Largest accepted `data-volume` (linear gain, about +18 dB).
 const MAX_VOLUME: f64 = 8.0;
+
+/// Longest `data-hf-loop-crossfade`, in seconds.
+const MAX_LOOP_CROSSFADE: f64 = 2.0;
+
+/// `data-hf-fade-curve` of an `<audio>` or a `<video>`'s sound: `linear` (default) or
+/// `equal-power`.
+pub(in crate::parse) fn parse_fade_curve(node: &NodeRef) -> Result<crate::model::FadeCurve> {
+    match attr(node, "data-hf-fade-curve").as_deref().map(str::trim) {
+        None | Some("linear") => Ok(crate::model::FadeCurve::Linear),
+        Some("equal-power") => Ok(crate::model::FadeCurve::EqualPower),
+        Some(other) => bail!("data-hf-fade-curve must be linear or equal-power: {other}"),
+    }
+}
 
 #[derive(Debug)]
 pub(in crate::parse) struct PendingAudio {
@@ -57,6 +71,18 @@ pub(in crate::parse) fn parse_audio(
         if duration.is_some_and(|d| fade_in + fade_out > d + 1e-9) {
             bail!("fade-in + fade-out exceeds the clip duration");
         }
+        let loop_crossfade = seconds("data-hf-loop-crossfade")?.unwrap_or(0.0);
+        if loop_crossfade != 0.0 {
+            if !looped {
+                bail!("data-hf-loop-crossfade needs data-hf-loop");
+            }
+            if !(0.0..=MAX_LOOP_CROSSFADE).contains(&loop_crossfade) {
+                bail!("data-hf-loop-crossfade must be between 0 and {MAX_LOOP_CROSSFADE} seconds");
+            }
+            if attr(node, "data-hf-speed").is_some() || attr(node, "data-hf-speed-ramp").is_some() {
+                bail!("data-hf-loop-crossfade cannot be combined with data-hf-speed or data-hf-speed-ramp");
+            }
+        }
         super::reads::note(&base.join(&src));
         Ok(PendingAudio {
             clip: AudioClip {
@@ -69,7 +95,9 @@ pub(in crate::parse) fn parse_audio(
                 volume: volume as f32,
                 fade_in,
                 fade_out,
+                fade_curve: parse_fade_curve(node)?,
                 looped,
+                loop_crossfade,
                 loop_from: seconds("data-hf-trim-start")?.unwrap_or(0.0),
                 speed: parse_speed(node)?,
                 effects: parse_audio_effects(node)?,

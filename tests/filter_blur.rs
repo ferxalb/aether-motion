@@ -59,8 +59,8 @@ fn unsupported_filters_fail_explicitly() {
         (".a { filter: url(#f) }", "url()"),
         (".a { filter: blur(300px) }", "limited to 200px"),
         (
-            ".a { filter: brightness(2) blur(2px) }",
-            "blur() must come first",
+            ".a { filter: blur(1px) brightness(2) blur(2px) }",
+            "blur() may appear once",
         ),
     ];
     for (i, (css, expected)) in cases.iter().enumerate() {
