@@ -4,7 +4,7 @@
 use crate::model::{Length, LineHeight, Style, WhiteSpace};
 use crate::parse::values::color::parse_color;
 use crate::parse::values::length::parse_length;
-use crate::parse::values::shadow::parse_shadow;
+use crate::parse::values::shadow::parse_text_shadows;
 use crate::parse::values::tokens::split_top;
 use anyhow::{bail, Result};
 
@@ -75,7 +75,7 @@ pub(super) fn apply(key: &str, value: &str, style: &mut Style) -> Result<bool> {
             }
             style.text_align = Some(value.to_string());
         }
-        "text-shadow" => style.text_shadow = Some(parse_shadow(value, key)?),
+        "text-shadow" => style.text_shadow = Some(parse_text_shadows(value)?),
         "line-height" => {
             style.line_height = Some(match value.parse::<f32>() {
                 Ok(n) if n.is_finite() && n > 0.0 => LineHeight::Multiple(n),

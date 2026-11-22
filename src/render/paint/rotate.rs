@@ -24,9 +24,13 @@ impl<'a> Renderer<'a> {
         });
         // The element's own `text-shadow` can also fall outside its box.
         let text_reach = match element.content {
-            Content::Text(_) => self.text_props(idx).shadow.map_or(0.0, |s| {
-                (s.x.abs().max(s.y.abs()) + s.blur * 1.5) * cumulative * k
-            }),
+            Content::Text(_) => self
+                .text_props(idx)
+                .shadow
+                .iter()
+                .fold(0.0_f32, |reach, s| {
+                    reach.max((s.x.abs().max(s.y.abs()) + s.blur * 1.5) * cumulative * k)
+                }),
             _ => 0.0,
         };
         let reach = box_reach.max(text_reach) + 2.0;

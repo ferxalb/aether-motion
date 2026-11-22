@@ -104,9 +104,18 @@ fn parses_audio_attributes_and_inherited_start() {
         (0.5, 0.25, 0.1)
     );
     assert!(!nested.looped && nested.duration.is_none());
+    assert_eq!(
+        nested.scene_end,
+        Some(3.0),
+        "cut where the enclosing clip ends"
+    );
     let after = &composition.audio[1];
     assert_eq!(after.start, 3.5);
     assert!(after.looped);
+    assert_eq!(
+        after.scene_end, None,
+        "top-level audio is bounded by the composition only"
+    );
     // Audio is not a visual element: only the root and the scene exist.
     assert_eq!(composition.elements.len(), 2);
 }
@@ -127,6 +136,10 @@ fn rejects_invalid_audio_with_explicit_errors() {
             "fade-in + fade-out",
         ),
         ("<audio src='a.wav'><source src='b.wav'></audio>", "child elements"),
+        (
+            "<div data-start='0' data-duration='0.5'><audio src='a.wav' data-start='1'></audio></div>",
+            "enclosing clip ends",
+        ),
     ];
     for (body, expected) in cases {
         let html = composition(&dir, body, 2);

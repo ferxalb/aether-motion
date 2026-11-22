@@ -1,4 +1,5 @@
-//! `box-shadow` (a list of outer and `inset` shadows) and `text-shadow` (one) parsing.
+//! `box-shadow` (a list of outer and `inset` shadows) and `text-shadow` (a list of outer
+//! shadows without spread) parsing.
 use crate::model::{Color, Length, Shadow};
 use crate::parse::values::color::parse_color;
 use crate::parse::values::length::parse_length;
@@ -23,6 +24,28 @@ pub(in crate::parse) fn parse_box_shadows(raw: &str) -> Result<Vec<Shadow>> {
         })
         .collect()
 }
+
+/// `text-shadow` layers, first on top; `none` is an empty list.
+pub(in crate::parse) fn parse_text_shadows(raw: &str) -> Result<Vec<Shadow>> {
+    let raw = raw.trim();
+    if raw == "none" {
+        return Ok(Vec::new());
+    }
+    let layers = split_top(raw, ',');
+    if layers.len() > MAX_TEXT_SHADOWS {
+        bail!("text-shadow: at most {MAX_TEXT_SHADOWS} shadows are supported");
+    }
+    layers
+        .into_iter()
+        .map(|layer| {
+            parse_shadow(layer.trim(), "text-shadow")?
+                .ok_or_else(|| anyhow::anyhow!("text-shadow: none cannot be part of a list: {raw}"))
+        })
+        .collect()
+}
+
+/// Most `text-shadow` layers; each one is a blurred mask of the whole text run.
+const MAX_TEXT_SHADOWS: usize = 8;
 
 /// Parses one shadow for `property`. `text-shadow` has no spread, so it takes at most three lengths.
 pub(in crate::parse) fn parse_shadow(raw: &str, property: &str) -> Result<Option<Shadow>> {

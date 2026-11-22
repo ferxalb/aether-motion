@@ -98,6 +98,8 @@ fn compile(path: &Path, values: &VariableValues, cache: &mut SceneCache) -> Resu
     } else {
         first
     };
+    crate::render::resolve_percent_translations(&mut composition)
+        .context("transform translate %")?;
     crate::render::bind_camera_rigs(&mut composition).context("data-hf-camera-subject")?;
     Ok(composition)
 }
@@ -256,6 +258,17 @@ fn parse_pass(
             &mut memo,
             &mut visiting,
         )?;
+        let label = clip.id.as_deref().unwrap_or("no id");
+        clip.scene_end =
+            timeline::enclosing_clip_end(item.parent, &pending, &ids, &mut memo, &mut visiting)?;
+        if let Some(end) = clip.scene_end {
+            if clip.start >= end - 1e-9 {
+                bail!(
+                    "<audio> ({label}) starts at {} s, at or after its enclosing clip ends ({end} s)",
+                    clip.start
+                );
+            }
+        }
         audio.push(clip);
     }
     audio_effects::resolve_ducking(&mut audio)?;
@@ -366,6 +379,11 @@ fn parse_pass(
         let rest = p.element.motion.base;
         let filter_rest = filter_base(&p.element.style);
         if let Some(spec) = &p.animation {
+            if p.element.style.translate_percent != [0.0; 4]
+                && spec.frames.iter().any(|f| f.transform.is_some())
+            {
+                bail!("{label}: a CSS animation of transform replaces a % translation; put the % translate on a parent");
+            }
             p.element.motion = build_motion(spec, rest, filter_rest, clip_len)
                 .with_context(|| format!("CSS animation on {label}"))?;
         } else if !p.keyframes.is_empty() {

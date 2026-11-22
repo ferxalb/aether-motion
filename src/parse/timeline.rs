@@ -1,4 +1,5 @@
-//! Resolution of `data-start` expressions (seconds or clip references with offsets).
+//! Resolution of `data-start` expressions (seconds or clip references with offsets), and the
+//! enclosing-clip end that cuts nested `<audio>`.
 use crate::parse::html::number;
 use crate::parse::tree::Pending;
 use anyhow::{anyhow, bail, Result};
@@ -78,6 +79,30 @@ pub(in crate::parse) fn resolve_start(
     memo[idx] = Some(start);
     visiting[idx] = false;
     Ok(start)
+}
+
+/// The earliest end among the ancestors of an `<audio>` element that have a duration, so audio
+/// is cut where its enclosing clip (or any outer clip) ends. `None` when no ancestor is timed.
+pub(in crate::parse) fn enclosing_clip_end(
+    parent: Option<usize>,
+    pending: &[Pending],
+    ids: &HashMap<String, usize>,
+    memo: &mut [Option<f64>],
+    visiting: &mut [bool],
+) -> Result<Option<f64>> {
+    let mut end: Option<f64> = None;
+    let mut cursor = parent;
+    while let Some(idx) = cursor {
+        // The root is the composition, whose end the mixer already enforces with an error.
+        let is_root = pending[idx].element.parent.is_none();
+        if let (false, Some(duration)) = (is_root, pending[idx].duration) {
+            let ancestor_end =
+                checked(resolve_start(idx, pending, ids, memo, visiting)? + duration)?;
+            end = Some(end.map_or(ancestor_end, |e| e.min(ancestor_end)));
+        }
+        cursor = pending[idx].element.parent;
+    }
+    Ok(end)
 }
 
 /// Resolves the start of an `<audio>` clip: its own `data-start`, else its parent clip's start.

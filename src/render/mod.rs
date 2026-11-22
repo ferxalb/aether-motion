@@ -25,6 +25,7 @@ use fontdb::Database;
 use frame_state::FrameState;
 use geometry::Rect;
 pub use layout::camera_subjects::bind_camera_rigs;
+pub use layout::percent_translate::resolve_percent_translations;
 pub use layout::split_wrap::split_wrap_breaks;
 pub(crate) use paint::svg;
 use paint::{CachedImage, ImageKey, SequenceSources, Surface};

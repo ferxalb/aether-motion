@@ -59,8 +59,9 @@ impl Default for AnimationDecl {
 #[derive(Clone, Debug)]
 pub(in crate::parse) struct CssFrame {
     pub(in crate::parse) offset: f64,
-    /// `transform` as (translate x, translate y, scale).
-    pub(in crate::parse) transform: Option<(f32, f32, f32, f32)>,
+    /// `transform` as (translate x, translate y, scale, rotation, percent part of the translation
+    /// as in `Style::translate_percent`).
+    pub(in crate::parse) transform: Option<(f32, f32, f32, f32, [f32; 4])>,
     pub(in crate::parse) opacity: Option<f32>,
     /// `filter` amounts listed at this keyframe, by [`crate::model::FilterChannel::index`].
     pub(in crate::parse) filter: Option<[Option<f32>; 8]>,

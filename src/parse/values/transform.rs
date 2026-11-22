@@ -1,18 +1,26 @@
-//! `transform` parsing: translate, uniform scale, and rotate.
+//! `transform` parsing: translate (px, or % of the element's own border box), uniform scale, and
+//! rotate.
 use crate::model::Length;
 use crate::parse::values::length::parse_length;
 use anyhow::{anyhow, bail, Context, Result};
 
-/// `transform` as (translate x, translate y, uniform scale, rotation in degrees), composed left to right.
-pub(in crate::parse) fn parse_transform(raw: &str) -> Result<(f32, f32, f32, f32)> {
+/// `transform` as (translate x, translate y, uniform scale, rotation in degrees), composed left to
+/// right, plus the percent part of the translation as
+/// `[x per % of width, x per % of height, y per % of width, y per % of height]` (in fractions of
+/// the box, after the scale and rotation written before it), resolved once layout is known.
+pub(in crate::parse) fn parse_transform_with_percent(
+    raw: &str,
+) -> Result<(f32, f32, f32, f32, [f32; 4])> {
     let raw = raw.trim();
     if raw == "none" {
-        return Ok((0.0, 0.0, 1.0, 0.0));
+        return Ok((0.0, 0.0, 1.0, 0.0, [0.0; 4]));
     }
-    let px = |arg: &str| -> Result<f32> {
+    // A translate argument as (px, fraction of the box side).
+    let px = |arg: &str| -> Result<(f32, f32)> {
         match parse_length(arg, "transform")? {
-            Length::Px(n) => Ok(n),
-            Length::Percent(_) => bail!("transform: translate only supports px, not %"),
+            Length::Px(n) => Ok((n, 0.0)),
+            Length::Percent(n) if n.is_finite() => Ok((0.0, n / 100.0)),
+            Length::Percent(_) => bail!("transform: translate % is not finite"),
         }
     };
     let factor = |arg: &str| -> Result<f32> {
@@ -46,6 +54,7 @@ pub(in crate::parse) fn parse_transform(raw: &str) -> Result<(f32, f32, f32, f32
         Ok(n * per_unit)
     };
     let (mut tx, mut ty, mut scale, mut rotate) = (0.0_f32, 0.0_f32, 1.0_f32, 0.0_f32);
+    let mut percent = [0.0_f32; 4];
     let mut rest = raw;
     while !rest.trim().is_empty() {
         let text = rest.trim_start();
@@ -58,13 +67,19 @@ pub(in crate::parse) fn parse_transform(raw: &str) -> Result<(f32, f32, f32, f32
         let args: Vec<_> = text[open + 1..close].split(',').map(str::trim).collect();
         // Composing `C ∘ F`: a translation written after a scale or rotation is scaled and rotated too.
         let (sin, cos) = rotate.to_radians().sin_cos();
-        let mut shift = |x: f32, y: f32| {
+        // `x` is a fraction of the width and `y` of the height in the percent part.
+        let mut shift = |(x, fx): (f32, f32), (y, fy): (f32, f32)| {
             tx += scale * (x * cos - y * sin);
             ty += scale * (x * sin + y * cos);
+            percent[0] += scale * fx * cos;
+            percent[1] -= scale * fy * sin;
+            percent[2] += scale * fx * sin;
+            percent[3] += scale * fy * cos;
         };
+        let zero = (0.0, 0.0);
         match (name.as_str(), args.as_slice()) {
-            ("translate", [x]) | ("translatex", [x]) => shift(px(x)?, 0.0),
-            ("translatey", [y]) => shift(0.0, px(y)?),
+            ("translate", [x]) | ("translatex", [x]) => shift(px(x)?, zero),
+            ("translatey", [y]) => shift(zero, px(y)?),
             ("translate", [x, y]) => shift(px(x)?, px(y)?),
             ("scale", [k]) => scale *= factor(k)?,
             ("scale", [a, b]) if factor(a)? == factor(b)? => scale *= factor(a)?,
@@ -76,5 +91,5 @@ pub(in crate::parse) fn parse_transform(raw: &str) -> Result<(f32, f32, f32, f32
         }
         rest = &text[close + 1..];
     }
-    Ok((tx, ty, scale, rotate))
+    Ok((tx, ty, scale, rotate, percent))
 }

@@ -181,6 +181,8 @@ pub(in crate::parse) fn motion_from_camera(base: Pose, frames: &[CameraFrame]) -
     };
     Motion {
         base,
+        offset: (0.0, 0.0),
+        percent: None,
         x: track(&|f| base.x - f.zoom * f.fx),
         y: track(&|f| base.y - f.zoom * f.fy),
         scale: track(&|f| base.scale * f.zoom),

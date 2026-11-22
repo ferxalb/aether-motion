@@ -99,8 +99,22 @@ pub(in crate::parse) fn build_motion(
             filter_base[i],
         )?;
     }
+    // Percent translation is folded into `x` and `y` once the resting box is known
+    // (`render/layout/percent_translate.rs`); its tracks share the x/y point layout.
+    let percent = if spec
+        .frames
+        .iter()
+        .any(|f| f.transform.is_some_and(|t| t.4 != [0.0; 4]))
+    {
+        let part = |i: usize| channel(&|f| f.transform.map(|t| t.4[i]), 0.0);
+        Some(Box::new([part(0)?, part(1)?, part(2)?, part(3)?]))
+    } else {
+        None
+    };
     Ok(Motion {
         base,
+        offset: (0.0, 0.0),
+        percent,
         x: channel(&|f| f.transform.map(|t| t.0), base.x)?,
         y: channel(&|f| f.transform.map(|t| t.1), base.y)?,
         scale: channel(&|f| f.transform.map(|t| t.2), base.scale)?,
@@ -203,6 +217,8 @@ pub(in crate::parse) fn motion_from_keyframes(
     };
     Motion {
         base,
+        offset: (0.0, 0.0),
+        percent: None,
         x: track(&|k| base.x + k.x),
         y: track(&|k| base.y + k.y),
         scale: Track::default(),

@@ -279,7 +279,7 @@ impl CaptionsSpec {
                     width: Some(Length::Percent(100.0)),
                     color: Some(self.highlight),
                     // The base word already casts the shadow.
-                    text_shadow: Some(None),
+                    text_shadow: Some(Vec::new()),
                     ..Style::default()
                 };
                 let motion = Motion {

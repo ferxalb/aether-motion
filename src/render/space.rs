@@ -116,7 +116,7 @@ fn reach(element: &Element, moving: bool) -> f64 {
     for s in style.shadows.iter().filter(|s| !s.inset) {
         reach = reach.max(s.x.abs().max(s.y.abs()) + s.spread.max(0.0) + s.blur * 1.5);
     }
-    if let Some(Some(s)) = style.text_shadow {
+    for s in style.text_shadow.iter().flatten() {
         reach = reach.max(s.x.abs().max(s.y.abs()) + s.blur * 1.5);
     }
     if let Some(s) = style.drop_shadow {

@@ -17,6 +17,12 @@ CLI/MCP output may still change between minor releases.
 
 ### Changed
 
+- `transform` accepts percent translation (`translate(-50%, -50%)`), static or in `@keyframes`,
+  resolved from the element's resting border box; it was an error before.
+- `text-shadow` accepts a list of up to 8 layers (first on top); it took one shadow before.
+- `<audio>` inside a timed clip is now cut where that clip (or any timed outer clip) ends, with
+  `data-hf-fade-out` ending at the cut, instead of playing on past the clip. An `<audio>` that
+  starts at or after its enclosing clip's end is now an explicit error.
 - npm releases bundle all supported native binaries in `@aether-motion/cli`. The launcher
   selects the host binary at startup, and GitHub Actions stages one package for approval.
 

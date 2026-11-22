@@ -6,7 +6,7 @@ use crate::parse::animation::{AnimationDecl, AnimationSpec, CssFrame};
 use crate::parse::css::vars::substitute;
 use crate::parse::css::{RawFrame, Vars};
 use crate::parse::values::filter::parse_filter;
-use crate::parse::values::transform::parse_transform;
+use crate::parse::values::transform::parse_transform_with_percent;
 use anyhow::{anyhow, bail, Context, Result};
 use std::collections::HashMap;
 
@@ -48,7 +48,7 @@ pub(in crate::parse) fn resolve_animation(
         for (key, raw_value) in &frame.declarations {
             let value = substitute(raw_value, vars, 0)?;
             match key.as_str() {
-                "transform" => current.transform = Some(parse_transform(&value)?),
+                "transform" => current.transform = Some(parse_transform_with_percent(&value)?),
                 "opacity" => {
                     let n: f32 = value.parse().context("invalid opacity")?;
                     if !n.is_finite() || !(0.0..=1.0).contains(&n) {

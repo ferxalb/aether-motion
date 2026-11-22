@@ -410,8 +410,9 @@ pub struct Style {
     /// `background-clip: text`: the background fills the glyphs instead of the box.
     pub background_clip_text: bool,
     /// Inherited text wrapping controls; see [`LineHeight`] and [`WhiteSpace`].
-    /// Inherited `text-shadow`: outer `None` means unset (inherit), inner `None` is `none`.
-    pub text_shadow: Option<Option<Shadow>>,
+    /// Inherited `text-shadow` layers, first on top: `None` means unset (inherit), an empty list
+    /// is `none`.
+    pub text_shadow: Option<Vec<Shadow>>,
     pub line_height: Option<LineHeight>,
     pub white_space: Option<WhiteSpace>,
     pub display: Option<String>,
@@ -422,6 +423,10 @@ pub struct Style {
     pub position: Option<String>,
     /// Static `transform`: translate in px and uniform scale around the element center.
     pub translate: (f32, f32),
+    /// Percent part of the static `transform` translation, as fractions of the resting border
+    /// box: `[x per width, x per height, y per width, y per height]`. Resolved into
+    /// `Motion::offset` after parsing.
+    pub translate_percent: [f32; 4],
     pub scale: Option<f32>,
     /// Static `transform: rotate()` in degrees, clockwise, around the element center.
     pub rotate: f32,
@@ -1081,6 +1086,13 @@ impl Track {
 pub struct Motion {
     /// Resting state: static `transform` and `opacity`.
     pub base: Pose,
+    /// Constant translation in px added to every pose: the percent part of the static
+    /// `transform`, resolved from the resting border box after parsing.
+    pub offset: (f32, f32),
+    /// Percent parts of an animated translation, `[x per width, x per height, y per width, y per
+    /// height]`, with the same points as `x` and `y`. Folded into `x` and `y` from the resting
+    /// border box after parsing, so it is `None` in a loaded composition.
+    pub percent: Option<Box<[Track; 4]>>,
     pub x: Track,
     pub y: Track,
     pub scale: Track,
@@ -1251,6 +1263,8 @@ impl Motion {
             pose.y += dy;
             pose.rotate += turn;
         }
+        pose.x += self.offset.0;
+        pose.y += self.offset.1;
         pose
     }
 

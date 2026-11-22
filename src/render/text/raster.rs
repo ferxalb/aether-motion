@@ -51,7 +51,8 @@ pub(in crate::render) struct TextRun {
     center_x: bool,
     center_y: bool,
     right: bool,
-    shadow: Option<ShadowMask>,
+    /// One mask per `text-shadow` layer, in CSS order (first on top).
+    shadow: Vec<ShadowMask>,
 }
 
 /// Horizontal start of a line inside a block `width` pixels wide.
@@ -171,19 +172,21 @@ impl<'a> Renderer<'a> {
         }
         let line_height = block.line_height * self.scale * zoom;
         let right = props.align == "right";
-        let shadow = match props.shadow {
-            Some(shadow) => {
-                let layout = BlockLayout {
-                    width: width_px as f32,
-                    size,
-                    line_height,
-                    center_x,
-                    right,
-                };
-                ShadowMask::build(&glyphs, &lines, &layout, shadow, self.scale * zoom)?
-            }
-            None => None,
+        let layout = BlockLayout {
+            width: width_px as f32,
+            size,
+            line_height,
+            center_x,
+            right,
         };
+        let mut shadow = Vec::with_capacity(props.shadow.len());
+        for &layer in props.shadow {
+            if let Some(mask) =
+                ShadowMask::build(&glyphs, &lines, &layout, layer, self.scale * zoom)?
+            {
+                shadow.push(mask);
+            }
+        }
         let plain = styles.len() == 1 && styles[0].is_plain();
         let paints = styles
             .into_iter()
@@ -220,7 +223,7 @@ impl<'a> Renderer<'a> {
         let block = self.text_block(idx, Some(rect.w / zoom))?;
         let props = self.text_props(idx);
         // Only shadows depend on the box width (through alignment), so only they key on it.
-        let width_px = if props.shadow.is_some() {
+        let width_px = if !props.shadow.is_empty() {
             (rect.w * self.scale / zoom).round() as i32
         } else {
             0
@@ -247,7 +250,7 @@ impl<'a> Renderer<'a> {
                         + glyph.stroke.as_ref().map_or(0, |s| s.coverage.len())
                 })
                 .sum::<usize>()
-                + prepared.shadow.as_ref().map_or(0, ShadowMask::bytes);
+                + prepared.shadow.iter().map(ShadowMask::bytes).sum::<usize>();
             if self.text_runs.len() < 4096
                 && self.text_cache_bytes.saturating_add(bytes) <= 32 * 1024 * 1024
             {
@@ -294,7 +297,8 @@ impl<'a> Renderer<'a> {
             }
         }
         let mut painted = self.surface.painted;
-        if let Some(shadow) = &run.shadow {
+        // Back to front: the first layer paints last, on top.
+        for shadow in run.shadow.iter().rev() {
             let origin = (rect.x * scale, top);
             shadow.paint(
                 &mut self.surface.pixels,
@@ -547,7 +551,7 @@ mod tests {
                     center_x: false,
                     center_y: false,
                     right: false,
-                    shadow: None,
+                    shadow: Vec::new(),
                 },
             );
         }

@@ -411,7 +411,7 @@ impl<'a> Renderer<'a> {
         }
         // The element's own `text-shadow` can also fall outside its box.
         if matches!(self.composition.elements[idx].content, Content::Text(_)) {
-            if let Some(s) = self.text_props(idx).shadow {
+            for s in self.text_props(idx).shadow {
                 let value = crate::render::allocation::pixel_edge(
                     ((s.x.abs().max(s.y.abs()) + s.blur * 1.5) * k).ceil(),
                     "text-shadow",

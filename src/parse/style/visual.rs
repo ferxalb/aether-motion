@@ -9,7 +9,7 @@ use crate::parse::values::filter::{parse_backdrop_filter, parse_filter};
 use crate::parse::values::length::{parse_length, spacing_px};
 use crate::parse::values::shadow::parse_box_shadows;
 use crate::parse::values::tokens::split_top;
-use crate::parse::values::transform::parse_transform;
+use crate::parse::values::transform::parse_transform_with_percent;
 use anyhow::{bail, Context, Result};
 
 /// `mix-blend-mode` keywords; the non-separable modes (`hue`, `color`, ...) are rejected.
@@ -107,9 +107,10 @@ pub(super) fn apply(key: &str, value: &str, style: &mut Style) -> Result<bool> {
             style.object_fit = Some(value.to_string());
         }
         "transform" => {
-            let (tx, ty, scale, rotate) = parse_transform(value)?;
+            let (tx, ty, scale, rotate, percent) = parse_transform_with_percent(value)?;
             style.rotate = rotate;
             style.translate = (tx, ty);
+            style.translate_percent = percent;
             style.scale = Some(scale);
         }
         "transform-origin" if matches!(value, "center" | "center center" | "50% 50%") => {}

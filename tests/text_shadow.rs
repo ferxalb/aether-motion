@@ -1,4 +1,4 @@
-//! `text-shadow`: offset, blur, inheritance, scale, rotation, determinism, and errors.
+//! `text-shadow`: offset, blur, layers, inheritance, scale, rotation, determinism, and errors.
 
 mod common;
 
@@ -146,7 +146,11 @@ fn shadows_do_not_depend_on_render_order() {
 #[test]
 fn text_shadow_errors_are_explicit() {
     let cases = [
-        ("text-shadow: 1px 1px #000, 2px 2px #fff", "several shadows"),
+        (
+            "text-shadow: 1px 1px #000, 1px 1px #000, 1px 1px #000, 1px 1px #000, 1px 1px #000, 1px 1px #000, 1px 1px #000, 1px 1px #000, 1px 1px #000",
+            "at most 8",
+        ),
+        ("text-shadow: 1px 1px #000, none", "none cannot be part of a list"),
         ("text-shadow: inset 1px 1px #000", "inset"),
         ("text-shadow: 1px 1px 2px 3px #000", "no spread"),
         ("text-shadow: 1px 1px -2px #000", "blur"),
@@ -162,4 +166,38 @@ fn text_shadow_errors_are_explicit() {
         let error = format!("{:#}", parse_file(&path).unwrap_err());
         assert!(error.contains(expected), "{style}: {error}");
     }
+}
+
+#[test]
+fn layered_shadows_paint_back_to_front_with_the_first_on_top() {
+    let green = |p: [u8; 3]| p[1] > 200 && p[0] < 60 && p[2] < 60;
+    let red_only = shot("layer-red", 1.0, "text-shadow: 6px 5px 0 #f00");
+    let both = shot(
+        "layers",
+        1.0,
+        "text-shadow: 6px 5px 0 #f00, 12px 10px 0 #0f0",
+    );
+    let swapped = shot(
+        "swapped",
+        1.0,
+        "text-shadow: 12px 10px 0 #0f0, 6px 5px 0 #f00",
+    );
+    // Red is on top in `both`: every red pixel of the single shadow stays red.
+    assert_eq!(
+        both.count(red),
+        red_only.count(red),
+        "the first layer is on top"
+    );
+    assert!(
+        both.count(green) > 0,
+        "the second layer shows where the first does not cover"
+    );
+    // Swapping the order puts green on top, so some red is covered.
+    assert!(swapped.count(red) < both.count(red));
+    let text = red_only.bbox(white).unwrap();
+    assert_eq!(
+        both.bbox(white),
+        Some(text),
+        "the text itself does not move"
+    );
 }

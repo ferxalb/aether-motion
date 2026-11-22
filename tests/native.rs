@@ -636,3 +636,91 @@ fn quality_presets_trade_file_size_for_fidelity() {
     assert!("ultra".parse::<Quality>().is_err());
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn percent_translate_matches_the_px_translation_of_the_own_box() {
+    // A 6x4 box: -50% -50% is (-3px, -2px); after rotate(90deg) it is turned with the box.
+    let frame = |name: &str, transform: &str| {
+        let css = format!(
+            ".box {{ left: 8px; top: 8px; width: 6px; height: 4px; background: #f00; transform: {transform} }}"
+        );
+        let path = css_composition(
+            name,
+            &css,
+            r#"<div class="clip box" data-start="0" data-duration="1"></div>"#,
+        );
+        let composition = parse_file(&path).unwrap();
+        let mut r = Renderer::new(&composition, 1.0).unwrap();
+        r.render_at(0.25).unwrap().to_vec()
+    };
+    for (percent, px) in [
+        ("translate(-50%, -50%)", "translate(-3px, -2px)"),
+        ("translateX(50%) translateY(-25%)", "translate(3px, -1px)"),
+        ("scale(2) translate(-50%, 0)", "scale(2) translate(-3px, 0)"),
+        (
+            "rotate(90deg) translate(-50%, 50%)",
+            "rotate(90deg) translate(-3px, 2px)",
+        ),
+    ] {
+        assert_eq!(frame("pct", percent), frame("px", px), "{percent}");
+    }
+}
+
+#[test]
+fn percent_translate_is_rejected_where_it_cannot_be_resolved() {
+    let cases = [
+        (
+            "@keyframes k { to { transform: translate(1px, 0) } } .box { transform: translate(-50%, 0); animation: k 1s both }",
+            "replaces a % translation",
+        ),
+    ];
+    for (css, expected) in cases {
+        let css =
+            format!(".box {{ left: 0; top: 0; width: 4px; height: 4px; background: #f00 }} {css}");
+        let path = css_composition(
+            "pct-err",
+            &css,
+            r#"<div class="clip box" data-start="0" data-duration="1"></div>"#,
+        );
+        let error = format!("{:#}", parse_file(&path).unwrap_err());
+        assert!(error.contains(expected), "{css}: {error}");
+    }
+}
+
+#[test]
+fn percent_translate_in_keyframes_matches_the_px_animation() {
+    // A 6x4 box: 100% is 6px horizontally and 4px vertically.
+    let frames = |name: &str, from: &str, to: &str| {
+        let css = format!(
+            "@keyframes slide {{ from {{ transform: {from} }} to {{ transform: {to} }} }}
+             .box {{ left: 4px; top: 4px; width: 6px; height: 4px; background: #f00;
+                     animation: slide 1s ease-in-out both }}"
+        );
+        let path = css_composition(
+            name,
+            &css,
+            r#"<div class="clip box" data-start="0" data-duration="2"></div>"#,
+        );
+        let composition = parse_file(&path).unwrap();
+        let mut r = Renderer::new(&composition, 1.0).unwrap();
+        [0.0, 0.3, 0.5, 0.8, 1.5]
+            .map(|t| r.render_at(t).unwrap().to_vec())
+            .to_vec()
+    };
+    assert_eq!(
+        frames("kf-pct", "translateX(-100%)", "translate(50%, 50%)"),
+        frames("kf-px", "translateX(-6px)", "translate(3px, 2px)"),
+    );
+    assert_eq!(
+        frames(
+            "kf-pct-rot",
+            "rotate(90deg) translateX(50%)",
+            "rotate(90deg) translateX(0)"
+        ),
+        frames(
+            "kf-px-rot",
+            "rotate(90deg) translateX(3px)",
+            "rotate(90deg) translateX(0)"
+        ),
+    );
+}

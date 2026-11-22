@@ -23,7 +23,8 @@ pub(in crate::render) struct TextProps<'a> {
     /// Distance between baselines.
     pub(in crate::render) line_height: f32,
     pub(in crate::render) nowrap: bool,
-    pub(in crate::render) shadow: Option<Shadow>,
+    /// Inherited `text-shadow` layers, first on top (empty: no shadow).
+    pub(in crate::render) shadow: &'a [Shadow],
     /// Inherited `-webkit-text-fill-color`, if any (the fill is `color` otherwise).
     pub(in crate::render) fill_color: Option<Color>,
     /// Inherited `-webkit-text-stroke` width (composition px) and color (`None` is `currentColor`).
@@ -114,7 +115,7 @@ impl<'a> Renderer<'a> {
             align = align.or(node.style.text_align.as_deref());
             line_height = line_height.or(node.style.line_height);
             white_space = white_space.or(node.style.white_space);
-            shadow = shadow.or(node.style.text_shadow);
+            shadow = shadow.or(node.style.text_shadow.as_deref());
             fill_color = fill_color.or(node.style.text_fill_color);
             stroke_width = stroke_width.or(node.style.text_stroke_width);
             stroke_color = stroke_color.or(node.style.text_stroke_color);
@@ -144,7 +145,7 @@ impl<'a> Renderer<'a> {
                 LineHeight::Px(px) => px,
             },
             nowrap: white_space == Some(WhiteSpace::Nowrap),
-            shadow: shadow.flatten(),
+            shadow: shadow.unwrap_or(&[]),
             fill_color,
             stroke_width: stroke_width.unwrap_or(0.0),
             stroke_color,
