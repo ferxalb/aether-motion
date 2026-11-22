@@ -7,6 +7,11 @@ CLI/MCP output may still change between minor releases.
 
 ## [Unreleased]
 
+### Changed
+
+- npm releases bundle all supported native binaries in `@aether-motion/cli`. The launcher
+  selects the host binary at startup, and GitHub Actions stages one package for approval.
+
 ## [0.2.0] - 2026-11-21
 
 ### Added
