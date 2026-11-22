@@ -25,6 +25,10 @@ impl Pcm {
 /// Upper bound on one decoded source (frames x channels), about 512 MiB of `f32`.
 const MAX_SAMPLES: usize = 128 * 1024 * 1024;
 
+/// Accepted source sample rates in Hz. A crafted header outside this range (0 in particular)
+/// would make resampling divide by zero or size its filter table without bound.
+const SAMPLE_RATES: std::ops::RangeInclusive<u32> = 8_000..=384_000;
+
 pub fn decode_file(path: &Path) -> Result<Pcm> {
     let file = std::fs::File::open(path)
         .with_context(|| format!("could not read audio file {}", path.display()))?;
@@ -86,6 +90,14 @@ pub fn decode_file(path: &Path) -> Result<Pcm> {
                 bail!(
                     "{} has {count} channels; only mono and stereo are supported",
                     path.display()
+                );
+            }
+            if !SAMPLE_RATES.contains(&rate) {
+                bail!(
+                    "{} has a sample rate of {rate} Hz; supported rates are {} to {} Hz",
+                    path.display(),
+                    SAMPLE_RATES.start(),
+                    SAMPLE_RATES.end()
                 );
             }
             pcm.rate = rate;

@@ -47,8 +47,19 @@ fn renderer_for<'a>(composition: &'a Composition, args: &Value) -> Result<Render
             .ok_or_else(|| anyhow!("size must be 1080p or 4k"))?;
         return Renderer::with_output_size(composition, size.parse()?);
     }
-    let scale = args.get("scale").and_then(Value::as_f64).unwrap_or(1.0) as f32;
+    let scale = number_arg(args, "scale", 1.0)? as f32;
     Renderer::new(composition, scale)
+}
+
+/// An optional numeric argument: `default` when absent or null, an error for any other non-number
+/// so a mistyped value never renders silently with the default.
+fn number_arg(args: &Value, name: &str, default: f64) -> Result<f64> {
+    match args.get(name) {
+        None | Some(Value::Null) => Ok(default),
+        Some(value) => value
+            .as_f64()
+            .ok_or_else(|| anyhow!("{name} must be a number (got {value})")),
+    }
 }
 
 /// The optional `variables` argument: values for the composition's declared variables.
@@ -320,11 +331,7 @@ pub(super) fn call(
             }
         },
         "aether_check" => Ok(text(checked(path, args)?.to_string())),
-        "aether_snapshot" => snapshot(
-            path,
-            args.get("t").and_then(Value::as_f64).unwrap_or(0.0),
-            args,
-        ),
+        "aether_snapshot" => snapshot(path, number_arg(args, "t", 0.0)?, args),
         "aether_render" => {
             let output = Path::new(string_arg("output").ok_or_else(|| anyhow!("missing output"))?);
             let integer = |name: &str, default| -> Result<u32> {
@@ -408,6 +415,15 @@ mod tests {
         );
         assert!(format!("{:#}", snapshot.unwrap_err()).contains("must be a string"));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn numeric_arguments_reject_non_numbers() {
+        assert_eq!(number_arg(&json!({}), "t", 0.5).unwrap(), 0.5);
+        assert_eq!(number_arg(&json!({"t": null}), "t", 0.5).unwrap(), 0.5);
+        assert_eq!(number_arg(&json!({"t": 2}), "t", 0.0).unwrap(), 2.0);
+        let error = number_arg(&json!({"t": "2"}), "t", 0.0).unwrap_err();
+        assert!(error.to_string().contains("t must be a number"));
     }
 
     #[test]

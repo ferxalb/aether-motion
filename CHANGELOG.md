@@ -22,6 +22,9 @@ CLI/MCP output may still change between minor releases.
 
 ### Fixed
 
+- SVGZ (gzip-compressed SVG) is rejected instead of being inflated without a size bound.
+- Audio sources with a sample rate outside 8 to 384 kHz (including 0) are rejected at decode instead of breaking the resampler.
+- MCP `aether_snapshot`/`aether_render`: a non-numeric `t` or `scale` is an error instead of silently using the default.
 - Images are decoded with bounded dimensions and allocation, in the same reader that checks
   their size, so a crafted or swapped file cannot exhaust memory. Composition, scene, SVG, and
   caption transcript reads are capped while reading, so a growing file or a device such as

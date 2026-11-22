@@ -1,6 +1,6 @@
 # Limits
 
-- SVG (`<img src="x.svg">` or inline `<svg>`) is static: no `<text>`, SMIL animation, scripts, `<foreignObject>`, or external resources. Scripts of any kind remain unsupported by design (determinism); use the native `data-hf-*` motion instead.
+- SVG (`<img src="x.svg">` or inline `<svg>`) is static: no `<text>`, SMIL animation, scripts, `<foreignObject>`, external resources, or gzip-compressed SVGZ. Scripts of any kind remain unsupported by design (determinism); use the native `data-hf-*` motion instead.
 - Descendants of a rotated element are clipped to its box plus its shadow reach. This is a deliberate, documented limitation.
 - There is no skew, CSS 3D transform, percent translation, or other transform origin; these return an explicit error. Depth comes from `data-hf-space` (2.5D planes) and real geometry from `data-hf-3d`.
 - Native 3D (`data-hf-3d`) is low-poly and flat-shaded: meshes are opaque with one color each, lit by ambient and directional lights only. There are no textures, PBR, smooth shading, per-material transparency, point or spot lights, shadows, fog, model files (glTF, OBJ), skeletal or morph animation, physics, 3D text, or second cameras. A scene holds at most 4096 nodes and 100,000 triangles. The optional GPU backend is close to the CPU but not byte-identical (see [3D](docs/3d.md)).

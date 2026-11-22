@@ -27,6 +27,13 @@ pub(crate) fn parse_svg(data: &[u8]) -> Result<usvg::Tree> {
     if data.len() as u64 > MAX_SVG_BYTES {
         return Err(anyhow!("SVG exceeds 8 MiB; simplify it"));
     }
+    // usvg inflates gzip (SVGZ) data without a bound, so a small file could expand to gigabytes
+    // past the size cap above. Only plain-text SVG is accepted.
+    if data.starts_with(&[0x1f, 0x8b]) {
+        return Err(anyhow!(
+            "compressed SVG (SVGZ) is not supported; decompress it with `gunzip -c in.svgz > out.svg`"
+        ));
+    }
     profile::time(Phase::SvgParse, || {
         usvg::Tree::from_data(data, &svg_options()).map_err(|e| anyhow!("invalid SVG: {e}"))
     })
@@ -128,6 +135,12 @@ mod tests {
     use super::*;
 
     const RED: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="red"/></svg>"##;
+
+    #[test]
+    fn compressed_svg_is_rejected() {
+        let error = parse_svg(&[0x1f, 0x8b, 8, 0]).unwrap_err();
+        assert!(error.to_string().contains("SVGZ"));
+    }
 
     #[test]
     fn rasterizes_deterministically_and_honors_fit() {
