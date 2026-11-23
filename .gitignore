@@ -20,3 +20,4 @@ aether-motion-api
 !examples/cinematic-walk-assets/*/*.png
 
 *.md
+!docs/native-physics-and-volumetrics.md

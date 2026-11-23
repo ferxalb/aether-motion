@@ -12,8 +12,13 @@ pub mod zones;
 pub use mcp::{run as run_mcp, serve};
 
 fn fix_hint(message: &str) -> &'static str {
-    if message.contains("data-hf-3d") || message.contains("<hf-") {
-        "put data-hf-3d on a sized <div> clip (optional data-hf-3d-antialias 1 to 4) and fill it only with <hf-node>, <hf-mesh shape=\"plane|box|pyramid|cone|cylinder|sphere|custom\">, <hf-light type=\"ambient|directional\">, and at most one <hf-camera>; place nodes with position, rotation, and scale (or data-hf-keyframes with x, y, z, rotateX, rotateY, rotate, scale; cameras use yaw, pitch, roll, zoom), color meshes with color and material=\"lambert|unlit\", and close every <hf-*> tag explicitly"
+    if message.contains("<hf-body> in data-hf-3d")
+        || message.contains("<hf-body id=")
+        || message.contains("rigid bod")
+    {
+        "put <hf-body> directly in a data-hf-3d viewport, use type=\"fixed|dynamic\" and shape=\"box\" with size=\"w h d\" or shape=\"sphere\" with radius, and put visible meshes inside the body; use a viewport at most 60 seconds long"
+    } else if message.contains("data-hf-3d") || message.contains("<hf-") {
+        "put data-hf-3d on a sized <div> clip (optional data-hf-3d-antialias 1 to 4) and fill it with <hf-node>, <hf-body>, <hf-mesh shape=\"plane|box|pyramid|cone|cylinder|sphere|custom\">, <hf-light type=\"ambient|directional\">, and at most one <hf-camera>; place nodes with position, rotation, and scale (or data-hf-keyframes with x, y, z, rotateX, rotateY, rotate, scale; cameras use yaw, pitch, roll, zoom), color meshes with color and material=\"lambert|unlit\", and close every <hf-*> tag explicitly"
     } else if message.contains("2.5D values")
         || message.contains("data-hf-space")
         || message.contains("3D plane values")
@@ -179,9 +184,7 @@ fn check_videos(c: &Composition) -> Result<Vec<Value>> {
     Ok(videos)
 }
 
-/// Decodes and mixes the composition's audio (without encoding) and reports each clip, the peak
-/// level, and any samples that would clip. Empty when the composition has no `<audio>`.
-/// The `data-hf-3d` scenes: their nodes, meshes, lights, camera, and the backend in use.
+/// Native 3D geometry, lighting, camera, optional physics bake, and rendering backend.
 fn scenes3d_json(c: &Composition) -> Vec<Value> {
     use crate::scene3d::{NodeKind, Projection, Shading};
     let (backend, fallback) = crate::scene3d::backend::status();
@@ -193,6 +196,7 @@ fn scenes3d_json(c: &Composition) -> Vec<Value> {
             };
             let mut meshes = Vec::new();
             let mut lights = Vec::new();
+            let mut bodies = Vec::new();
             for node in &scene.nodes {
                 match &node.kind {
                     NodeKind::Mesh { mesh, material, shape } => meshes.push(json!({
@@ -205,6 +209,15 @@ fn scenes3d_json(c: &Composition) -> Vec<Value> {
                         "type": match light.kind { crate::scene3d::LightKind::Ambient => "ambient", _ => "directional" },
                         "animated": light.intensity.is_animated(),
                     })),
+                    NodeKind::Body(body) => bodies.push(json!({
+                        "id": node.id,
+                        "type": if body.dynamic { "dynamic" } else { "fixed" },
+                        "shape": match body.collider {
+                            crate::scene3d::physics::Collider::Box(_) => "box",
+                            crate::scene3d::physics::Collider::Sphere(_) => "sphere",
+                        },
+                        "ccd": body.ccd,
+                    })),
                     _ => {}
                 }
             }
@@ -214,7 +227,7 @@ fn scenes3d_json(c: &Composition) -> Vec<Value> {
                 Projection::FieldOfView { degrees } => json!({"type": "perspective", "fov": degrees}),
                 Projection::Orthographic => json!({"type": "orthographic"}),
             };
-            Some(json!({
+            let mut report = json!({
                 "id": e.id, "start": e.start, "end": e.end,
                 "antialias": scene.antialias, "nodes": scene.nodes.len(),
                 "triangles": scene.triangle_count(), "meshes": meshes, "lights": lights,
@@ -222,11 +235,23 @@ fn scenes3d_json(c: &Composition) -> Vec<Value> {
                 "camera": {"declared": index.is_some(), "projection": projection, "near": camera.near, "far": camera.far, "target": camera.target.is_some()},
                 "animated": scene.is_animated(),
                 "backend": backend, "gpuFallback": fallback,
-            }))
+            });
+            if let Some(bake) = &scene.physics {
+                report["physics"] = json!({
+                    "solver": "rapier",
+                    "tickRate": crate::scene3d::physics::TICK_RATE,
+                    "pixelsPerMeter": crate::scene3d::physics::PX_PER_METER,
+                    "ticks": bake.ticks(),
+                    "poseBytes": bake.pose_bytes(),
+                    "bodies": bodies,
+                });
+            }
+            Some(report)
         })
         .collect()
 }
 
+/// Decodes and mixes the composition's audio without encoding, and reports clipping.
 fn check_audio(c: &Composition) -> Result<Value> {
     if c.audio.is_empty() {
         return Ok(json!({"clips": [], "peak": 0.0, "clippedSamples": 0}));

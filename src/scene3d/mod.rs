@@ -1,6 +1,6 @@
 //! Native low-poly 3D scenes (`data-hf-3d`), independent of HTML and pixels.
 //!
-//! A [`Scene3d`] is a hierarchy of [`Node`]s (groups, meshes, lights, and one camera) whose
+//! A [`Scene3d`] is a hierarchy of [`Node`]s (groups, rigid bodies, meshes, lights, and one camera) whose
 //! translation, rotation, and scale are curves of the clip time ([`Transform`]). World coordinates
 //! follow CSS and 2.5D spaces: the origin is the center of the element's box, x points right, y
 //! down, and z toward the viewer; rotations use the CSS `rotateX`/`rotateY`/`rotate` senses and
@@ -22,6 +22,7 @@ pub mod frame;
 #[cfg(feature = "gpu")]
 pub mod gpu;
 pub mod mesh;
+pub mod physics;
 pub mod raster;
 pub mod shade;
 
@@ -223,6 +224,7 @@ pub const DEFAULT_FOCAL: f64 = 1000.0;
 #[derive(Clone, Debug, PartialEq)]
 pub enum NodeKind {
     Group,
+    Body(physics::Body),
     Mesh {
         mesh: Arc<mesh::Mesh>,
         material: Material,
@@ -256,6 +258,8 @@ pub struct Scene3d {
     pub antialias: u32,
     /// Whether no light was declared, so lit meshes use the default rig ([`shade::DEFAULT_RIG`]).
     pub default_lights: bool,
+    /// Immutable rigid-body poses shared across renders and scene instances.
+    pub physics: Option<Arc<physics::Bake>>,
 }
 
 impl Scene3d {
@@ -273,8 +277,12 @@ impl Scene3d {
     /// World transform of every node at clip time `t`.
     pub fn world(&self, t: f64) -> Vec<Affine> {
         let mut world: Vec<Affine> = Vec::with_capacity(self.nodes.len());
-        for node in &self.nodes {
-            let local = node.transform.at(t);
+        for (index, node) in self.nodes.iter().enumerate() {
+            let local = self
+                .physics
+                .as_ref()
+                .and_then(|bake| bake.transform(index, t))
+                .unwrap_or_else(|| node.transform.at(t));
             let placed = match node.parent {
                 Some(parent) => world[parent].then(&local),
                 None => local,
@@ -298,7 +306,10 @@ impl Scene3d {
     /// Whether anything in the scene changes over time.
     pub fn is_animated(&self) -> bool {
         let (camera_transform, camera, _) = self.camera();
-        camera_transform.channels().any(Channel::is_animated)
+        self.physics
+            .as_ref()
+            .is_some_and(|bake| bake.dynamic_count() > 0)
+            || camera_transform.channels().any(Channel::is_animated)
             || camera.zoom.is_animated()
             || camera.orientation.iter().any(Channel::is_animated)
             || self.nodes.iter().any(|n| {
@@ -329,6 +340,10 @@ impl Scene3d {
         let hash = values.fold(0xcbf2_9ce4_8422_2325_u64, |h, bits| {
             (h ^ bits).wrapping_mul(0x0000_0100_0000_01b3)
         });
+        let hash = self
+            .physics
+            .as_ref()
+            .map_or(hash, |bake| bake.hash_at(t, hash));
         ((hash >> 32) as u32 ^ hash as u32) | 1
     }
 }

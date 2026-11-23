@@ -1,5 +1,5 @@
 //! `data-hf-3d` scenes: the host element's options and its `<hf-node>`, `<hf-mesh>`,
-//! `<hf-light>`, and `<hf-camera>` descendants, read into a [`crate::scene3d::Scene3d`].
+//! `<hf-light>`, `<hf-body>`, and `<hf-camera>` descendants, read into a [`crate::scene3d::Scene3d`].
 //!
 //! The scene's elements are not 2D elements: they take no part in layout or painting and are
 //! consumed here, so the walk does not visit them. Every attribute is checked against the tag's
@@ -10,6 +10,8 @@
 //! before the first), easings are the `data-hf-keyframes` names plus `smooth`, and the first and
 //! last values hold outside the keyed interval. `color` attributes may use `var()` of the host's
 //! custom properties; `data-var-*` bindings are applied to the DOM before this parse.
+
+mod physics;
 
 use crate::camera::curve::Interp;
 use crate::model::Color;
@@ -171,6 +173,10 @@ impl Builder<'_> {
                 allowed(node, &[])?;
                 (NodeKind::Group, transform(node, &NODE_CHANNELS)?)
             }
+            "hf-body" => (
+                NodeKind::Body(physics::body(node, parent)?),
+                transform(node, &[])?,
+            ),
             "hf-mesh" => {
                 allowed(node, &MESH_ATTRIBUTES)?;
                 (mesh(node, &mut self.triangles, self.vars)?, transform(node, &NODE_CHANNELS)?)
@@ -208,7 +214,7 @@ impl Builder<'_> {
                 (NodeKind::Camera(Box::new(spec)), transform)
             }
             other => bail!(
-                "<{other}> cannot be part of a 3D scene; use <hf-node>, <hf-mesh>, <hf-light>, or <hf-camera>"
+                "<{other}> cannot be part of a 3D scene; use <hf-node>, <hf-body>, <hf-mesh>, <hf-light>, or <hf-camera>"
             ),
         };
         let id = attr(node, "id");
@@ -253,6 +259,7 @@ impl Builder<'_> {
             default_camera: (transform, spec),
             antialias,
             default_lights: self.lights == 0,
+            physics: None,
         })
     }
 }

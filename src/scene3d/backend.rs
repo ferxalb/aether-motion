@@ -430,6 +430,7 @@ mod tests {
             default_camera: CameraSpec::default_for(1000.0),
             antialias: 2,
             default_lights: true,
+            physics: None,
         }
     }
 

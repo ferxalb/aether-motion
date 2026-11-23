@@ -380,6 +380,13 @@ fn parse_pass(
             .clone()
             .unwrap_or_else(|| "element with no id".to_string());
         let label = label.as_str();
+        if let Content::Scene3d(scene) = &mut p.element.content {
+            if let Some(bake) = crate::scene3d::physics::Bake::compile(scene, clip_len)
+                .with_context(|| format!("rigid bodies in {label}"))?
+            {
+                std::sync::Arc::make_mut(scene).physics = Some(std::sync::Arc::new(bake));
+            }
+        }
         let rest = p.element.motion.base;
         let filter_rest = filter_base(&p.element.style);
         let shadow_rest = crate::model::shadow_channels(p.element.style.drop_shadow);

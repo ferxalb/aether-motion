@@ -396,3 +396,139 @@ fn composition_variables_reach_scene_colors_and_toggles() {
     assert!(red(shot.at(100, 90)), "{:?}", shot.at(100, 90));
     assert_eq!(shot.count(green), 0, "the toggled mesh is removed");
 }
+
+#[test]
+fn rigid_body_poses_render_consistently_across_seeks() {
+    let dir = scratch("scene3d-rigid-bodies");
+    let path = write(
+        &dir,
+        "world.html",
+        &scene(
+            "",
+            "<hf-camera projection='orthographic'></hf-camera>
+             <hf-body id='floor' type='fixed' shape='box' size='300 20 100' position='0 55 0'>
+               <hf-mesh shape='box' size='300 20 100' material='unlit' color='#0f0'></hf-mesh>
+             </hf-body>
+             <hf-body id='ball' type='dynamic' shape='sphere' radius='10' position='0 -60 0' ccd>
+               <hf-mesh shape='sphere' radius='10' detail='2' material='unlit' color='#f00'></hf-mesh>
+             </hf-body>",
+        ),
+    );
+    let report = check(&path);
+    assert_eq!(report["ok"], true, "{report}");
+    let stats = &report["scenes3d"][0];
+    assert_eq!(stats["animated"], true);
+    assert_eq!(stats["physics"]["tickRate"], 120);
+    assert_eq!(stats["physics"]["ticks"], 240);
+    assert_eq!(stats["physics"]["bodies"][1]["ccd"], true);
+
+    let composition = parse_file(&path).unwrap();
+    let draw = |renderer: &mut Renderer<'_>, time: f64| Shot {
+        pixels: renderer.render_at(time).unwrap().to_vec(),
+        width: 320,
+        height: 180,
+    };
+    let mut renderer = Renderer::new(&composition, 1.0).unwrap();
+    let at_rest = draw(&mut renderer, 1.35);
+    let falling = draw(&mut renderer, 0.203);
+    let start = draw(&mut renderer, 0.0);
+    let center_y = |shot: &Shot| {
+        let (_, top, _, bottom) = shot.bbox(red).unwrap();
+        (top + bottom) as f64 / 2.0 - 90.0
+    };
+    assert!((center_y(&start) + 60.0).abs() < 2.0);
+    assert!((center_y(&falling) + 40.0).abs() < 2.0);
+    assert!((center_y(&at_rest) - 35.0).abs() < 2.0);
+    assert_eq!(falling.pixels, draw(&mut renderer, 0.203).pixels);
+
+    let rebuilt_composition = parse_file(&path).unwrap();
+    let mut fresh = Renderer::new(&rebuilt_composition, 1.0).unwrap();
+    assert_eq!(at_rest.pixels, draw(&mut fresh, 1.35).pixels);
+    assert_eq!(start.pixels, draw(&mut fresh, 0.0).pixels);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn rigid_body_contract_rejects_conflicting_and_unbounded_inputs() {
+    let dir = scratch("scene3d-rigid-body-errors");
+    for (nodes, needle) in [
+        (
+            "<hf-node><hf-body type='fixed' shape='sphere' radius='10'></hf-body></hf-node>",
+            "direct child",
+        ),
+        (
+            "<hf-body type='dynamic' shape='box' size='10 0 10'></hf-body>",
+            "dimensions",
+        ),
+        (
+            "<hf-body type='fixed' shape='sphere' radius='10' velocity='0 10 0'></hf-body>",
+            "requires a dynamic body",
+        ),
+        (
+            "<hf-body type='dynamic' shape='sphere' radius='10' data-hf-keyframes='[]'></hf-body>",
+            "unavailable",
+        ),
+    ] {
+        let bad = write(&dir, "bad.html", &scene("", nodes));
+        let report = check(&bad);
+        assert_eq!(report["ok"], false, "{nodes}");
+        assert!(
+            report["error"].as_str().unwrap().contains(needle),
+            "{report}"
+        );
+    }
+    let html = scene(
+        "",
+        "<hf-body type='dynamic' shape='sphere' radius='10'></hf-body>",
+    )
+    .replace("data-duration='2'", "data-duration='61'");
+    let path = write(&dir, "too-long.html", &html);
+    assert!(check(&path)["error"]
+        .as_str()
+        .unwrap()
+        .contains("at most 60 seconds"));
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn rigid_body_ccd_and_bake_reuse_work_in_imported_scenes() {
+    use aether_motion::model::Content;
+    use std::sync::Arc;
+
+    let dir = scratch("scene3d-rigid-body-instance");
+    write(
+        &dir,
+        "shot.html",
+        &scene(
+            "",
+            "<hf-body type='fixed' shape='box' size='200 2 200'></hf-body>
+             <hf-body id='fast' type='dynamic' shape='sphere' radius='5' position='0 -60 0'
+                 velocity='0 24000 0' ccd></hf-body>",
+        ),
+    );
+    let path = write(
+        &dir,
+        "montage.html",
+        "<div data-composition-id='montage' data-width='320' data-height='180' data-duration='3'>
+           <div id='short' data-composition-src='shot.html' data-start='0' data-duration='1' data-track-index='0'></div>
+           <div id='full' data-composition-src='shot.html' data-start='1' data-track-index='0'></div>
+         </div>",
+    );
+    let composition = parse_file(&path).unwrap();
+    let viewport = |id| {
+        let Content::Scene3d(world) = &composition.elements[composition.ids[id]].content else {
+            panic!("expected a native 3D viewport");
+        };
+        world
+    };
+    let short = viewport("short::world");
+    let full = viewport("full::world");
+    assert!(Arc::ptr_eq(short, full));
+    assert_eq!(short.physics.as_ref().unwrap().ticks(), 240);
+    let y = short.world(0.1)[1].t[1];
+    assert!(
+        y < -4.0,
+        "expected the fast sphere to stay above the floor, got y={y}"
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}

@@ -1,6 +1,6 @@
 ---
 name: aether-motion-3d
-description: Build native low-poly 3D shots in AETHER Motion with data-hf-3d (meshes, flat Lambert or unlit materials, ambient and directional lights, an animated 3D camera) and composite them with 2D layers. Use when a composition needs real geometry, a camera that orbits or cranes through objects, or depth that flat 2.5D planes cannot give.
+description: Build native low-poly 3D shots in AETHER Motion with data-hf-3d and composite them with 2D layers. Use for real geometry, mesh lighting, moving 3D cameras, and native rigid-body collisions.
 ---
 
 # Native 3D scenes in AETHER Motion
@@ -30,6 +30,14 @@ Use this skill for `data-hf-3d` viewports. The authoritative contract is the `da
 - Aim the subject's middle, not its base, so the horizon stays in frame. When 2D layers must track the 3D world (a horizon band or a sun plate), compute their screen positions from the same camera math and keyframe them. `examples/lighthouse-isle-3d.html` shows this.
 - Keep geometry beyond `near` (default 10 px) and within `far` (default 50,000 px), and keep big ground planes large enough that their far edge never shows.
 
+## Direct rigid-body motion
+
+- Use direct-child `<hf-body>` elements. Set up fixed obstacles and dynamic objects with box or
+  sphere colliders. Put visible meshes inside each body and match the collider's dimensions. Author
+  the initial body pose and velocity, and put decorative keyframes on visual children.
+- Positive y is down and 100 px equals one meter. Set `ccd` for fast props. Check `scenes3d[].physics`
+  and sample stills at release, just before and after first contact, and at rest. Each still samples the bake at its clip-local time.
+
 ## Verify
 
 1. Run `aether-motion check`. Read `scenes3d` (triangles, meshes, lights, camera, `animated`, `backend`).
@@ -39,4 +47,6 @@ Use this skill for `data-hf-3d` viewports. The authoritative contract is the `da
 
 ## Do not
 
-Promise textures, PBR, smooth shading, transparency per material, point or spot lights, shadows, fog, glTF or other model files, skeletal animation, physics, or 3D text. These are not supported. Offer a flat-shaded, unlit, or 2D-overlay alternative instead, and say so.
+Promise textures, PBR, smooth shading, transparency per material, point or spot lights, shadows,
+fog, glTF or other model files, skeletal animation, kinematic bodies, joints, deformable physics,
+or 3D text. Refer to the native 3D contract when choosing an alternative.

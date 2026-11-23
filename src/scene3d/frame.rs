@@ -1,7 +1,7 @@
 //! The shared per-frame representation of a scene: the camera and the world-space triangles that
 //! face it, each with its flat-shaded color. Built once per drawn instant on the CPU in `f64`, it is
 //! what the CPU rasterizer and the GPU backend both draw, so they agree on geometry, culling, and
-//! color and differ only in how they cover pixels.
+//! color and differ only in how they cover pixels. Also estimates shutter travel from scene poses.
 
 use super::camera::View;
 use super::mesh::{cross, dot, sub};
@@ -97,11 +97,39 @@ impl Scene3d {
         Frame { view, triangles }
     }
 
-    /// Largest on-screen distance (CSS px of a `size` viewport) any mesh's bounding-box corner
-    /// moves between clip times `a` and `b`; used to size motion-blur sample counts.
+    /// Estimate on-screen travel (CSS px) for motion-blur sample counts.
     pub fn screen_travel(&self, a: f64, b: f64, size: [f64; 2]) -> f64 {
-        let (wa, wb) = (self.world(a), self.world(b));
-        let (va, vb) = (View::of(self, &wa, a), View::of(self, &wb, b));
+        let mut world = self.world(a);
+        let mut view = View::of(self, &world, a);
+        let mut travel = 0.0;
+        if let Some(bake) = &self.physics {
+            let rate = f64::from(super::physics::TICK_RATE);
+            let start = ((a * rate).floor().max(0.0) as usize).saturating_add(1);
+            let end = (b * rate).ceil().min(bake.ticks() as f64 + 1.0) as usize;
+            // An impact can reverse a body's motion between the shutter endpoints.
+            for tick in start..end {
+                let time = tick as f64 / rate;
+                let next = self.world(time);
+                let next_view = View::of(self, &next, time);
+                travel += self.projected_travel(&world, &view, &next, &next_view, size);
+                world = next;
+                view = next_view;
+            }
+        }
+        let next = self.world(b);
+        let next_view = View::of(self, &next, b);
+        travel += self.projected_travel(&world, &view, &next, &next_view, size);
+        travel.min(size[0].hypot(size[1]))
+    }
+
+    fn projected_travel(
+        &self,
+        wa: &[crate::space::math::Affine],
+        va: &View,
+        wb: &[crate::space::math::Affine],
+        vb: &View,
+        size: [f64; 2],
+    ) -> f64 {
         let mut travel: f64 = 0.0;
         for (i, node) in self.nodes.iter().enumerate() {
             let NodeKind::Mesh { mesh, .. } = &node.kind else {
@@ -125,6 +153,6 @@ impl Scene3d {
                 travel = travel.max((pa[0] - pb[0]).hypot(pa[1] - pb[1]));
             }
         }
-        travel.min(size[0].hypot(size[1]))
+        travel
     }
 }

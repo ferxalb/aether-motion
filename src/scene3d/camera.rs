@@ -196,6 +196,7 @@ mod tests {
             default_camera: (transform, spec),
             antialias: 1,
             default_lights: true,
+            physics: None,
         }
     }
 
