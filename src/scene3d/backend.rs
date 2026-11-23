@@ -18,8 +18,8 @@
 
 use super::camera::Placement;
 use super::frame::Triangle;
-use super::raster::{rasterize, Region, RowSink, Scratch};
-use super::Scene3d;
+use super::raster::{rasterize_with_beam, Region, RowSink, Scratch};
+use super::{beam, NodeKind, Scene3d};
 use anyhow::{bail, Result};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::Mutex;
@@ -140,6 +140,8 @@ pub(crate) fn fall_back(reason: String) {
     }
 }
 
+const BEAM_CPU_REASON: &str = "native <hf-beam> light shafts require the CPU 3D backend";
+
 /// The backend 3D scenes are drawn with in this process so far (`"cpu"` or `"gpu"`) and, when the
 /// GPU was asked for but not used, why.
 pub fn status() -> (&'static str, Option<String>) {
@@ -195,6 +197,7 @@ struct Memo {
 /// the last region drawn).
 #[derive(Default)]
 pub struct Workspace {
+    cpu_only: bool,
     triangles: Vec<Triangle>,
     raster: Scratch,
     memo: Memo,
@@ -205,6 +208,26 @@ pub struct Workspace {
 }
 
 impl Workspace {
+    /// Selects one backend for every viewport in the renderer.
+    pub(crate) fn new(cpu_only: bool) -> Result<Self> {
+        if cpu_only && strict() {
+            bail!("--require-gpu: {BEAM_CPU_REASON}");
+        }
+        Ok(Self {
+            cpu_only,
+            ..Self::default()
+        })
+    }
+
+    pub(crate) fn status(&self) -> (&'static str, Option<String>) {
+        if self.cpu_only {
+            let reason = matches!(request(), Ok(Request::Gpu | Request::Auto | Request::Cuda));
+            ("cpu", reason.then(|| BEAM_CPU_REASON.to_owned()))
+        } else {
+            status()
+        }
+    }
+
     /// Bytes currently held on the CPU.
     pub fn bytes(&self) -> usize {
         self.triangles.capacity() * std::mem::size_of::<Triangle>()
@@ -257,7 +280,20 @@ impl Workspace {
             memo.rows.clear();
             memo.rows.resize(height, false);
         }
+        let shaft = scene.beam();
+        let cpu_only = self.cpu_only || shaft.is_some();
+        if cpu_only && strict() {
+            bail!("--require-gpu: {BEAM_CPU_REASON}");
+        }
         let view = scene.frame_into(t, &mut self.triangles);
+        let beam = shaft.and_then(|(index, beam)| {
+            let world = scene.world(t);
+            let blocker = beam.occluder.and_then(|i| match &scene.nodes[i].kind {
+                NodeKind::Mesh { mesh, .. } => Some((world[i], mesh.bounds())),
+                _ => None,
+            });
+            beam::Prepared::new(beam, world[index], blocker)
+        });
         let mut record = |x: usize, y: usize, row: &[[u8; 4]]| {
             if remember {
                 let (dx, dy) = (x - region.rect[0], y - region.rect[1]);
@@ -266,8 +302,9 @@ impl Workspace {
             }
             sink(x, y, row);
         };
-        if !self.triangles.is_empty() {
-            let drawn = match request()? {
+        if beam.is_some() || !self.triangles.is_empty() {
+            let request = request()?;
+            let drawn = match if cpu_only { Request::Cpu } else { request } {
                 Request::Cpu => false,
                 Request::Cuda => Self::try_cuda(
                     #[cfg(all(feature = "cuda", unix))]
@@ -297,12 +334,13 @@ impl Workspace {
                 bail!("--require-gpu: {reason}");
             }
             if !drawn {
-                rasterize(
+                rasterize_with_beam(
                     &view,
                     &self.triangles,
                     placement,
                     &region,
                     &mut self.raster,
+                    beam.as_ref(),
                     &mut record,
                 );
             }

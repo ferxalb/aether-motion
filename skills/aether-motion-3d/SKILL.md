@@ -1,6 +1,6 @@
 ---
 name: aether-motion-3d
-description: Build native low-poly 3D shots in AETHER Motion with data-hf-3d and composite them with 2D layers. Use for real geometry, mesh lighting, moving 3D cameras, and native rigid-body collisions.
+description: Build native low-poly 3D shots in AETHER Motion with data-hf-3d and composite them with 2D layers. Use for geometry, camera motion, rigid-body collisions, hinges, and bounded light shafts.
 ---
 
 # Native 3D scenes in AETHER Motion
@@ -32,11 +32,18 @@ Use this skill for `data-hf-3d` viewports. The authoritative contract is the `da
 
 ## Direct rigid-body motion
 
-- Use direct-child `<hf-body>` elements. Set up fixed obstacles and dynamic objects with box or
-  sphere colliders. Put visible meshes inside each body and match the collider's dimensions. Author
-  the initial body pose and velocity, and put decorative keyframes on visual children.
+- Use direct-child `<hf-body>` elements with box or sphere colliders. Put visible meshes inside
+  each body and match the collider's dimensions. Give dynamic bodies their initial pose and
+  velocity. Use `type="kinematic"` and pose keys with `linear` or `smooth` easing for a moving
+  collider that pushes dynamic bodies. Put decorative motion on visual children.
+- Connect bodies with a direct-child `<hf-hinge>`. Align its two local anchors at the same
+  world point and use limits and dynamic angular damping to direct the swing. A child
+  `<hf-beam>` follows the body, with camera-depth occlusion and an optional named box caster.
+  Render shaft compositions with the CPU. See `examples/hinged-lamp.html`.
 - Positive y is down and 100 px equals one meter. Set `ccd` for fast props. Check `scenes3d[].physics`
-  and sample stills at release, just before and after first contact, and at rest. Each still samples the bake at its clip-local time.
+  and use `inspect` to compare requested launch velocities with the solved first-tick values
+  and cap indicators. Sample stills at release, both sides of contact, and each turning point.
+  For a beam, also sample both sides of its crossing with the occluder.
 
 ## Verify
 
@@ -47,6 +54,7 @@ Use this skill for `data-hf-3d` viewports. The authoritative contract is the `da
 
 ## Do not
 
-Promise textures, PBR, smooth shading, transparency per material, point or spot lights, shadows,
-fog, glTF or other model files, skeletal animation, kinematic bodies, joints, deformable physics,
-or 3D text. Refer to the native 3D contract when choosing an alternative.
+Promise textures, PBR, smooth shading, transparency per material, general surface shadows,
+point or spot surface lights, global fog, glTF or other model files, skeletal animation,
+joint motors, deformable physics, or 3D text. Refer to the native 3D contract when choosing an
+alternative.

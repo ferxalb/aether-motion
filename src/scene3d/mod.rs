@@ -1,6 +1,6 @@
 //! Native low-poly 3D scenes (`data-hf-3d`), independent of HTML and pixels.
 //!
-//! A [`Scene3d`] is a hierarchy of [`Node`]s (groups, rigid bodies, meshes, lights, and one camera) whose
+//! A [`Scene3d`] is a hierarchy of [`Node`]s (groups, rigid bodies, hinges, meshes, lights, and one camera) whose
 //! translation, rotation, and scale are curves of the clip time ([`Transform`]). World coordinates
 //! follow CSS and 2.5D spaces: the origin is the center of the element's box, x points right, y
 //! down, and z toward the viewer; rotations use the CSS `rotateX`/`rotateY`/`rotate` senses and
@@ -15,6 +15,7 @@
 //! ([`gpu`]), and with the `cuda` feature the CUDA backend ([`cuda`]). [`backend`] picks one and falls back to the CPU.
 
 pub mod backend;
+pub mod beam;
 pub mod camera;
 #[cfg(all(feature = "cuda", unix))]
 pub mod cuda;
@@ -225,6 +226,8 @@ pub const DEFAULT_FOCAL: f64 = 1000.0;
 pub enum NodeKind {
     Group,
     Body(physics::Body),
+    Hinge(physics::Hinge),
+    Beam(beam::Beam),
     Mesh {
         mesh: Arc<mesh::Mesh>,
         material: Material,
@@ -263,6 +266,16 @@ pub struct Scene3d {
 }
 
 impl Scene3d {
+    pub(crate) fn beam(&self) -> Option<(usize, &beam::Beam)> {
+        self.nodes
+            .iter()
+            .enumerate()
+            .find_map(|(i, node)| match &node.kind {
+                NodeKind::Beam(beam) => Some((i, beam)),
+                _ => None,
+            })
+    }
+
     /// The camera transform and settings in use.
     pub fn camera(&self) -> (&Transform, &CameraSpec, Option<usize>) {
         match self.camera {
@@ -306,9 +319,7 @@ impl Scene3d {
     /// Whether anything in the scene changes over time.
     pub fn is_animated(&self) -> bool {
         let (camera_transform, camera, _) = self.camera();
-        self.physics
-            .as_ref()
-            .is_some_and(|bake| bake.dynamic_count() > 0)
+        self.physics.as_ref().is_some_and(|bake| bake.ticks() > 0)
             || camera_transform.channels().any(Channel::is_animated)
             || camera.zoom.is_animated()
             || camera.orientation.iter().any(Channel::is_animated)

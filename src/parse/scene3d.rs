@@ -1,5 +1,5 @@
 //! `data-hf-3d` scenes: the host element's options and its `<hf-node>`, `<hf-mesh>`,
-//! `<hf-light>`, `<hf-body>`, and `<hf-camera>` descendants, read into a [`crate::scene3d::Scene3d`].
+//! `<hf-light>`, `<hf-beam>`, `<hf-body>`, `<hf-hinge>`, and `<hf-camera>` descendants.
 //!
 //! The scene's elements are not 2D elements: they take no part in layout or painting and are
 //! consumed here, so the walk does not visit them. Every attribute is checked against the tag's
@@ -11,6 +11,7 @@
 //! last values hold outside the keyed interval. `color` attributes may use `var()` of the host's
 //! custom properties; `data-var-*` bindings are applied to the DOM before this parse.
 
+mod beam;
 mod physics;
 
 use crate::camera::curve::Interp;
@@ -68,6 +69,7 @@ const NODE_CHANNELS: [&str; 10] = [
     "x", "y", "z", "rotateX", "rotateY", "rotate", "scale", "scaleX", "scaleY", "scaleZ",
 ];
 const CAMERA_CHANNELS: [&str; 7] = ["x", "y", "z", "yaw", "pitch", "roll", "zoom"];
+const KINEMATIC_CHANNELS: [&str; 6] = ["x", "y", "z", "rotateX", "rotateY", "rotate"];
 
 /// Whether `node` hosts a 3D scene.
 pub(in crate::parse) fn is_host(node: &NodeRef) -> bool {
@@ -133,6 +135,8 @@ struct Builder<'a> {
     camera: Option<usize>,
     /// Pending camera target node ids.
     target: Option<String>,
+    beam: Option<usize>,
+    beam_occluder: Option<String>,
     ids: HashMap<String, usize>,
     lights: usize,
     directional: usize,
@@ -159,6 +163,14 @@ impl Builder<'_> {
             .node(node, &tag, parent)
             .with_context(|| format!("{label} in data-hf-3d"))?;
         for child in node.children() {
+            if matches!(tag.as_str(), "hf-hinge" | "hf-beam")
+                && (child.as_element().is_some()
+                    || child
+                        .as_text()
+                        .is_some_and(|s| !s.borrow().trim().is_empty()))
+            {
+                bail!("{label} needs to be empty");
+            }
             self.child(&child, Some(index))?;
         }
         Ok(())
@@ -173,10 +185,23 @@ impl Builder<'_> {
                 allowed(node, &[])?;
                 (NodeKind::Group, transform(node, &NODE_CHANNELS)?)
             }
-            "hf-body" => (
-                NodeKind::Body(physics::body(node, parent)?),
-                transform(node, &[])?,
-            ),
+            "hf-body" => {
+                let body = physics::body(node, parent)?;
+                let channels: &[&str] = if body.kind == crate::scene3d::physics::BodyKind::Kinematic {
+                    &KINEMATIC_CHANNELS
+                } else { &[] };
+                (NodeKind::Body(body), transform(node, channels)?)
+            }
+            "hf-hinge" => (NodeKind::Hinge(physics::hinge(node, parent)?), Transform::default()),
+            "hf-beam" => {
+                if self.beam.is_some() {
+                    bail!("a data-hf-3d scene has at most one <hf-beam>");
+                }
+                let (beam, occluder) = beam::parse(node, self.vars)?;
+                self.beam = Some(self.nodes.len());
+                self.beam_occluder = occluder;
+                (NodeKind::Beam(beam), transform(node, &NODE_CHANNELS)?)
+            }
             "hf-mesh" => {
                 allowed(node, &MESH_ATTRIBUTES)?;
                 (mesh(node, &mut self.triangles, self.vars)?, transform(node, &NODE_CHANNELS)?)
@@ -214,7 +239,7 @@ impl Builder<'_> {
                 (NodeKind::Camera(Box::new(spec)), transform)
             }
             other => bail!(
-                "<{other}> cannot be part of a 3D scene; use <hf-node>, <hf-body>, <hf-mesh>, <hf-light>, or <hf-camera>"
+                "<{other}> cannot be part of a 3D scene; use <hf-node>, <hf-body>, <hf-hinge>, <hf-mesh>, <hf-light>, <hf-beam>, or <hf-camera>"
             ),
         };
         let id = attr(node, "id");
@@ -253,6 +278,19 @@ impl Builder<'_> {
             }
         }
         let (transform, spec) = CameraSpec::default_for(DEFAULT_FOCAL);
+        if let (Some(index), Some(id)) = (self.beam, self.beam_occluder) {
+            let occluder = self
+                .ids
+                .get(&id)
+                .copied()
+                .filter(|&i| matches!(self.nodes[i].kind, NodeKind::Mesh { shape: "box", .. }))
+                .ok_or_else(|| {
+                    anyhow!("<hf-beam> occluder #{id} must be a box mesh in the same viewport")
+                })?;
+            if let NodeKind::Beam(beam) = &mut self.nodes[index].kind {
+                beam.occluder = Some(occluder);
+            }
+        }
         Ok(Scene3d {
             nodes: self.nodes,
             camera: self.camera,
@@ -739,6 +777,9 @@ fn keyframes(node: &NodeRef, channels: &[&str]) -> Result<Keyed> {
                         let name = value
                             .as_str()
                             .ok_or_else(|| anyhow!("easing must be a string"))?;
+                        if channels == KINEMATIC_CHANNELS && !matches!(name, "linear" | "smooth") {
+                            bail!("kinematic body easing must be linear or smooth");
+                        }
                         easing = parse_camera_easing(name)?;
                     }
                     name if channels.contains(&name) => {

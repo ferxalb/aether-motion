@@ -270,7 +270,7 @@ fn report(
 ) {
     let elapsed = start.elapsed().as_secs_f64();
     crate::profile::report();
-    backend_note();
+    backend_note(renderer);
     println!(
         "{}",
         ui::line(
@@ -293,11 +293,12 @@ fn report(
 }
 
 /// The note printed when 3D scenes fell back from the GPU to the CPU.
-pub fn backend_note() {
+pub fn backend_note(renderer: Option<&Renderer<'_>>) {
     if crate::scene3d::backend::strict() {
         eprintln!("AETHER_3D_PROOF {}", crate::scene3d::backend::proof());
     }
-    if let (_, Some(reason)) = crate::scene3d::backend::status() {
+    let status = renderer.map_or_else(crate::scene3d::backend::status, Renderer::scene3d_status);
+    if let (_, Some(reason)) = status {
         let style = Style::err();
         eprintln!(
             "{} 3D scenes were drawn on the CPU: {reason}",

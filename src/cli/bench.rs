@@ -52,7 +52,7 @@ fn bench(renderer: &mut Renderer<'_>, opts: &Options, input: &std::path::Path) -
     }
     let elapsed = start.elapsed().as_secs_f64();
     crate::profile::report();
-    backend_note();
+    backend_note(Some(renderer));
     let style = Style::out();
     let (w, h) = renderer.dimensions();
     let drawn = last - first;

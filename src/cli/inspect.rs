@@ -1,12 +1,11 @@
-//! `inspect <file>`: the resolved canvas, frame and segment plan, audio clips, and the elements
-//! visible for part of the timeline, as aligned tables. Like every command that names a file, it
-//! never reads `aether.json`.
+//! `inspect <file>`: the resolved canvas, segment plan, audio, timed elements, and native physics
+//! launch diagnostics as aligned tables. A named file is read as a standalone composition.
 
 use super::args::usage;
 use super::options::{self, Options};
 use super::ui::{self, display_path, Style};
 use crate::encode::segment_count;
-use crate::model::Composition;
+use crate::model::{Composition, Content};
 use crate::parse::parse_file_with;
 use anyhow::Result;
 
@@ -99,6 +98,58 @@ fn inspect(composition: &Composition, opts: &Options, input: &std::path::Path) {
     if !timed.is_empty() {
         println!("\n{}", style.bold("Timed elements"));
         table(style, ["Id", "Tag", "Time", "Track"], &timed);
+    }
+    inspect_physics(composition, style);
+}
+
+fn inspect_physics(composition: &Composition, style: Style) {
+    for element in &composition.elements {
+        let Content::Scene3d(scene) = &element.content else {
+            continue;
+        };
+        let Some(bake) = &scene.physics else { continue };
+        let mut rows = Vec::new();
+        let vector = |[x, y, z]: [f64; 3]| format!("{x:.3}, {y:.3}, {z:.3}");
+        for (index, node) in scene.nodes.iter().enumerate() {
+            let Some(launch) = bake.launch(index) else {
+                continue;
+            };
+            let body = node.id.clone().unwrap_or_else(|| format!("node {index}"));
+            for (label, velocity) in [
+                ("Linear (px/s)", &launch.linear),
+                ("Angular (deg/s)", &launch.angular),
+            ] {
+                rows.push([
+                    body.clone(),
+                    label.into(),
+                    vector(velocity.requested),
+                    vector(velocity.actual),
+                    format!("{:.3}", velocity.limit),
+                    velocity
+                        .first_tick_affected
+                        .map_or_else(|| "–".into(), |tick| tick.to_string()),
+                ]);
+            }
+        }
+        if !rows.is_empty() {
+            let viewport = element.id.as_deref().unwrap_or("(no id)");
+            println!(
+                "\n{}",
+                style.bold(&format!("Physics launch velocities — {viewport}"))
+            );
+            table(
+                style,
+                [
+                    "Body",
+                    "Quantity",
+                    "Requested (x, y, z)",
+                    "Actual at tick 1 (x, y, z)",
+                    "Speed cap",
+                    "First cap tick",
+                ],
+                &rows,
+            );
+        }
     }
 }
 

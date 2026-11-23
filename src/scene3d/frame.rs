@@ -132,6 +132,15 @@ impl Scene3d {
     ) -> f64 {
         let mut travel: f64 = 0.0;
         for (i, node) in self.nodes.iter().enumerate() {
+            if let NodeKind::Beam(beam) = &node.kind {
+                for (a, b) in beam.endpoints(wa[i]).into_iter().zip(beam.endpoints(wb[i])) {
+                    if let (Some(pa), Some(pb)) = (va.project_css(a, size), vb.project_css(b, size))
+                    {
+                        travel = travel.max((pa[0] - pb[0]).hypot(pa[1] - pb[1]));
+                    }
+                }
+                continue;
+            }
             let NodeKind::Mesh { mesh, .. } = &node.kind else {
                 continue;
             };

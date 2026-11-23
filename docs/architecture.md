@@ -23,12 +23,22 @@ Source layout and resource limits of the native renderer. Compositions with `dat
 
 ## Native rigid-body physics
 
-`parse/scene3d/physics.rs` reads the `<hf-body>` authoring contract. After the parser resolves
+`parse/scene3d/physics.rs` reads `<hf-body>` and `<hf-hinge>`. After the parser resolves
 the viewport duration, `scene3d/physics.rs` uses a compile-local Rapier world to produce bounded,
-immutable pose tracks at 120 Hz. The shared `Scene3d` owns the bake, so imported scene instances
+immutable pose tracks at 120 Hz. Its `physics/hinge.rs` resolves both body references and inserts
+revolute joints before stepping. Each kinematic body submits its next authored pose before the
+step. The bake records first-step solver velocities for dynamic bodies and makes them available
+to CLI `inspect` and the agent's check report. The shared `Scene3d` owns the bake, so imported scene instances
 and renderer workers read the same tracks. World transform evaluation supplies the interpolated
 poses to meshes, lights, and camera targets. Frame identity includes the poses, and native 3D
 shutter travel checks intermediate ticks within the exposure to account for reversals at impact.
+
+`parse/scene3d/beam.rs` reads the shaft descriptor and the scene parser resolves its optional
+box mesh reference. `scene3d/beam.rs` evaluates the shaft and its occluder from the same world
+transforms. The CPU tile resolve integrates a bounded cone of illuminated density along each
+camera ray, up to the first solid depth, and tests light-to-sample visibility against the box
+in mesh-local coordinates. The renderer preflights shaft support when it is created so workers
+choose the same backend. The shaft uses the existing sRGB viewport layer at the 2D boundary.
 
 ## External scene compilation
 

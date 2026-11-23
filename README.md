@@ -152,6 +152,7 @@ The [premium promo](examples/premium-promo.html) combines titles, feature cards,
 | Subject tracking and shot presets | [Camera rig](examples/cinematic-camera-rig-6s.html) |
 | 2.5D planes and a perspective camera | [Lantern Valley](examples/depth-lantern-valley.html) |
 | Native low-poly 3D: meshes, lights, a 3D camera | [Lighthouse Isle](examples/lighthouse-isle-3d.html) |
+| Native physics and light shafts: kinematic contact, revolute hinge, and box shadow | [Hinged lamp](examples/hinged-lamp.html) |
 | Parallax, image sequences, and bloom | [The Morning Shift](examples/cinematic-dystopia.html) |
 | Wrapped kinetic typography | [Kinetic text](examples/kinetic-wrap.html) |
 | Word-highlighted captions | [Captions](examples/captions.html) |
@@ -185,7 +186,7 @@ Install the skill collection with `npx skills add ferxalb/aether-motion`, then s
 | --- | --- |
 | `aether-motion` | Creating and editing compositions |
 | `aether-motion-cinematic` | Directing consistent, cinematic scenes, characters, and camera work |
-| `aether-motion-3d` | Building native low-poly 3D shots: meshes, lights, and a 3D camera |
+| `aether-motion-3d` | Building native 3D shots with meshes, cameras, rigid bodies, hinges, and shafts |
 | `aether-motion-cli` | Checking, inspecting, and rendering compositions |
 | `aether-motion-blocks` | Finding and adapting ready-made blocks and themes |
 | `aether-motion-svg` | Creating and placing static SVG artwork |

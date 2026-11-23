@@ -27,6 +27,37 @@ fn normalize(v: [f64; 3]) -> Option<[f64; 3]> {
 }
 
 impl View {
+    /// World ray whose parameter is camera-axis distance from the eye plane.
+    pub(super) fn ray(&self, placement: &Placement, target: [f64; 2]) -> ([f64; 3], [f64; 3]) {
+        let [x, y] = [0, 1]
+            .map(|i| (target[i] - placement.origin[i]) / placement.scale - placement.size[i] * 0.5);
+        let lateral = |i| (x * self.axes[0][i] + y * self.axes[1][i]) / self.zoom;
+        match self.projection.focal(placement.size[1]) {
+            Some(focal) => (
+                self.eye,
+                std::array::from_fn(|i| lateral(i) / focal - self.axes[2][i]),
+            ),
+            None => (
+                std::array::from_fn(|i| self.eye[i] + lateral(i)),
+                self.axes[2].map(|v| -v),
+            ),
+        }
+    }
+
+    /// Camera-axis distance represented by one reversed-depth sample.
+    pub(super) fn distance_at_depth(&self, reversed_depth: f32) -> f64 {
+        if reversed_depth == 0.0 {
+            return self.far;
+        }
+        let z = f64::from(reversed_depth);
+        let (a, b) = self.depth_terms();
+        let distance = match self.projection {
+            Projection::Orthographic => (z - a) / b,
+            _ => a / (z - b),
+        };
+        distance.clamp(self.near, self.far)
+    }
+
     /// The scene's camera at clip time `t`, given the world transforms of the nodes at `t`.
     pub fn of(scene: &Scene3d, world: &[Affine], t: f64) -> Self {
         let (transform, spec, index) = scene.camera();
@@ -242,6 +273,36 @@ mod tests {
         spec.orientation[1] = Channel::constant(10.0);
         let view = View::of(&scene_with(transform, spec), &[], 0.0);
         assert!(view.project_css([0.0, 0.0, 0.0], [100.0, 100.0]).unwrap()[1] > 50.0);
+    }
+
+    #[test]
+    fn sample_ray_and_reversed_depth_reconstruct_the_same_world_point() {
+        let placement = Placement {
+            origin: [-31.25, 15.75],
+            scale: 1.7,
+            size: [440.0, 260.0],
+        };
+        let target = [130.375, 181.625];
+        for projection in [
+            Projection::Orthographic,
+            Projection::FieldOfView { degrees: 53.0 },
+        ] {
+            let (transform, mut spec) = CameraSpec::default_for(1000.0);
+            spec.projection = projection;
+            spec.zoom = Channel::constant(1.4);
+            spec.orientation[0] = Channel::constant(11.0);
+            spec.orientation[2] = Channel::constant(-7.0);
+            let view = View::of(&scene_with(transform, spec), &[], 0.0);
+            let rect = [23.0, 48.0, 395.0, 240.0];
+            let m = ClipMatrix::new(&view, &placement, rect);
+            let (origin, direction) = view.ray(&placement, target);
+            let p = std::array::from_fn(|i| origin[i] + direction[i] * 1413.0);
+            let [x, y, z, w] = m.apply(p);
+            assert!((rect[0] + rect[2] * (x / w + 1.0) * 0.5 - target[0]).abs() < 1e-9);
+            assert!((rect[1] + rect[3] * (1.0 - y / w) * 0.5 - target[1]).abs() < 1e-9);
+            assert!((view.distance_at_depth((z / w) as f32) - 1413.0).abs() < 0.002);
+            assert_eq!(view.distance_at_depth(0.0), view.far);
+        }
     }
 
     #[test]

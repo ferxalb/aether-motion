@@ -244,6 +244,10 @@ impl<'a> Renderer<'a> {
             return Err(anyhow!("scale is too small"));
         }
         allocation::rgba_bytes(width as usize, height as usize, "frame")?;
+        let cpu_only = composition.elements.iter().any(
+            |element| matches!(&element.content, Content::Scene3d(scene) if scene.beam().is_some()),
+        );
+        let scene3d = crate::scene3d::backend::Workspace::new(cpu_only)?;
         let fonts = shared_fonts.map_or_else(
             || {
                 FontStore::new(
@@ -312,7 +316,7 @@ impl<'a> Renderer<'a> {
             plane_pose: None,
             probe_maps: Vec::new(),
             projecting: 0,
-            scene3d: Default::default(),
+            scene3d,
         };
         renderer.spaces = space::SpaceIndex::build(&mut renderer)?;
         Ok(renderer)
@@ -320,6 +324,10 @@ impl<'a> Renderer<'a> {
 
     pub fn dimensions(&self) -> (u32, u32) {
         (self.surface.width, self.surface.height)
+    }
+
+    pub(crate) fn scene3d_status(&self) -> (&'static str, Option<String>) {
+        self.scene3d.status()
     }
 
     pub(crate) fn add_stats(&mut self, rasterized: usize, reused: usize) {

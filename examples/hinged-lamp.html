@@ -1,0 +1,75 @@
+<!doctype html>
+<!-- One continuous test-bay shot. Contact is cued at 0.80 s; split export at 1.00 s. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Hinged lamp</title>
+  <style>
+    #bay { position:absolute; left:0; top:0; width:640px; height:360px; }
+    .caption { position:absolute; left:67px; font-family:sans-serif; color:#e1e9ee; }
+    #heading { top:39px; font-size:19px; font-weight:800; letter-spacing:2px; }
+    #cue { top:64px; font-size:11px; letter-spacing:1.4px; color:#f4b57e; }
+    #rule { position:absolute; left:67px; top:84px; width:32px; height:1px; background:#aa6e4c; }
+  </style>
+</head>
+<body>
+<div data-composition-id="hinged-lamp" data-width="640" data-height="360" data-duration="3"
+     data-hf-vignette="0.28" data-hf-exposure="0.1"
+     style="position:relative; width:640px; height:360px; background:#121d25">
+  <div id="bay" class="clip" data-start="0" data-duration="3" data-track-index="0" data-hf-fade-out="0.36"
+       data-hf-3d data-hf-3d-antialias="2">
+    <hf-camera projection="orthographic" position="0 0 950"></hf-camera>
+    <hf-light type="ambient" color="#97b6ca" intensity="0.65"></hf-light>
+    <hf-light type="directional" color="#e9c5a3" intensity="1.05" direction="-0.5 0.75 -0.6"></hf-light>
+
+    <!-- Back wall, floor edge, and the horizontal striker guide. -->
+    <hf-mesh shape="box" size="660 370 10" position="0 0 -105" color="#273945"></hf-mesh>
+    <hf-mesh shape="box" size="660 49 55" position="0 160 -65" color="#222e36"></hf-mesh>
+    <hf-mesh shape="box" size="660 2 2" position="0 135 -37" color="#435767"></hf-mesh>
+    <hf-mesh shape="box" size="288 10 8" position="-184 -6 -33" color="#17232c"></hf-mesh>
+    <hf-mesh shape="box" size="288 2 8" position="-184 -12 -32" color="#516678"></hf-mesh>
+    <hf-mesh shape="box" size="28 4 2" position="-260 -33 -89" color="#425560"></hf-mesh>
+    <hf-mesh shape="box" size="28 4 2" position="-260 24 -89" color="#425560"></hf-mesh>
+    <hf-mesh shape="box" size="28 2 2" position="235 -75 -89" color="#425560"></hf-mesh>
+    <hf-mesh shape="box" size="28 2 2" position="235 -69 -89" color="#425560"></hf-mesh>
+
+    <!-- The anchored pivot and lamp. The optical axis follows the baked rigid pose. -->
+    <hf-body id="pivot" type="fixed" shape="box" size="100 20 45" position="-27 -119 0">
+      <hf-mesh shape="box" size="102 20 44" color="#253440"></hf-mesh>
+      <hf-mesh shape="cylinder" radius="11" height="50" segments="20" rotation="90 0 0" color="#a77c59"></hf-mesh>
+    </hf-body>
+    <hf-body id="lamp" type="dynamic" shape="box" size="43 118 26" position="-27 -60 0"
+             mass="1.6" friction="0.15" angular-damping="1.5" ccd>
+      <hf-mesh shape="cylinder" radius="4" height="80" position="0 -18 0" color="#9b8f7a"></hf-mesh>
+      <hf-mesh shape="cylinder" radius="16" height="20" segments="20" position="0 26 0" color="#71614f"></hf-mesh>
+      <hf-mesh shape="cone" radius="27" height="30" segments="24" position="0 41 0" color="#bf7951"></hf-mesh>
+      <hf-mesh shape="cylinder" radius="26" height="4" segments="24" position="0 56 0" color="#b37854"></hf-mesh>
+      <hf-mesh shape="cylinder" radius="21" height="4" segments="24" position="0 59 0"
+               color="#ffe2a6" material="unlit"></hf-mesh>
+      <hf-beam id="shaft" position="0 62 0" direction="0 1 -0.16" length="141" radius="56"
+               density="0.034" color="#f9cf88" occluder="#column"></hf-beam>
+    </hf-body>
+    <hf-hinge id="lamp-hinge" body-a="#pivot" body-b="#lamp" anchor-b="0 -59 0"
+              axis="0 0 1" limits="-72 72"></hf-hinge>
+
+    <hf-body id="striker" type="kinematic" shape="sphere" radius="13" position="-208 -12 0"
+             friction="0.15" data-hf-keyframes='[
+       {"at":0,"x":-208},{"at":0.52,"x":-126,"easing":"smooth"},{"at":0.80,"x":-55},
+       {"at":0.96,"x":-34},{"at":1.02,"x":-31,"easing":"smooth"},
+       {"at":1.67,"x":-208,"easing":"smooth"}]'>
+      <hf-mesh shape="sphere" radius="13" detail="2" color="#78a6b9"></hf-mesh>
+      <hf-mesh shape="cylinder" radius="10" height="5" segments="18" rotation="90 0 0"
+               position="0 0 10" color="#acc8ce"></hf-mesh>
+    </hf-body>
+
+    <!-- The same box casts the shaft shadow and takes part in ordinary camera-depth occlusion. -->
+    <hf-mesh id="column" shape="box" size="28 175 37" position="69 52 -7" color="#3e505c"></hf-mesh>
+    <hf-mesh shape="box" size="35 7 40" position="69 136 -7" color="#566571"></hf-mesh>
+    <hf-mesh shape="box" size="30 3 39" position="69 -33 -7" color="#687783"></hf-mesh>
+  </div>
+  <div id="heading" class="clip caption" data-start="0" data-duration="3" data-track-index="1" data-hf-fade-out="0.36">HINGED LAMP</div>
+  <div id="cue" class="clip caption" data-start="0" data-duration="3" data-track-index="1" data-hf-fade-out="0.36">IMPACT AT 0.80 S</div>
+  <div id="rule" class="clip" data-start="0" data-duration="3" data-track-index="1" data-hf-fade-out="0.36"></div>
+</div>
+</body>
+</html>

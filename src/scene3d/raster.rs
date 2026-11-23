@@ -14,6 +14,7 @@
 //! covered share) and handed to a sink. Every value depends only on the frame, the placement, and
 //! the target rectangle, so renders are identical across threads, segments, and CPUs.
 
+use super::beam::{Prepared, Resolve};
 use super::camera::{ClipMatrix, Placement, View};
 use super::frame::Triangle;
 
@@ -148,9 +149,22 @@ pub fn rasterize(
     scratch: &mut Scratch,
     sink: &mut RowSink,
 ) {
+    rasterize_with_beam(view, triangles, placement, region, scratch, None, sink);
+}
+
+pub(super) fn rasterize_with_beam(
+    view: &View,
+    triangles: &[Triangle],
+    placement: &Placement,
+    region: &Region,
+    scratch: &mut Scratch,
+    beam: Option<&Prepared>,
+    sink: &mut RowSink,
+) {
+    let resolve = beam.map(|beam| Resolve::new(beam, view, placement, region));
     let ss = region.antialias as usize;
     setups(view, triangles, placement, region, &mut scratch.setups);
-    if scratch.setups.is_empty() {
+    if scratch.setups.is_empty() && resolve.is_none() {
         return;
     }
     let tile_samples = TILE * ss;
@@ -170,7 +184,7 @@ pub fn rasterize(
                 .filter(|(_, s)| s.bounds[1] < band[1] && s.bounds[3] > band[0])
                 .map(|(i, _)| i as u32),
         );
-        if scratch.band.is_empty() {
+        if scratch.band.is_empty() && resolve.is_none() {
             continue;
         }
         for tx in (0..w).step_by(TILE) {
@@ -185,7 +199,7 @@ pub fn rasterize(
                     let b = setups[i as usize].bounds;
                     b[0] < x_range[1] && b[2] > x_range[0]
                 }));
-            if scratch.tile.is_empty() {
+            if scratch.tile.is_empty() && resolve.is_none() {
                 continue;
             }
             let stride = tw * ss;
@@ -209,6 +223,22 @@ pub fn rasterize(
             for py in 0..th {
                 let mut any = false;
                 for px in 0..tw {
+                    let pixel = [tx + px, ty + py];
+                    if let Some(resolve) = resolve
+                        .as_ref()
+                        .filter(|resolve| resolve.covers_pixel(pixel))
+                    {
+                        let first = py * ss * stride + px * ss;
+                        let rgba = resolve.pixel(
+                            pixel,
+                            stride,
+                            &scratch.depth[first..count],
+                            &scratch.color[first..count],
+                        );
+                        any |= rgba[3] > 0;
+                        scratch.out[px] = rgba;
+                        continue;
+                    }
                     let (mut covered, mut sum) = (0_u32, [0_u32; 3]);
                     for sy in 0..ss {
                         let row = (py * ss + sy) * stride + px * ss;

@@ -485,9 +485,12 @@ pub const COMMANDS: &[Command] = &[
         name: "inspect",
         args: "<file>",
         group: Group::Diagnose,
-        summary: "Print the canvas, timed elements, audio, and segment plan",
+        summary: "Print the timeline, segment plan, audio, and physics launch diagnostics",
         usage: &["aether-motion inspect <file> [options]"],
-        about: &["Lists the resolved size, duration, element count, audio clips, and every element that is visible for only part of the composition. aether.json is not read."],
+        about: &[
+            "Lists the resolved size, duration, element count, audio clips, and every element that is visible for only part of the composition. aether.json is not read.",
+            "For dynamic 3D bodies, shows requested XYZ launch velocities, their values after the first solver tick, and first ticks for over-limit requests.",
+        ],
         sections: &[
             Section {
                 title: "Options",

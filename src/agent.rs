@@ -185,9 +185,8 @@ fn check_videos(c: &Composition) -> Result<Vec<Value>> {
 }
 
 /// Native 3D geometry, lighting, camera, optional physics bake, and rendering backend.
-fn scenes3d_json(c: &Composition) -> Vec<Value> {
+fn scenes3d_json(c: &Composition, (backend, fallback): (&str, Option<String>)) -> Vec<Value> {
     use crate::scene3d::{NodeKind, Projection, Shading};
-    let (backend, fallback) = crate::scene3d::backend::status();
     c.elements
         .iter()
         .filter_map(|e| {
@@ -197,7 +196,9 @@ fn scenes3d_json(c: &Composition) -> Vec<Value> {
             let mut meshes = Vec::new();
             let mut lights = Vec::new();
             let mut bodies = Vec::new();
-            for node in &scene.nodes {
+            let mut hinges = Vec::new();
+            let mut beams = Vec::new();
+            for (index, node) in scene.nodes.iter().enumerate() {
                 match &node.kind {
                     NodeKind::Mesh { mesh, material, shape } => meshes.push(json!({
                         "id": node.id, "shape": shape, "triangles": mesh.triangles.len(),
@@ -209,14 +210,36 @@ fn scenes3d_json(c: &Composition) -> Vec<Value> {
                         "type": match light.kind { crate::scene3d::LightKind::Ambient => "ambient", _ => "directional" },
                         "animated": light.intensity.is_animated(),
                     })),
-                    NodeKind::Body(body) => bodies.push(json!({
-                        "id": node.id,
-                        "type": if body.dynamic { "dynamic" } else { "fixed" },
-                        "shape": match body.collider {
-                            crate::scene3d::physics::Collider::Box(_) => "box",
-                            crate::scene3d::physics::Collider::Sphere(_) => "sphere",
-                        },
-                        "ccd": body.ccd,
+                    NodeKind::Body(body) => {
+                        let mut report = json!({
+                            "id": node.id,
+                            "type": body.kind.name(),
+                            "shape": match body.collider {
+                                crate::scene3d::physics::Collider::Box(_) => "box",
+                                crate::scene3d::physics::Collider::Sphere(_) => "sphere",
+                            },
+                            "ccd": body.ccd,
+                        });
+                        if let Some(launch) = scene.physics.as_ref().and_then(|bake| bake.launch(index)) {
+                            let velocity = |v: &crate::scene3d::physics::LaunchVelocity, unit| json!({
+                                "requested": v.requested, "actual": v.actual, "unit": unit,
+                                "limit": v.limit, "actualTick": 1, "firstTickAffected": v.first_tick_affected,
+                            });
+                            report["launch"] = json!({
+                                "linear": velocity(&launch.linear, "px/s"),
+                                "angular": velocity(&launch.angular, "deg/s"),
+                            });
+                        }
+                        bodies.push(report);
+                    }
+                    NodeKind::Hinge(hinge) => hinges.push(json!({
+                        "id": node.id, "bodies": hinge.bodies, "anchors": hinge.anchors,
+                        "axis": hinge.axis, "limits": hinge.limits,
+                    })),
+                    NodeKind::Beam(beam) => beams.push(json!({
+                        "id": node.id, "direction": beam.direction, "length": beam.length,
+                        "radius": beam.radius, "density": beam.density,
+                        "occluder": beam.occluder.and_then(|index| scene.nodes[index].id.as_deref()),
                     })),
                     _ => {}
                 }
@@ -231,6 +254,7 @@ fn scenes3d_json(c: &Composition) -> Vec<Value> {
                 "id": e.id, "start": e.start, "end": e.end,
                 "antialias": scene.antialias, "nodes": scene.nodes.len(),
                 "triangles": scene.triangle_count(), "meshes": meshes, "lights": lights,
+                "beams": beams,
                 "defaultLights": scene.default_lights,
                 "camera": {"declared": index.is_some(), "projection": projection, "near": camera.near, "far": camera.far, "target": camera.target.is_some()},
                 "animated": scene.is_animated(),
@@ -244,6 +268,7 @@ fn scenes3d_json(c: &Composition) -> Vec<Value> {
                     "ticks": bake.ticks(),
                     "poseBytes": bake.pose_bytes(),
                     "bodies": bodies,
+                    "hinges": hinges,
                 });
             }
             Some(report)
@@ -412,7 +437,7 @@ pub fn check_with(path: &Path, values: &VariableValues) -> Value {
                 json!({"id": e.id, "start": e.start, "end": e.end, "subject": subject, "keys": keys})
             })
             .collect();
-        let scenes3d = scenes3d_json(&c);
+        let scenes3d = scenes3d_json(&c, r.scene3d_status());
         Ok(
             json!({"animations": animations, "cameras": cameras, "scenes3d": scenes3d, "ok": true, "width": c.width, "height": c.height, "duration": c.duration, "elements": c.elements.len(), "clips": clips, "audio": audio, "videos": videos, "effects": effects, "variables": variables_json(&c), "dependencies": c.dependencies.iter().map(|p| p.display().to_string()).collect::<Vec<_>>()}),
         )
