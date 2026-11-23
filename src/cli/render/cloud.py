@@ -36,7 +36,7 @@ else:
 app = modal.App("aether-render", image=image)
 
 
-@app.function(cpu=float(os.environ.get("AETHER_CLOUD_CPU", "8")), timeout=3600, retries=0)
+@app.function(cpu=float(os.environ.get("AETHER_CLOUD_CPU", "8")), timeout=3600)
 def render(args):
     print("container started, rendering", file=sys.stderr, flush=True)
     proc = subprocess.Popen(
