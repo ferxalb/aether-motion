@@ -6,6 +6,8 @@
 *.png
 !examples/*.png
 target
+src/cli/render/__pycache__
+
 
 # Synthetic mixed-alpha image used by the rendering benchmark.
 !benchmarks/mixed-alpha.png

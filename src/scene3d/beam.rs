@@ -224,7 +224,11 @@ impl Prepared {
 
     /// Integrate illuminated density only. The cone has a soft radial edge and fades at its end.
     pub fn opacity(&self, origin: [f64; 3], direction: [f64; 3], depths: [f64; 2]) -> f64 {
-        let Some([start, end]) = interval(origin, direction, self.bounds, depths) else {
+        let Some(depths) = interval(origin, direction, self.bounds, depths) else {
+            return 0.0;
+        };
+        let Some([start, end]) = self.cone_interval(sub(origin, self.light), direction, depths)
+        else {
             return 0.0;
         };
         const STEPS: usize = 20;
@@ -254,6 +258,74 @@ impl Prepared {
         let world_step = step * libm::sqrt(dot(direction, direction));
         -libm::expm1(-self.density * world_step * density)
     }
+
+    /// Restrict the march to the finite cone so narrow, oblique crossings get the full sample count.
+    fn cone_interval(
+        &self,
+        origin: [f64; 3],
+        direction: [f64; 3],
+        [start, end]: [f64; 2],
+    ) -> Option<[f64; 2]> {
+        let axial_rate = dot(direction, self.axis);
+        let axial_origin = dot(origin, self.axis);
+        let [start, end] = slab(axial_origin, axial_rate, [0.0, self.length], [start, end])?;
+        // Center the quadratic at the clipped start to avoid cancellation on distant rays.
+        let origin = point_at(origin, direction, start);
+        let axial_origin = dot(origin, self.axis);
+        let slope = self.radius / self.length;
+        let cos_term = 1.0 + slope * slope;
+        let a = dot(direction, direction) - cos_term * axial_rate * axial_rate;
+        let b = dot(origin, direction) - cos_term * axial_origin * axial_rate;
+        let c = dot(origin, origin) - cos_term * axial_origin * axial_origin;
+        let range = [0.0, end - start];
+        let hit = quadratic_inside(a, b, c, range)?;
+        Some(hit.map(|t| start + t))
+    }
+}
+
+/// Clip an axial interval to a slab, including rays parallel to its planes.
+fn slab(origin: f64, rate: f64, [lo, hi]: [f64; 2], range: [f64; 2]) -> Option<[f64; 2]> {
+    if rate.abs() <= 1e-12 {
+        return (lo..=hi).contains(&origin).then_some(range);
+    }
+    let a = (lo - origin) / rate;
+    let b = (hi - origin) / rate;
+    intersect(range, [a.min(b), a.max(b)])
+}
+
+fn intersect([start, end]: [f64; 2], [lo, hi]: [f64; 2]) -> Option<[f64; 2]> {
+    let start = start.max(lo);
+    let end = end.min(hi);
+    (end > start).then_some([start, end])
+}
+
+/// The part of the axially clipped range with `a*t² + 2*b*t + c <= 0`.
+fn quadratic_inside(a: f64, b: f64, c: f64, range: [f64; 2]) -> Option<[f64; 2]> {
+    if a.abs() <= 1e-12 {
+        if b.abs() <= 1e-12 {
+            return (c <= 0.0).then_some(range);
+        }
+        let root = -c / (2.0 * b);
+        let interval = if b > 0.0 {
+            [f64::NEG_INFINITY, root]
+        } else {
+            [root, f64::INFINITY]
+        };
+        return intersect(range, interval);
+    }
+    let discriminant = b * b - a * c;
+    if discriminant <= 0.0 {
+        return (a < 0.0).then_some(range);
+    }
+    let q = -b - libm::sqrt(discriminant).copysign(b);
+    let [r, s] = [q / a, c / q];
+    let [lo, hi] = [r.min(s), r.max(s)];
+    if a > 0.0 {
+        intersect(range, [lo, hi])
+    } else {
+        // The positive axial slab leaves only one nappe of the double cone.
+        intersect(range, [f64::NEG_INFINITY, lo]).or_else(|| intersect(range, [hi, f64::INFINITY]))
+    }
 }
 
 fn point_at(origin: [f64; 3], direction: [f64; 3], t: f64) -> [f64; 3] {
@@ -264,21 +336,12 @@ fn interval(
     origin: [f64; 3],
     direction: [f64; 3],
     [lo, hi]: [[f64; 3]; 2],
-    [mut start, mut end]: [f64; 2],
+    mut range: [f64; 2],
 ) -> Option<[f64; 2]> {
     for i in 0..3 {
-        if direction[i].abs() <= 1e-12 {
-            if origin[i] < lo[i] || origin[i] > hi[i] {
-                return None;
-            }
-        } else {
-            let a = (lo[i] - origin[i]) / direction[i];
-            let b = (hi[i] - origin[i]) / direction[i];
-            start = start.max(a.min(b));
-            end = end.min(a.max(b));
-        }
+        range = slab(origin[i], direction[i], [lo[i], hi[i]], range)?;
     }
-    (end > start).then_some([start, end])
+    Some(range)
 }
 
 pub(super) fn linear(encoded: u8) -> f64 {
@@ -303,4 +366,46 @@ pub(super) fn encoded(value: f64) -> u8 {
         1.055 * libm::pow(c, 1.0 / 2.4) - 0.055
     };
     (s * 255.0 + 0.5) as u8
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_oblique_ray_is_clipped_to_the_thin_part_of_a_long_shaft() {
+        let beam = Beam {
+            direction: [1.0, 0.0, 0.0],
+            length: 1300.0,
+            radius: 65.0,
+            density: 0.006,
+            color: Color::WHITE,
+            occluder: None,
+        };
+        let shaft = Prepared::new(&beam, Affine::IDENTITY, None).unwrap();
+        let ray = [0.55, 0.0, 1.0];
+        let origin = [300.0, 0.0, 0.0];
+        let slope = beam.radius / beam.length;
+        // z = t and radius = slope * (300 + 0.55t). Solve both cone sides independently.
+        let expected = [
+            -300.0 * slope / (1.0 + ray[0] * slope),
+            300.0 * slope / (1.0 - ray[0] * slope),
+        ];
+        let hit = shaft.cone_interval(origin, ray, [-100.0, 100.0]).unwrap();
+        for (actual, expected) in hit.into_iter().zip(expected) {
+            assert!(
+                (actual - expected).abs() < 1e-9,
+                "got {actual}, expected {expected}"
+            );
+        }
+        assert_eq!(
+            shaft.cone_interval(origin, ray, [-4.0, 6.0]),
+            Some([-4.0, 6.0])
+        );
+        assert!(shaft.cone_interval(origin, ray, [20.0, 100.0]).is_none());
+        assert_eq!(
+            shaft.cone_interval([-30.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1400.0]),
+            Some([30.0, 1330.0]),
+        );
+    }
 }

@@ -1395,7 +1395,7 @@ of every top-level example) and four MP4 exports (`depth-lantern-valley`, `premi
 `transitions`, `layer-motion-blur` at `--scale 0.5 --threads 2`) are byte-identical to the baseline.
 `check` output gains an empty `scenes3d` array.
 
-**The 3D example.** `examples/lighthouse-isle-3d.html` (1920x1080, 300 frames at 30 fps, 2,594
+**Lighthouse Isle before the volumetric shaft.** `examples/lighthouse-isle-3d.html` (1920x1080, 300 frames at 30 fps, 2,594
 triangles, `data-hf-3d-antialias="3"`, bloom on the viewport and the sun, a moving sky gradient):
 
 | `render --size 1080p --priority normal` | Wall / user / peak RSS |

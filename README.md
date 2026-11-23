@@ -151,7 +151,7 @@ The [premium promo](examples/premium-promo.html) combines titles, feature cards,
 | Reusable scenes and a match dissolve | [One Night](examples/one-night/index.html) |
 | Subject tracking and shot presets | [Camera rig](examples/cinematic-camera-rig-6s.html) |
 | 2.5D planes and a perspective camera | [Lantern Valley](examples/depth-lantern-valley.html) |
-| Native low-poly 3D: meshes, lights, a 3D camera | [Lighthouse Isle](examples/lighthouse-isle-3d.html) |
+| Native low-poly 3D with a rotating volumetric lighthouse beam | [Lighthouse Isle](examples/lighthouse-isle-3d.html) |
 | Native physics and light shafts: kinematic contact, revolute hinge, and box shadow | [Hinged lamp](examples/hinged-lamp.html) |
 | Parallax, image sequences, and bloom | [The Morning Shift](examples/cinematic-dystopia.html) |
 | Wrapped kinetic typography | [Kinetic text](examples/kinetic-wrap.html) |
