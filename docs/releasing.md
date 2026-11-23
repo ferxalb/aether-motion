@@ -1,8 +1,14 @@
 # Releasing
 
 A release is a `v<version>` tag that matches `Cargo.toml`. Update `Cargo.toml`,
-`Cargo.lock`, and `CHANGELOG.md`, commit the release changes, and push the branch
-and matching tag. The Release workflow builds and tests the native binaries,
+`Cargo.lock`, and `CHANGELOG.md`, then push the release commit to `main`. To give
+the tag build a warm Rust dependency cache, wait for that commit's Release
+workflow run to finish before pushing the matching tag. GitHub Actions shares
+caches from `main` with tags. Each runner and target has its own cache. Cargo
+recompiles dependencies when the compiler or build inputs require it, and the
+tag can still build on a cache miss.
+
+On the tag, the Release workflow builds and tests each native target in parallel,
 creates the GitHub release, and stages the npm package for maintainer approval.
 
 ## npm package
@@ -13,8 +19,9 @@ Node shim selects the executable using Node's platform and architecture. Each
 install downloads the full archive, which works offline and requires no install
 scripts. Set `AETHER_MOTION_BIN` to use a different native executable.
 
-The macOS job also combines its two builds with `lipo` for the universal download
-on GitHub. npm bundles the individual macOS builds alongside Linux and Windows.
+A separate macOS job combines the Apple Silicon and Intel executables with `lipo`,
+signs the universal binary, and verifies both slices before publication on GitHub.
+npm bundles the individual macOS builds alongside Linux and Windows.
 
 ## Configure npm Trusted Publishing
 

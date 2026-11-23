@@ -2,10 +2,11 @@ name: Release
 
 on:
   push:
+    branches: [main]
     tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -17,6 +18,8 @@ jobs:
             target: x86_64-unknown-linux-gnu
           - os: macos-15
             target: aarch64-apple-darwin
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
           - os: windows-latest
             target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
@@ -26,68 +29,90 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       - name: Check that the tag matches Cargo.toml
+        if: github.ref_type == 'tag'
         shell: bash
         run: |
           version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
           test "v$version" = "${GITHUB_REF_NAME}" || { echo "tag ${GITHUB_REF_NAME} != Cargo.toml v$version"; exit 1; }
+      # Release tags can restore from main, but cannot restore from other tags.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: release-${{ matrix.os }}-${{ matrix.target }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo test --release --locked --target ${{ matrix.target }}
+        if: github.ref_type == 'tag'
       - run: cargo build --release --locked --target ${{ matrix.target }}
-      - name: Build and test the Intel macOS executable
-        if: runner.os == 'macOS'
+      - name: Package
+        if: github.ref_type == 'tag'
         shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
         run: |
-          rustup target add x86_64-apple-darwin
-          if ! arch -x86_64 /usr/bin/true; then
-            sudo softwareupdate --install-rosetta --agree-to-license
+          name="aether-motion-${GITHUB_REF_NAME}-$TARGET"
+          mkdir -p "$name/assets/readme"
+          cp LICENSE README.md CHANGELOG.md assets/fonts/LICENSE-Roboto.txt "$name/"
+          cp assets/readme/hero.jpg assets/readme/motion-preview.gif "$name/assets/readme/"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp "target/$TARGET/release/aether-motion.exe" "$name/"
+            7z a "$name.zip" "$name"
+          else
+            cp "target/$TARGET/release/aether-motion" "$name/"
+            tar czf "$name.tar.gz" "$name"
           fi
-          cargo test --release --locked --target x86_64-apple-darwin
-          cargo build --release --locked --target x86_64-apple-darwin
-      - name: Create the universal macOS executable
-        if: runner.os == 'macOS'
+      - uses: actions/upload-artifact@v4
+        if: github.ref_type == 'tag'
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            aether-motion-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
+            aether-motion-${{ github.ref_name }}-${{ matrix.target }}.zip
+          compression-level: 0
+          if-no-files-found: error
+
+  macos-universal:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: macos-15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: '*-apple-darwin'
+          merge-multiple: true
+      - name: Create and verify the universal macOS executable
         shell: bash
         run: |
-          mkdir -p target/universal-apple-darwin/release
-          binary=target/universal-apple-darwin/release/aether-motion
-          lipo -create \
-            target/aarch64-apple-darwin/release/aether-motion \
-            target/x86_64-apple-darwin/release/aether-motion \
-            -output "$binary"
+          prefix="aether-motion-${GITHUB_REF_NAME}"
+          arm="$prefix-aarch64-apple-darwin"
+          intel="$prefix-x86_64-apple-darwin"
+          universal="$prefix-universal-apple-darwin"
+          tar xzf "$arm.tar.gz"
+          tar xzf "$intel.tar.gz"
+          lipo -create "$arm/aether-motion" "$intel/aether-motion" -output aether-motion
+          mv "$arm" "$universal"
+          binary="$universal/aether-motion"
+          mv aether-motion "$binary"
           lipo "$binary" -verify_arch arm64 x86_64
           codesign --force --sign - "$binary"
           codesign --verify --all-architectures "$binary"
           "$binary" --version
-          arch -x86_64 "$binary" --version
-      - name: Package
-        shell: bash
-        run: |
-          targets=("${{ matrix.target }}")
-          if [ "${{ runner.os }}" = "macOS" ]; then
-            targets+=(x86_64-apple-darwin universal-apple-darwin)
+          if ! arch -x86_64 /usr/bin/true; then
+            sudo softwareupdate --install-rosetta --agree-to-license
           fi
-          for target in "${targets[@]}"; do
-            name="aether-motion-${GITHUB_REF_NAME}-$target"
-            mkdir -p "$name/assets/readme"
-            cp LICENSE README.md CHANGELOG.md assets/fonts/LICENSE-Roboto.txt "$name/"
-            cp assets/readme/hero.jpg assets/readme/motion-preview.gif "$name/assets/readme/"
-            if [ "${{ runner.os }}" = "Windows" ]; then
-              cp "target/$target/release/aether-motion.exe" "$name/"
-              7z a "$name.zip" "$name"
-            else
-              cp "target/$target/release/aether-motion" "$name/"
-              tar czf "$name.tar.gz" "$name"
-            fi
-          done
+          arch -x86_64 "$binary" --version
+          tar czf "$universal.tar.gz" "$universal"
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.target }}
-          path: |
-            aether-motion-${{ github.ref_name }}-*.tar.gz
-            aether-motion-${{ github.ref_name }}-*.zip
+          name: universal-apple-darwin
+          path: aether-motion-${{ github.ref_name }}-universal-apple-darwin.tar.gz
+          compression-level: 0
           if-no-files-found: error
 
   publish:
-    needs: build
+    if: github.ref_type == 'tag'
+    needs: macos-universal
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
