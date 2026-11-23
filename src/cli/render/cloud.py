@@ -17,7 +17,9 @@ import modal
 # inside the container, where the AETHER_CLOUD_* variables do not exist, so reading them there
 # would crash the container on start (and Modal would restart it forever).
 if modal.is_local():
-    base = modal.Image.debian_slim().apt_install("curl")
+    # The release binary is built on ubuntu-latest (glibc 2.43), so the image needs a matching
+    # glibc; Modal's default Debian image is older and cannot load it.
+    base = modal.Image.from_registry("ubuntu:26.04", add_python="3.12").apt_install("curl")
     if os.environ.get("AETHER_CLOUD_BIN"):
         base = base.add_local_file(os.environ["AETHER_CLOUD_BIN"], "/usr/local/bin/aether-motion", copy=True)
     else:
