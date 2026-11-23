@@ -17,6 +17,7 @@
 use super::beam::{Prepared, Resolve};
 use super::camera::{ClipMatrix, Placement, View};
 use super::frame::Triangle;
+use super::look::sample::{self, Planes, ShadedTri, Surfaces, ATTRS};
 
 /// Receives resolved rows: `(x, y, row)` with `row` straight-alpha RGBA starting at target px
 /// `(x, y)`.
@@ -120,6 +121,9 @@ pub(crate) struct Setup {
 #[derive(Default)]
 pub struct Scratch {
     setups: Vec<Setup>,
+    /// Parallel to `setups`: index into `pieces`, or [`FLAT_PIECE`].
+    piece_of: Vec<u32>,
+    pieces: Vec<Piece>,
     band: Vec<u32>,
     tile: Vec<u32>,
     color: Vec<u32>,
@@ -131,6 +135,8 @@ impl Scratch {
     /// Bytes currently held.
     pub fn bytes(&self) -> usize {
         self.setups.capacity() * std::mem::size_of::<Setup>()
+            + self.piece_of.capacity() * 4
+            + self.pieces.capacity() * std::mem::size_of::<Piece>()
             + (self.band.capacity() + self.tile.capacity() + self.color.capacity()) * 4
             + self.depth.capacity() * 4
             + self.out.capacity() * 4
@@ -138,6 +144,16 @@ impl Scratch {
 }
 
 pub(crate) const COVERED: u32 = 0xff00_0000;
+
+/// `piece_of` value of a flat-colored setup.
+const FLAT_PIECE: u32 = u32::MAX;
+
+/// What a shaded setup needs per sample: its triangle and the attribute planes.
+#[derive(Clone, Copy, Debug)]
+struct Piece {
+    tri: u32,
+    planes: Planes,
+}
 
 /// Draws `triangles` seen by `view` into `region`, calling `sink(x, y, row)` with straight-alpha
 /// RGBA for each resolved row segment that holds geometry (`x`, `y` target px).
@@ -149,9 +165,12 @@ pub fn rasterize(
     scratch: &mut Scratch,
     sink: &mut RowSink,
 ) {
-    rasterize_with_beam(view, triangles, placement, region, scratch, None, sink);
+    rasterize_with_beam(
+        view, triangles, placement, region, scratch, None, None, sink,
+    );
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn rasterize_with_beam(
     view: &View,
     triangles: &[Triangle],
@@ -159,11 +178,26 @@ pub(super) fn rasterize_with_beam(
     region: &Region,
     scratch: &mut Scratch,
     beam: Option<&Prepared>,
+    surfaces: Option<&Surfaces>,
     sink: &mut RowSink,
 ) {
     let resolve = beam.map(|beam| Resolve::new(beam, view, placement, region));
     let ss = region.antialias as usize;
-    setups(view, triangles, placement, region, &mut scratch.setups);
+    scratch.pieces.clear();
+    scratch.piece_of.clear();
+    match surfaces {
+        Some(surfaces) => setups_shaded(
+            view,
+            triangles,
+            surfaces.shaded.tris.as_slice(),
+            placement,
+            region,
+            &mut scratch.setups,
+            &mut scratch.piece_of,
+            &mut scratch.pieces,
+        ),
+        None => setups(view, triangles, placement, region, &mut scratch.setups),
+    }
     if scratch.setups.is_empty() && resolve.is_none() {
         return;
     }
@@ -210,8 +244,14 @@ pub(super) fn rasterize_with_beam(
             let origin = [x_range[0], band[0]];
             let limit = [x_range[1], band[0] + (th * ss) as i64];
             for &i in &scratch.tile {
+                let piece = scratch
+                    .piece_of
+                    .get(i as usize)
+                    .and_then(|&p| scratch.pieces.get(p as usize))
+                    .zip(surfaces);
                 fill(
                     &scratch.setups[i as usize],
+                    piece,
                     origin,
                     limit,
                     stride,
@@ -291,19 +331,111 @@ pub(crate) fn setups(
     let size = [(region.width() * ss) as f64, (region.height() * ss) as f64];
     out.clear();
     for triangle in triangles {
-        setup(triangle, &matrix, size, region.samples, out);
+        let polygon: Vec<[f64; 4]> = triangle.corners.iter().map(|&p| matrix.apply(p)).collect();
+        let color = u32::from(triangle.color[0])
+            | u32::from(triangle.color[1]) << 8
+            | u32::from(triangle.color[2]) << 16
+            | COVERED;
+        setup(polygon, color, size, region.samples, out, &mut |_, _| {});
     }
 }
 
-/// Clips one triangle and appends the rasterizable pieces.
-fn setup(
-    triangle: &Triangle,
-    matrix: &ClipMatrix,
+/// [`setups`] for frames with shaded triangles: also fills `piece_of` (parallel to `out`) and
+/// `pieces` with the attribute planes of the setups that are shaded per sample.
+#[allow(clippy::too_many_arguments)]
+fn setups_shaded(
+    view: &View,
+    triangles: &[Triangle],
+    shaded: &[ShadedTri],
+    placement: &Placement,
+    region: &Region,
+    out: &mut Vec<Setup>,
+    piece_of: &mut Vec<u32>,
+    pieces: &mut Vec<Piece>,
+) {
+    let matrix = region.matrix(view, placement);
+    let ss = region.antialias as usize;
+    let size = [(region.width() * ss) as f64, (region.height() * ss) as f64];
+    out.clear();
+    for triangle in triangles {
+        let before = out.len();
+        let tri = shaded.get(triangle.shaded as usize);
+        let Some(tri) = tri else {
+            let polygon: Vec<[f64; 4]> =
+                triangle.corners.iter().map(|&p| matrix.apply(p)).collect();
+            let color = u32::from(triangle.color[0])
+                | u32::from(triangle.color[1]) << 8
+                | u32::from(triangle.color[2]) << 16
+                | COVERED;
+            setup(polygon, color, size, region.samples, out, &mut |_, _| {});
+            piece_of.resize(out.len(), FLAT_PIECE);
+            continue;
+        };
+        let attributes = tri.attributes(&triangle.corners);
+        let polygon: Vec<[f64; 4 + ATTRS]> = triangle
+            .corners
+            .iter()
+            .zip(&attributes)
+            .map(|(&p, attrs)| {
+                let clip = matrix.apply(p);
+                std::array::from_fn(|i| if i < 4 { clip[i] } else { attrs[i - 4] })
+            })
+            .collect();
+        let mut made = Vec::new();
+        setup(
+            polygon,
+            COVERED,
+            size,
+            region.samples,
+            out,
+            &mut |snapped, corners| {
+                made.push(piece_planes(snapped, corners, triangle.shaded));
+            },
+        );
+        debug_assert_eq!(made.len(), out.len() - before);
+        for piece in made {
+            piece_of.push(pieces.len() as u32);
+            pieces.push(piece);
+        }
+    }
+}
+
+/// Planes of `1/w` and `attribute/w` through three snapped corners (`p` in sample units).
+fn piece_planes(p: [[f64; 2]; 3], corners: [&[f64; 4 + ATTRS]; 3], tri: u32) -> Piece {
+    let (e1, e2) = (
+        [p[1][0] - p[0][0], p[1][1] - p[0][1]],
+        [p[2][0] - p[0][0], p[2][1] - p[0][1]],
+    );
+    let det = e1[0] * e2[1] - e1[1] * e2[0];
+    let fit = |f: [f64; 3]| -> [f64; 3] {
+        let (d1, d2) = (f[1] - f[0], f[2] - f[0]);
+        let fx = (d1 * e2[1] - d2 * e1[1]) / det;
+        let fy = (d2 * e1[0] - d1 * e2[0]) / det;
+        [f[0] - fx * p[0][0] - fy * p[0][1], fx, fy]
+    };
+    let inverse = corners.map(|c| if c[3] > 0.0 { 1.0 / c[3] } else { 0.0 });
+    let mut planes: Planes = [[0.0; 3]; ATTRS + 1];
+    planes[0] = fit(inverse);
+    for k in 0..ATTRS {
+        planes[k + 1] = fit(std::array::from_fn(|i| corners[i][4 + k] * inverse[i]));
+    }
+    Piece { tri, planes }
+}
+
+/// Receives the snapped corners (sample units) and the clipped corners of one emitted setup.
+type PieceSink<'a, const N: usize> = dyn FnMut([[f64; 2]; 3], [&[f64; N]; 3]) + 'a;
+
+/// Clips one polygon (clip-space `[x, y, z, w, ...]` per corner, extra values interpolated) and
+/// appends the rasterizable pieces; `piece` sees the snapped corners (in sample units) and the
+/// clipped corners of each one, in the order of its [`Setup`].
+fn setup<const N: usize>(
+    mut polygon: Vec<[f64; N]>,
+    color: u32,
     size: [f64; 2],
     clip: [i64; 4],
     out: &mut Vec<Setup>,
+    piece: &mut PieceSink<N>,
 ) {
-    let mut polygon: Vec<[f64; 4]> = triangle.corners.iter().map(|&p| matrix.apply(p)).collect();
     let planes: [fn([f64; 4]) -> f64; 6] = [
         |c| c[2],
         |c| c[3] - c[2],
@@ -313,7 +445,10 @@ fn setup(
         |c| GUARD * c[3] + c[1],
     ];
     for plane in planes {
-        if polygon.iter().all(|&c| plane(c) >= 0.0) {
+        if polygon
+            .iter()
+            .all(|c| plane([c[0], c[1], c[2], c[3]]) >= 0.0)
+        {
             continue;
         }
         polygon = clip_plane(&polygon, plane);
@@ -321,10 +456,6 @@ fn setup(
             return;
         }
     }
-    let color = u32::from(triangle.color[0])
-        | u32::from(triangle.color[1]) << 8
-        | u32::from(triangle.color[2]) << 16
-        | COVERED;
     let points: Vec<([i64; 2], f64)> = polygon
         .iter()
         .map(|c| {
@@ -341,13 +472,15 @@ fn setup(
         })
         .collect();
     for i in 1..points.len() - 1 {
-        let mut corners = [points[0], points[i], points[i + 1]];
+        let mut order = [0, i, i + 1];
+        let mut corners = order.map(|k| points[k]);
         let area = edge(corners[0].0, corners[1].0, corners[2].0);
         if area == 0 {
             continue;
         }
         if area < 0 {
             corners.swap(1, 2);
+            order.swap(1, 2);
         }
         let v = corners.map(|c| c.0);
         let lo = |axis: usize| v.iter().map(|p| p[axis]).min().unwrap_or(0);
@@ -382,6 +515,7 @@ fn setup(
             depth: [z0, zx, zy],
             color,
         });
+        piece(p, order.map(|k| &polygon[k]));
     }
 }
 
@@ -398,11 +532,12 @@ fn top_left(a: [i64; 2], b: [i64; 2]) -> bool {
 }
 
 /// Sutherland–Hodgman against `plane(c) >= 0` in clip space.
-fn clip_plane(polygon: &[[f64; 4]], plane: fn([f64; 4]) -> f64) -> Vec<[f64; 4]> {
+fn clip_plane<const N: usize>(polygon: &[[f64; N]], plane: fn([f64; 4]) -> f64) -> Vec<[f64; N]> {
     let mut out = Vec::with_capacity(polygon.len() + 1);
+    let head = |c: [f64; N]| [c[0], c[1], c[2], c[3]];
     for (i, &current) in polygon.iter().enumerate() {
         let previous = polygon[(i + polygon.len() - 1) % polygon.len()];
-        let (vc, vp) = (plane(current), plane(previous));
+        let (vc, vp) = (plane(head(current)), plane(head(previous)));
         if (vc >= 0.0) != (vp >= 0.0) {
             let t = vp / (vp - vc);
             out.push(std::array::from_fn(|k| {
@@ -416,9 +551,11 @@ fn clip_plane(polygon: &[[f64; 4]], plane: fn([f64; 4]) -> f64) -> Vec<[f64; 4]>
     out
 }
 
-/// Covers the samples of one tile (`origin` .. `limit`, absolute region samples) with `s`.
+/// Covers the samples of one tile (`origin` .. `limit`, absolute region samples) with `s`, in its
+/// flat color or, with a `shaded` piece, in the color [`sample::shade`] gives each sample.
 fn fill(
     s: &Setup,
+    shaded: Option<(&Piece, &Surfaces)>,
     origin: [i64; 2],
     limit: [i64; 2],
     stride: usize,
@@ -471,8 +608,20 @@ fn fill(
                 let z = (zrow + zx * (x as f64 + 0.5)) as f32;
                 let at = base + i as usize;
                 if z > depth[at] {
-                    depth[at] = z;
-                    color[at] = s.color;
+                    match shaded {
+                        None => {
+                            depth[at] = z;
+                            color[at] = s.color;
+                        }
+                        Some((piece, surfaces)) => {
+                            let tri = &surfaces.shaded.tris[piece.tri as usize];
+                            let (sx, sy) = (x as f64 + 0.5, y as f64 + 0.5);
+                            if let Some(rgb) = sample::shade(surfaces, tri, &piece.planes, sx, sy) {
+                                depth[at] = z;
+                                color[at] = rgb | COVERED;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -526,14 +675,8 @@ mod tests {
             [-half, half, z],
         ];
         [
-            Triangle {
-                corners: [c[0], c[1], c[2]],
-                color,
-            },
-            Triangle {
-                corners: [c[0], c[2], c[3]],
-                color,
-            },
+            Triangle::flat([c[0], c[1], c[2]], color),
+            Triangle::flat([c[0], c[2], c[3]], color),
         ]
     }
 
@@ -559,10 +702,10 @@ mod tests {
 
     #[test]
     fn supersampling_antialiases_edges() {
-        let tri = [Triangle {
-            corners: [[-40.0, -40.0, 0.0], [40.0, -40.0, 0.0], [40.0, 33.0, 0.0]],
-            color: [255, 255, 255],
-        }];
+        let tri = [Triangle::flat(
+            [[-40.0, -40.0, 0.0], [40.0, -40.0, 0.0], [40.0, 33.0, 0.0]],
+            [255, 255, 255],
+        )];
         let image = draw(&tri, 100, 4);
         let partial = image.iter().filter(|p| p[3] > 0 && p[3] < 255).count();
         assert!(partial > 50, "{partial} partially covered pixels");
@@ -571,25 +714,25 @@ mod tests {
     #[test]
     fn geometry_behind_the_camera_is_clipped() {
         // A floor running from the far distance past the eye.
-        let floor = Triangle {
-            corners: [
+        let floor = Triangle::flat(
+            [
                 [-500.0, 50.0, -2000.0],
                 [500.0, 50.0, -2000.0],
                 [0.0, 50.0, 3000.0],
             ],
-            color: [9, 9, 9],
-        };
+            [9, 9, 9],
+        );
         let image = draw(&[floor], 100, 1);
         assert!(image.iter().any(|p| p[3] == 255));
         // Entirely behind the eye: nothing.
-        let behind = Triangle {
-            corners: [
+        let behind = Triangle::flat(
+            [
                 [-50.0, 0.0, 1500.0],
                 [50.0, 0.0, 1500.0],
                 [0.0, 50.0, 1500.0],
             ],
-            color: [9, 9, 9],
-        };
+            [9, 9, 9],
+        );
         assert!(draw(&[behind], 100, 1).iter().all(|p| p[3] == 0));
     }
 
@@ -662,7 +805,15 @@ mod tests {
                 &mut expected.0,
                 &mut expected.1,
             );
-            fill(&setup, origin, limit, stride, &mut actual.0, &mut actual.1);
+            fill(
+                &setup,
+                None,
+                origin,
+                limit,
+                stride,
+                &mut actual.0,
+                &mut actual.1,
+            );
             assert_eq!(expected, actual, "{v:?}");
         }
     }

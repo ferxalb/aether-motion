@@ -245,7 +245,7 @@ impl<'a> Renderer<'a> {
         }
         allocation::rgba_bytes(width as usize, height as usize, "frame")?;
         let cpu_only = composition.elements.iter().any(
-            |element| matches!(&element.content, Content::Scene3d(scene) if scene.beam().is_some()),
+            |element| matches!(&element.content, Content::Scene3d(scene) if scene.needs_cpu()),
         );
         let scene3d = crate::scene3d::backend::Workspace::new(cpu_only)?;
         let fonts = shared_fonts.map_or_else(

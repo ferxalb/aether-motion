@@ -5,6 +5,8 @@
 //! 2.5D spaces) and triangles that index them. The front of a triangle `(a, b, c)` is the side its
 //! right-handed normal `(b - a) x (c - a)` points to (with y down, that is clockwise winding as
 //! seen on screen). Every primitive is centered on its bounding box and faces outward; "up" is -y.
+//! Every primitive also carries texture coordinates (`uvs`, one per vertex, `v` growing down the
+//! image) and can derive smooth vertex normals ([`Mesh::smooth_normals`]) for per-sample shading.
 //! Generation is pure `f64` arithmetic rounded once to `f32`, so meshes are identical everywhere.
 
 use anyhow::{bail, Result};
@@ -23,6 +25,10 @@ pub const DETAIL: std::ops::RangeInclusive<u32> = 0..=4;
 pub struct Mesh {
     pub positions: Vec<[f32; 3]>,
     pub triangles: Vec<[u32; 3]>,
+    /// Texture coordinates per vertex (empty when the mesh has none).
+    pub uvs: Vec<[f32; 2]>,
+    /// Unit vertex normals for smooth shading (empty until [`Mesh::smooth_normals`] runs).
+    pub normals: Vec<[f32; 3]>,
 }
 
 /// A procedural primitive and its dimensions (px).
@@ -74,6 +80,7 @@ impl Primitive {
         match *self {
             Self::Plane { width, depth } => {
                 let (x, z) = (width / 2.0, depth / 2.0);
+                b.map = UvMap::Plane { width, depth };
                 b.face(
                     &[[-x, 0.0, -z], [x, 0.0, -z], [x, 0.0, z], [-x, 0.0, z]],
                     [0.0, -1.0, 0.0],
@@ -81,6 +88,7 @@ impl Primitive {
             }
             Self::Box { size } => {
                 let [x, y, z] = size.map(|v| v / 2.0);
+                b.map = UvMap::Planar { size };
                 let c = |i: usize| {
                     [
                         if i & 1 == 0 { -x } else { x },
@@ -101,6 +109,7 @@ impl Primitive {
             }
             Self::Pyramid { size } => {
                 let [x, y, z] = size.map(|v| v / 2.0);
+                b.map = UvMap::Planar { size };
                 let base = [[-x, y, -z], [x, y, -z], [x, y, z], [-x, y, z]];
                 let apex = [0.0, -y, 0.0];
                 b.convex(&base);
@@ -115,7 +124,11 @@ impl Primitive {
             } => {
                 let ring = ring(radius, height / 2.0, segments);
                 let apex = [0.0, -height / 2.0, 0.0];
+                b.map = UvMap::Planar {
+                    size: [2.0 * radius, height, 2.0 * radius],
+                };
                 b.convex(&ring);
+                b.map = UvMap::Cylinder { height };
                 for i in 0..ring.len() {
                     b.convex(&[ring[i], ring[(i + 1) % ring.len()], apex]);
                 }
@@ -127,8 +140,12 @@ impl Primitive {
             } => {
                 let bottom = ring(radius, height / 2.0, segments);
                 let top = ring(radius, -height / 2.0, segments);
+                b.map = UvMap::Planar {
+                    size: [2.0 * radius, height, 2.0 * radius],
+                };
                 b.convex(&bottom);
                 b.convex(&top);
+                b.map = UvMap::Cylinder { height };
                 for i in 0..bottom.len() {
                     let j = (i + 1) % bottom.len();
                     b.convex(&[bottom[i], bottom[j], top[j], top[i]]);
@@ -136,6 +153,7 @@ impl Primitive {
             }
             Self::Sphere { radius, detail } => {
                 let (points, faces) = icosphere(detail);
+                b.map = UvMap::Sphere;
                 for [i, j, k] in faces {
                     let p = |n: usize| points[n].map(|v| v * radius);
                     b.convex(&[p(i), p(j), p(k)]);
@@ -249,6 +267,105 @@ pub(crate) fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
 #[derive(Default)]
 struct Builder {
     mesh: Mesh,
+    map: UvMap,
+}
+
+/// How the faces being added get texture coordinates.
+#[derive(Clone, Copy, Default)]
+enum UvMap {
+    #[default]
+    None,
+    /// A flat rectangle in the x-z plane, seen from above.
+    Plane { width: f64, depth: f64 },
+    /// Projection along the face's dominant axis, as on the faces of a box of `size`.
+    Planar { size: [f64; 3] },
+    /// Angle around the y axis for `u` and height for `v` (the side of a cylinder or cone).
+    Cylinder { height: f64 },
+    /// Longitude and latitude around the origin, north (-y) at the top of the image.
+    Sphere,
+}
+
+impl UvMap {
+    /// Texture coordinates of the corners of one face whose front looks along `normal`.
+    fn uvs(self, points: &[[f64; 3]], normal: [f64; 3]) -> Vec<[f32; 2]> {
+        let around = |p: &[f64; 3]| 0.5 - p[2].atan2(p[0]) / std::f64::consts::TAU;
+        let uv: Vec<[f64; 2]> = match self {
+            Self::None => return Vec::new(),
+            Self::Plane { width, depth } => points
+                .iter()
+                .map(|p| [p[0] / width + 0.5, p[2] / depth + 0.5])
+                .collect(),
+            Self::Planar { size } => {
+                let a = normal.map(f64::abs);
+                points
+                    .iter()
+                    .map(|p| {
+                        if a[2] >= a[0] && a[2] >= a[1] {
+                            let flip = if normal[2] >= 0.0 { 1.0 } else { -1.0 };
+                            [flip * p[0] / size[0] + 0.5, p[1] / size[1] + 0.5]
+                        } else if a[0] >= a[1] {
+                            let flip = if normal[0] >= 0.0 { -1.0 } else { 1.0 };
+                            [flip * p[2] / size[2] + 0.5, p[1] / size[1] + 0.5]
+                        } else {
+                            let flip = if normal[1] <= 0.0 { 1.0 } else { -1.0 };
+                            [p[0] / size[0] + 0.5, flip * p[2] / size[2] + 0.5]
+                        }
+                    })
+                    .collect()
+            }
+            Self::Cylinder { height } => {
+                let mut uv: Vec<[f64; 2]> = points
+                    .iter()
+                    .map(|p| [around(p), p[1] / height + 0.5])
+                    .collect();
+                unwrap_seam(&mut uv, points);
+                uv
+            }
+            Self::Sphere => {
+                let mut uv: Vec<[f64; 2]> = points
+                    .iter()
+                    .map(|p| {
+                        let r = (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt().max(1e-12);
+                        [
+                            around(p),
+                            (-p[1] / r).clamp(-1.0, 1.0).acos() / std::f64::consts::PI,
+                        ]
+                    })
+                    .collect();
+                unwrap_seam(&mut uv, points);
+                uv
+            }
+        };
+        uv.iter().map(|c| c.map(|v| v as f32)).collect()
+    }
+}
+
+/// Keeps `u` continuous across a face that straddles the 0/1 seam, and gives a vertex on the
+/// axis (whose angle is undefined) the mean `u` of the others.
+fn unwrap_seam(uv: &mut [[f64; 2]], points: &[[f64; 3]]) {
+    let on_axis = |p: &[f64; 3]| p[0] * p[0] + p[2] * p[2] < 1e-12;
+    let off: Vec<usize> = (0..uv.len()).filter(|&i| !on_axis(&points[i])).collect();
+    if off.is_empty() {
+        return;
+    }
+    let (lo, hi) = off
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &i| {
+            (lo.min(uv[i][0]), hi.max(uv[i][0]))
+        });
+    if hi - lo > 0.5 {
+        for &i in &off {
+            if uv[i][0] < 0.5 {
+                uv[i][0] += 1.0;
+            }
+        }
+    }
+    let mean = off.iter().map(|&i| uv[i][0]).sum::<f64>() / off.len() as f64;
+    for i in 0..uv.len() {
+        if on_axis(&points[i]) {
+            uv[i][0] = mean;
+        }
+    }
 }
 
 impl Builder {
@@ -269,6 +386,8 @@ impl Builder {
         self.mesh
             .positions
             .extend(points.iter().map(|p| p.map(|v| v as f32)));
+        let front = if flip { normal.map(|v| -v) } else { normal };
+        self.mesh.uvs.extend(self.map.uvs(points, front));
         for i in 1..points.len() as u32 - 1 {
             let (b, c) = if flip { (i + 1, i) } else { (i, i + 1) };
             self.mesh.triangles.push([base, base + b, base + c]);
@@ -306,7 +425,57 @@ impl Mesh {
         Ok(Self {
             positions,
             triangles,
+            ..Self::default()
         })
+    }
+
+    /// Sets the texture coordinates (one `[u, v]` per vertex).
+    pub fn with_uvs(mut self, uvs: Vec<[f32; 2]>) -> Result<Self> {
+        if uvs.len() != self.positions.len() {
+            bail!(
+                "uvs lists {} coordinates for {} vertices; give one \"u v\" per vertex",
+                uvs.len(),
+                self.positions.len()
+            );
+        }
+        if let Some(uv) = uvs
+            .iter()
+            .find(|uv| uv.iter().any(|v| !v.is_finite() || v.abs() > 1e6))
+        {
+            bail!("uv {uv:?} must be finite and within 1000000");
+        }
+        self.uvs = uvs;
+        Ok(self)
+    }
+
+    /// Fills `normals` with area-weighted vertex normals, welding vertices that share a position
+    /// so a curved surface shades smoothly across its faces.
+    pub fn smooth_normals(&mut self) {
+        let mut sums: std::collections::BTreeMap<[u32; 3], [f64; 3]> = Default::default();
+        let key = |p: [f32; 3]| p.map(f32::to_bits);
+        for t in &self.triangles {
+            let p = t.map(|i| self.positions[i as usize].map(f64::from));
+            let n = cross(sub(p[1], p[0]), sub(p[2], p[0]));
+            for &i in t {
+                let sum = sums.entry(key(self.positions[i as usize])).or_default();
+                for (s, v) in sum.iter_mut().zip(n) {
+                    *s += v;
+                }
+            }
+        }
+        self.normals = self
+            .positions
+            .iter()
+            .map(|&p| {
+                let n = sums.get(&key(p)).copied().unwrap_or([0.0, 0.0, 1.0]);
+                let length = dot(n, n).sqrt();
+                if length > 1e-12 {
+                    n.map(|v| (v / length) as f32)
+                } else {
+                    [0.0, 0.0, 1.0]
+                }
+            })
+            .collect();
     }
 
     /// Local bounding box `[min, max]`.
@@ -406,6 +575,80 @@ mod tests {
         for t in &mesh.triangles {
             let p = t.map(|i| mesh.positions[i as usize].map(f64::from));
             assert!(cross(sub(p[1], p[0]), sub(p[2], p[0]))[1] < 0.0);
+        }
+    }
+
+    #[test]
+    fn every_primitive_has_one_uv_per_vertex_inside_the_image() {
+        let primitives = [
+            Primitive::Plane {
+                width: 4.0,
+                depth: 2.0,
+            },
+            Primitive::Box {
+                size: [2.0, 4.0, 6.0],
+            },
+            Primitive::Pyramid {
+                size: [2.0, 2.0, 2.0],
+            },
+            Primitive::Cone {
+                radius: 1.0,
+                height: 2.0,
+                segments: 8,
+            },
+            Primitive::Cylinder {
+                radius: 1.0,
+                height: 2.0,
+                segments: 8,
+            },
+            Primitive::Sphere {
+                radius: 3.0,
+                detail: 2,
+            },
+        ];
+        for primitive in primitives {
+            let mesh = primitive.mesh();
+            assert_eq!(mesh.uvs.len(), mesh.positions.len(), "{}", primitive.name());
+            for uv in &mesh.uvs {
+                assert!(
+                    uv[0] >= -1e-6 && uv[0] <= 2.0 && uv[1] >= -1e-6 && uv[1] <= 1.0 + 1e-6,
+                    "{} uv {uv:?}",
+                    primitive.name()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_boxs_front_face_reads_left_to_right_and_top_to_bottom() {
+        let mesh = Primitive::Box { size: [2.0; 3] }.mesh();
+        let mut checked = 0;
+        for t in &mesh.triangles {
+            if t.iter().all(|&i| mesh.positions[i as usize][2] == 1.0) {
+                for &i in t {
+                    let (p, uv) = (mesh.positions[i as usize], mesh.uvs[i as usize]);
+                    // u follows x and v follows y, which points down the image.
+                    assert!((uv[0] - (p[0] / 2.0 + 0.5)).abs() < 1e-6, "{p:?} {uv:?}");
+                    assert!((uv[1] - (p[1] / 2.0 + 0.5)).abs() < 1e-6, "{p:?} {uv:?}");
+                    checked += 1;
+                }
+            }
+        }
+        assert_eq!(checked, 6);
+    }
+
+    #[test]
+    fn smooth_normals_of_a_sphere_point_outward() {
+        let mut mesh = Primitive::Sphere {
+            radius: 10.0,
+            detail: 2,
+        }
+        .mesh();
+        mesh.smooth_normals();
+        for (p, n) in mesh.positions.iter().zip(&mesh.normals) {
+            let radial = normalize(p.map(f64::from));
+            let d = dot(radial, n.map(f64::from));
+            assert!(d > 0.999, "{p:?} {n:?}");
         }
     }
 

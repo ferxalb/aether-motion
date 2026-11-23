@@ -173,6 +173,7 @@ pub(super) fn asset_dependencies(elements: &[Element], audio: &[AudioClip]) -> V
         match &element.content {
             Content::Image(path) => files.push(path.clone()),
             Content::Video(video) => files.push(video.path.clone()),
+            Content::Scene3d(scene) => files.extend(scene.texture_paths()),
             Content::Sequence(sequence) => {
                 files.extend(sequence.files.iter().cloned());
                 if let Some(folder) = sequence.files.first().and_then(|f| f.parent()) {

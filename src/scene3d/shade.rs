@@ -173,54 +173,116 @@ impl Lighting {
             Shading::Unlit => [material.color.r, material.color.g, material.color.b],
             Shading::Lambert => {
                 let origin = std::array::from_fn(|i| at[i] + normal[i] * SHADOW_BIAS);
-                let mut lit = self.ambient;
-                let mut gloss = [0.0; 3];
-                let mut add = |toward: [f64; 3], color: [f64; 3], strength: f64| {
-                    let amount = dot(normal, toward);
-                    if amount <= 0.0 || strength <= 0.0 {
-                        return;
-                    }
-                    for (l, c) in lit.iter_mut().zip(color) {
-                        *l += c * amount * strength;
-                    }
-                    if material.specular > 0.0 {
-                        let sum = [0, 1, 2].map(|i| toward[i] + view[i]);
-                        let length = dot(sum, sum).sqrt();
-                        if length > 1e-12 {
-                            let h = dot(normal, sum.map(|v| v / length)).max(0.0);
-                            let k = material.specular * h.powf(material.shininess) * strength;
-                            for (g, c) in gloss.iter_mut().zip(color) {
-                                *g += c * k;
-                            }
-                        }
-                    }
-                };
-                for (i, (direction, color)) in self.directional.iter().enumerate() {
-                    let toward = direction.map(|v| -v);
-                    let shadowed = self.directional_shadows[i]
-                        && dot(normal, toward) > 0.0
-                        && blocked(casters, origin, toward, f64::INFINITY);
-                    add(toward, *color, if shadowed { 0.0 } else { 1.0 });
-                }
-                for point in &self.points {
-                    let delta = sub(point.position, at);
-                    let distance = dot(delta, delta).sqrt();
-                    if distance <= 1e-9 || distance >= point.range {
-                        continue;
-                    }
-                    let toward = delta.map(|v| v / distance);
-                    let shadowed = point.shadows
-                        && dot(normal, toward) > 0.0
-                        && blocked(casters, origin, toward, distance);
-                    let strength = if shadowed {
-                        0.0
-                    } else {
-                        point.attenuation(distance)
-                    };
-                    add(toward, point.color, strength);
-                }
+                let (lit, gloss) = self.terms(
+                    material.specular,
+                    material.shininess,
+                    normal,
+                    at,
+                    view,
+                    &mut |_, toward, limit| blocked(casters, origin, toward, limit),
+                );
                 std::array::from_fn(|i| to_srgb(base[i] * lit[i] + gloss[i]))
             }
+        }
+    }
+
+    /// The diffuse light `(lit, gloss)` arriving at a surface point with unit `normal`, seen along
+    /// unit `view`. `shadowed(source, toward, limit)` says whether a shadow-casting light is
+    /// blocked; it is asked only for lights that face the surface.
+    pub fn terms(
+        &self,
+        specular: f64,
+        shininess: f64,
+        normal: [f64; 3],
+        at: [f64; 3],
+        view: [f64; 3],
+        shadowed: &mut dyn FnMut(Source, [f64; 3], f64) -> bool,
+    ) -> ([f64; 3], [f64; 3]) {
+        let mut lit = self.ambient;
+        let mut gloss = [0.0; 3];
+        let mut add = |toward: [f64; 3], color: [f64; 3], strength: f64| {
+            let amount = dot(normal, toward);
+            if amount <= 0.0 || strength <= 0.0 {
+                return;
+            }
+            for (l, c) in lit.iter_mut().zip(color) {
+                *l += c * amount * strength;
+            }
+            if specular > 0.0 {
+                let sum = [0, 1, 2].map(|i| toward[i] + view[i]);
+                let length = dot(sum, sum).sqrt();
+                if length > 1e-12 {
+                    let h = dot(normal, sum.map(|v| v / length)).max(0.0);
+                    let k = specular * h.powf(shininess) * strength;
+                    for (g, c) in gloss.iter_mut().zip(color) {
+                        *g += c * k;
+                    }
+                }
+            }
+        };
+        for (i, (direction, color)) in self.directional.iter().enumerate() {
+            let toward = direction.map(|v| -v);
+            let blocked = self.directional_shadows[i]
+                && dot(normal, toward) > 0.0
+                && shadowed(Source::Directional(i), toward, f64::INFINITY);
+            add(toward, *color, if blocked { 0.0 } else { 1.0 });
+        }
+        for (i, point) in self.points.iter().enumerate() {
+            let delta = sub(point.position, at);
+            let distance = dot(delta, delta).sqrt();
+            if distance <= 1e-9 || distance >= point.range {
+                continue;
+            }
+            let toward = delta.map(|v| v / distance);
+            let blocked = point.shadows
+                && dot(normal, toward) > 0.0
+                && shadowed(Source::Point(i), toward, distance);
+            let strength = if blocked {
+                0.0
+            } else {
+                point.attenuation(distance)
+            };
+            add(toward, point.color, strength);
+        }
+        (lit, gloss)
+    }
+
+    /// Bit `i` is set when directional light `i` is blocked at this face, and bit `8 + j` when
+    /// point light `j` is: the per-face shadow decisions that per-sample shading reuses.
+    pub fn shadow_mask(&self, normal: [f64; 3], at: [f64; 3], casters: &[Caster]) -> u32 {
+        let origin = std::array::from_fn(|i| at[i] + normal[i] * SHADOW_BIAS);
+        let mut mask = 0;
+        self.terms(
+            0.0,
+            1.0,
+            normal,
+            at,
+            normal,
+            &mut |source, toward, limit| {
+                let hit = blocked(casters, origin, toward, limit);
+                if hit {
+                    mask |= source.bit();
+                }
+                hit
+            },
+        );
+        mask
+    }
+}
+
+/// A light that can be asked whether it is blocked.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Source {
+    Directional(usize),
+    Point(usize),
+}
+
+impl Source {
+    /// The bit of [`Lighting::shadow_mask`] that belongs to this light.
+    pub fn bit(self) -> u32 {
+        match self {
+            Self::Directional(i) => 1 << i,
+            Self::Point(i) => 1 << (8 + i),
         }
     }
 }
@@ -261,6 +323,7 @@ mod tests {
             cull: Cull::Back,
             specular: 0.0,
             shininess: 32.0,
+            look: None,
         };
         // Facing the light head on gives the base color; edge on gives black.
         assert_eq!(
@@ -298,6 +361,7 @@ mod tests {
             cull: Cull::Back,
             specular: 0.0,
             shininess: 32.0,
+            look: None,
         };
         let shade = |z: f64, casters: &[Caster]| {
             lighting.shade(

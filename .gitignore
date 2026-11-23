@@ -23,3 +23,6 @@ aether-motion-api
 
 *.md
 !docs/native-physics-and-volumetrics.md
+
+# Procedural textures of examples/textured-shaded-3d.html.
+!examples/assets/textures/*.png

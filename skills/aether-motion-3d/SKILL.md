@@ -1,6 +1,6 @@
 ---
 name: aether-motion-3d
-description: Build native low-poly 3D shots in AETHER Motion with data-hf-3d and composite them with 2D layers. Use for geometry, camera motion, rigid-body collisions, hinges, and bounded light shafts.
+description: Build native low-poly 3D shots in AETHER Motion with data-hf-3d and composite them with 2D layers. Use for geometry, textures and named shaders, camera motion, rigid-body collisions, hinges, and bounded light shafts.
 ---
 
 # Native 3D scenes in AETHER Motion
@@ -9,7 +9,7 @@ Use this skill for `data-hf-3d` viewports. The authoritative contract is the `da
 
 ## Choose 3D, 2.5D, or 2D
 
-- **`data-hf-3d`**: solid objects seen from changing angles (orbits, cranes, turntables), intersecting geometry, and lighting that follows form. The scene is flat-shaded low-poly by design.
+- **`data-hf-3d`**: solid objects seen from changing angles (orbits, cranes, turntables), intersecting geometry, and lighting that follows form. Plain meshes are flat-shaded low-poly by design; add textures and shaders where a surface needs detail.
 - **`data-hf-space`**: illustrated plates, photos, text, or SVG placed in depth. Prefer it when the artwork is 2D.
 - Combine them: a 3D viewport is an ordinary element, so it can sit between 2D sky and title layers, inside a 2D camera, or as a plane of a 2.5D space.
 
@@ -21,6 +21,14 @@ Use this skill for `data-hf-3d` viewports. The authoritative contract is the `da
 4. Meshes are `plane`, `box`, `pyramid`, `cone`, `cylinder`, `sphere` (icosphere `detail` 0 to 4), or `custom` (`vertices` and `indices`, front faces wound so `(b-a)x(c-a)` points outward). Keep the total triangle count modest: the scene limit is 100,000, and cost grows with covered pixels, not triangles.
 5. Light deliberately: one `ambient` (sky color, about 0.4 to 0.6) plus one warm `directional` key (`direction` is the way the light travels) and optionally a cool fill. Match the key to any visible 2D sun or light source. Use `material="unlit"` for emissive-looking parts (lamps, screens, beams) and pair them with `data-hf-bloom` on the viewport (threshold about 0.8) for glow.
 6. Close every `<hf-*>` tag explicitly. Unknown attributes, wrong shapes, and stray text are errors with a `fix`.
+
+## Dress surfaces (textures and shaders)
+
+- Texture a mesh with `texture="file.png"` (local PNG, JPEG, or WebP beside the composition) and set `color="#fff"` so the image is not tinted. Tile with `uv-scale`, add depth with `normal-map` (green points up in the image), and add self-lit parts with `emissive-map`. Use `alpha-cutoff` for cutouts such as leaves or grates.
+- Use `smooth` on round shapes (sphere, cylinder, cone) so they do not look faceted. Custom meshes need `uvs="u v, ..."` per vertex to take a texture.
+- Pick a named shader for stylized or animated surfaces: `toon` (banded light), `rim`, `hologram`, `checker`, `stripes`, `gradient`, `noise`, `water` (pair with `specular`), and `dissolve` (animate the `progress` keyframe channel 0 to 1 for a reveal or burn-away). Tune with `shader-color`, `shader-color-2`, `shader-scale`, `shader-speed`, `shader-strength`, `shader-power`, and `shader-steps`.
+- Keep textures small and few (power-of-two edges up to 2048 are plenty; the limits are 16 files and 4096 px). Looks are shaded per sample on the CPU, so keep `data-hf-3d-antialias` at 2 for full-frame textured surfaces and check the render time of a key frame first. GPU and CUDA requests fall back to the CPU for these scenes.
+- Animated characters (skeletons, glTF, Mixamo clips) are not supported. Build figures from primitives with grouped `<hf-node>` joints and keyframes, or use 2D or 2.5D art. See `examples/textured-shaded-3d.html`.
 
 ## Direct the camera
 
@@ -54,7 +62,7 @@ Use this skill for `data-hf-3d` viewports. The authoritative contract is the `da
 
 ## Do not
 
-Promise textures, PBR, smooth shading, transparency per material, general surface shadows,
-point or spot surface lights, global fog, glTF or other model files, skeletal animation,
-joint motors, deformable physics, or 3D text. Refer to the native 3D contract when choosing an
+Promise PBR, partial transparency per material (alpha cutouts only), per-pixel shadows, spot lights,
+global fog, user-written shaders, glTF or other model files, skeletal animation (animated
+characters), joint motors, deformable physics, or 3D text. Refer to the native 3D contract when choosing an
 alternative.

@@ -1,0 +1,77 @@
+<!doctype html>
+<!--
+  Textured and shaded 3D: image textures, normal and emissive maps, alpha cutouts, and the named
+  shaders in one native scene (data-hf-3d).
+
+  Shot plan (one continuous orbit, no cuts):
+    0-6 s  A slow orbit around a brick plinth. The brick wall shows an albedo texture with a
+           normal map under a warm point light that shadows the plinth; a toon sphere, a
+           hologram column, an animated water pool, and a dissolving crate sit around it.
+  Textures are local files; every look is a pure function of the clip time.
+-->
+<html>
+<head>
+<style>
+  #world { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+  .title { position: absolute; left: 120px; top: 90px; font-family: sans-serif; font-weight: 800;
+           font-size: 72px; letter-spacing: 4px; color: #f4efe6; text-shadow: 0 4px 24px rgba(0,0,0,.6); }
+</style>
+</head>
+<body>
+<div data-composition-id="textured-shaded-3d" data-width="1920" data-height="1080" data-duration="6"
+     data-hf-vignette="0.3" style="position: relative; width: 1920px; height: 1080px; background: #10131c">
+
+  <div id="world" class="clip" data-start="0" data-duration="6" data-track-index="1"
+       data-hf-3d data-hf-3d-antialias="2">
+    <hf-light type="ambient" color="#4a5578" intensity="0.55"></hf-light>
+    <hf-light type="directional" color="#ffe2bd" intensity="0.8" direction="0.5 0.7 -0.5"></hf-light>
+    <hf-light type="point" color="#ff9a4a" intensity="2.2" range="900" position="-120 -160 260"></hf-light>
+
+    <hf-camera position="0 -240 900" target="0 -90 120"
+      data-hf-keyframes='[{"at":0,"x":-460,"z":880},{"at":6,"x":460,"z":930,"easing":"smooth"}]'></hf-camera>
+
+    <!-- Ground: a stripe shader keyed to UVs, with a faint checker feel. -->
+    <hf-mesh shape="plane" size="3200 2000" color="#222838"
+             shader="checker" shader-color="#2b3246" shader-color-2="#1b2030" shader-scale="32"></hf-mesh>
+
+    <!-- Brick wall: albedo + normal map + emissive rune strip. -->
+    <hf-mesh shape="box" size="720 300 60" position="0 -150 -140"
+             texture="assets/textures/brick.png" normal-map="assets/textures/brick-normal.png"
+             normal-strength="1.2" uv-scale="3 1.25" specular="0.15" shininess="24" color="#ffffff"></hf-mesh>
+    <hf-mesh shape="box" size="360 36 62" position="0 -170 -140"
+             texture="assets/textures/runes.png" emissive-map="assets/textures/runes.png"
+             emissive-intensity="2.2" uv-scale="4 1" material="lambert" color="#201810"></hf-mesh>
+
+    <!-- Toon sphere with a rim glow, drifting up and down. -->
+    <hf-node position="-330 0 80"
+      data-hf-keyframes='[{"at":0,"y":-70},{"at":3,"y":-130,"easing":"smooth"},{"at":6,"y":-70,"easing":"smooth"}]'>
+      <hf-mesh shape="sphere" radius="90" detail="3" smooth color="#e46a3c"
+               shader="toon" shader-steps="4"></hf-mesh>
+    </hf-node>
+
+    <!-- Hologram column. -->
+    <hf-node position="320 -130 80">
+      <hf-mesh shape="cylinder" radius="55" height="260" segments="48" smooth color="#102030"
+               shader="hologram" shader-color="#46d9ff" shader-scale="10" shader-speed="80"
+               data-hf-keyframes='[{"at":0,"rotateY":0},{"at":6,"rotateY":360}]'></hf-mesh>
+    </hf-node>
+
+    <!-- Water pool with animated ripples. -->
+    <hf-mesh shape="plane" size="520 360" position="0 -4 330" specular="0.9" shininess="96"
+             shader="water" shader-scale="2.2" shader-strength="0.22"></hf-mesh>
+
+    <!-- A crate that dissolves into embers and back. -->
+    <hf-mesh shape="box" size="110 110 110" position="-20 -60 330" color="#c9a36a"
+             shader="dissolve" shader-color="#ff7a1a" shader-scale="4" shader-strength="0.12"
+             data-hf-keyframes='[{"at":0,"progress":0},{"at":3,"progress":1,"easing":"smooth"},{"at":6,"progress":0,"easing":"smooth"}]'></hf-mesh>
+
+    <!-- Alpha-cutout leaves on a stem. -->
+    <hf-mesh shape="plane" size="140 140" position="560 -140 60" rotation="90 0 0"
+             texture="assets/textures/leaf.png" alpha-cutoff="0.5" cull="none" material="lambert"
+             color="#ffffff"></hf-mesh>
+  </div>
+
+  <div class="title clip" data-start="0" data-duration="6" data-track-index="2">Surface</div>
+</div>
+</body>
+</html>

@@ -540,3 +540,122 @@ fn rigid_body_ccd_and_bake_reuse_work_in_imported_scenes() {
     );
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+/// Writes a 4x4 two-color PNG (opaque, or with a transparent half) for texture tests.
+fn texture_file(dir: &Path, name: &str, transparent: bool) {
+    let image = image::RgbaImage::from_fn(4, 4, |x, _| {
+        if x < 2 {
+            image::Rgba([220, 40, 30, 255])
+        } else {
+            image::Rgba([30, 80, 220, if transparent { 0 } else { 255 }])
+        }
+    });
+    image.save(dir.join(name)).unwrap();
+}
+
+#[test]
+fn textures_and_shaders_render_deterministically_and_report() {
+    let dir = scratch("scene3d-looks");
+    texture_file(&dir, "tex.png", false);
+    let html = write(
+        &dir,
+        "index.html",
+        &scene(
+            "data-hf-3d-antialias='2'",
+            "<hf-light type='directional' direction='0.4 0.6 -0.5'></hf-light>\
+             <hf-camera position='0 -200 600' target='0 0 0'></hf-camera>\
+             <hf-mesh shape='box' size='120 120 120' texture='tex.png' uv-scroll='0.5 0' \
+              data-hf-keyframes='[{\"at\":0,\"rotateY\":0},{\"at\":2,\"rotateY\":120}]'></hf-mesh>\
+             <hf-mesh shape='sphere' radius='40' detail='2' smooth position='120 0 0' \
+              shader='toon' shader-steps='3'></hf-mesh>\
+             <hf-mesh shape='plane' size='600 600' position='0 60 0' shader='water'></hf-mesh>",
+        ),
+    );
+    let report = check(&html);
+    assert_eq!(report["ok"], true, "{report}");
+    let meshes = &report["scenes3d"][0]["meshes"];
+    assert_eq!(meshes[0]["look"]["texture"]["width"], 4);
+    assert_eq!(meshes[0]["look"]["animated"], true);
+    assert_eq!(meshes[1]["look"]["shader"], "toon");
+    assert_eq!(meshes[1]["look"]["smooth"], true);
+    assert_eq!(meshes[2]["look"]["shader"], "water");
+    assert!(
+        report["dependencies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p.as_str().unwrap().ends_with("tex.png")),
+        "{report}"
+    );
+
+    let composition = parse_file(&html).unwrap();
+    let frame = |renderer: &mut Renderer, n: usize| renderer.render_frame(n, FPS).unwrap().to_vec();
+    let mut a = Renderer::new(&composition, 1.0).unwrap();
+    let mut b = Renderer::new(&composition, 1.0).unwrap();
+    let forward: Vec<_> = (0..4).map(|n| frame(&mut a, n * 5)).collect();
+    let backward: Vec<_> = (0..4).rev().map(|n| frame(&mut b, n * 5)).collect();
+    for (x, y) in forward.iter().zip(backward.iter().rev()) {
+        assert!(x == y, "frames differ with render order");
+    }
+    assert!(forward[0] != forward[1], "the looks animate");
+    let encode = |threads: u32, name: &str| {
+        let mut renderer = Renderer::new(&composition, 1.0).unwrap();
+        let path = dir.join(name);
+        encode_native(&mut renderer, &path, FPS, threads).unwrap();
+        std::fs::read(path).unwrap()
+    };
+    assert_eq!(encode(1, "one.mp4"), encode(4, "four.mp4"));
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn look_attributes_reject_mistakes() {
+    let dir = scratch("scene3d-look-errors");
+    texture_file(&dir, "tex.png", false);
+    texture_file(&dir, "cut.png", true);
+    let cases = [
+        ("<hf-mesh shape='box' texture='missing.png'></hf-mesh>", "missing.png"),
+        ("<hf-mesh shape='box' texture='https://example.com/a.png'></hf-mesh>", "only local texture files"),
+        ("<hf-mesh shape='box' shader='phong'></hf-mesh>", "unknown shader"),
+        ("<hf-mesh shape='box' shader-color='#fff'></hf-mesh>", "needs shader"),
+        ("<hf-mesh shape='box' shader='toon' shader-steps='2.5'></hf-mesh>", "whole number"),
+        ("<hf-mesh shape='box' shader='toon' material='unlit'></hf-mesh>", "bands the lighting"),
+        ("<hf-mesh shape='box' texture='tex.png' uv-scale='0 1'></hf-mesh>", "uv-scale"),
+        ("<hf-mesh shape='box' texture='tex.png' uv-wrap='mirror'></hf-mesh>", "repeat or clamp"),
+        ("<hf-mesh shape='box' normal-strength='1'></hf-mesh>", "needs normal-map"),
+        ("<hf-mesh shape='box' texture='tex.png' alpha-cutoff='0.5'></hf-mesh>", "transparent pixels"),
+        ("<hf-mesh shape='box' shader='toon' shader-progress='0.5'></hf-mesh>", "dissolve"),
+        ("<hf-mesh shape='box' emissive-intensity='2'></hf-mesh>", "needs emissive"),
+        (
+            "<hf-mesh shape='custom' vertices='0 0 0, 10 0 0, 0 10 0' indices='0 1 2' texture='tex.png'></hf-mesh>",
+            "give the custom mesh uvs",
+        ),
+        (
+            "<hf-mesh shape='custom' vertices='0 0 0, 10 0 0, 0 10 0' indices='0 1 2' uvs='0 0, 1 0' texture='tex.png'></hf-mesh>",
+            "uvs lists 2 coordinates for 3 vertices",
+        ),
+        ("<hf-mesh shape='box' uvs='0 0'></hf-mesh>", "does not apply"),
+    ];
+    for (nodes, needle) in cases {
+        let path = write(&dir, "bad.html", &scene("", nodes));
+        let report = check(&path);
+        assert_eq!(report["ok"], false, "{nodes}: {report}");
+        assert!(
+            report.to_string().contains(needle),
+            "{nodes}: expected \"{needle}\" in {report}"
+        );
+    }
+    // A custom mesh with UVs, an alpha cutout, and a dissolve are all accepted.
+    let ok = write(
+        &dir,
+        "ok.html",
+        &scene(
+            "",
+            "<hf-mesh shape='custom' vertices='0 0 0, 10 0 0, 0 10 0' indices='0 1 2' \
+              uvs='0 0, 1 0, 0 1' texture='cut.png' alpha-cutoff='0.5'></hf-mesh>\
+             <hf-mesh shape='box' shader='dissolve' data-hf-keyframes='[{\"at\":0,\"progress\":0},{\"at\":1,\"progress\":1}]'></hf-mesh>",
+        ),
+    );
+    assert_eq!(check(&ok)["ok"], true, "{}", check(&ok));
+    std::fs::remove_dir_all(dir).unwrap();
+}

@@ -10,7 +10,8 @@
 //!
 //! [`Scene3d::frame`] evaluates the scene at one instant into a [`frame::Frame`]: world-space
 //! triangles that survived back-face culling, each with its flat-shaded color ([`shade`]), plus
-//! the camera ([`camera::View`]). That packet is the shared representation every backend draws:
+//! the camera ([`camera::View`]). Meshes with a [`look::Look`] (textures, shaders, smooth shading)
+//! also leave per-triangle data for per-sample shading, which only the CPU rasterizer draws. That packet is the shared representation every backend draws:
 //! the deterministic CPU rasterizer ([`raster`]), with the `gpu` feature the wgpu backend
 //! ([`gpu`]), and with the `cuda` feature the CUDA backend ([`cuda`]). [`backend`] picks one and falls back to the CPU.
 
@@ -22,6 +23,7 @@ pub mod cuda;
 pub mod frame;
 #[cfg(feature = "gpu")]
 pub mod gpu;
+pub mod look;
 pub mod mesh;
 pub mod physics;
 pub mod raster;
@@ -150,6 +152,8 @@ pub struct Material {
     pub specular: f64,
     /// Blinn-Phong exponent: higher is a tighter highlight.
     pub shininess: f64,
+    /// Index into [`Scene3d::looks`] when the mesh has textures, a shader, or smooth shading.
+    pub look: Option<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -275,6 +279,8 @@ pub struct Scene3d {
     pub default_lights: bool,
     /// Immutable rigid-body poses shared across renders and scene instances.
     pub physics: Option<Arc<physics::Bake>>,
+    /// Per-sample looks of meshes, indexed by [`Material::look`].
+    pub looks: Vec<look::Look>,
 }
 
 impl Scene3d {
@@ -286,6 +292,20 @@ impl Scene3d {
                 NodeKind::Beam(beam) => Some((i, beam)),
                 _ => None,
             })
+    }
+
+    /// Whether the scene must be drawn by the CPU rasterizer: it has a light shaft or a mesh
+    /// that is shaded per sample.
+    pub fn needs_cpu(&self) -> bool {
+        self.beam().is_some() || !self.looks.is_empty()
+    }
+
+    /// The texture files the scene reads.
+    pub fn texture_paths(&self) -> impl Iterator<Item = std::path::PathBuf> + '_ {
+        self.looks
+            .iter()
+            .flat_map(look::Look::textures)
+            .filter_map(|texture| texture.path().map(std::path::Path::to_path_buf))
     }
 
     /// The camera transform and settings in use.
@@ -332,6 +352,7 @@ impl Scene3d {
     pub fn is_animated(&self) -> bool {
         let (camera_transform, camera, _) = self.camera();
         self.physics.as_ref().is_some_and(|bake| bake.ticks() > 0)
+            || self.looks.iter().any(look::Look::is_animated)
             || camera_transform.channels().any(Channel::is_animated)
             || camera.zoom.is_animated()
             || camera.orientation.iter().any(Channel::is_animated)
@@ -367,6 +388,12 @@ impl Scene3d {
             .physics
             .as_ref()
             .map_or(hash, |bake| bake.hash_at(t, hash));
+        // Time-driven looks (scrolling UVs, water, hologram) change with `t` itself.
+        let hash = if self.looks.iter().any(look::Look::is_animated) {
+            (hash ^ t.to_bits()).wrapping_mul(0x0000_0100_0000_01b3)
+        } else {
+            hash
+        };
         ((hash >> 32) as u32 ^ hash as u32) | 1
     }
 }

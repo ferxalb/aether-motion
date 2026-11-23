@@ -228,6 +228,7 @@ mod tests {
             antialias: 1,
             default_lights: true,
             physics: None,
+            looks: Vec::new(),
         }
     }
 

@@ -9,6 +9,16 @@ CLI/MCP output may still change between minor releases.
 
 ### Added
 
+- Textures and shaders for native 3D meshes. `<hf-mesh>` takes `texture`, `normal-map`,
+  `emissive-map`, `emissive`, `uv-scale`, `uv-offset`, `uv-scroll`, `uv-wrap`, `alpha-cutoff`, and
+  `smooth`; every primitive now has UVs and `custom` meshes take `uvs`. Nine deterministic named
+  shaders (`toon`, `rim`, `hologram`, `checker`, `stripes`, `gradient`, `noise`, `water`, and
+  `dissolve`, with a keyframed `progress`) take `shader-*` parameters. Meshes with a look are shaded
+  per sample by the CPU rasterizer with perspective-correct UVs, trilinear mip filtering, and
+  per-sample point and directional lights; scenes that use them draw on the CPU under any
+  `--3d-backend`. Texture files are parse dependencies and `check` reports each mesh's look. See
+  [Textures, UVs, and shaders](docs/3d.md#textures-uvs-and-shaders) and
+  [Textured and shaded 3D](examples/textured-shaded-3d.html).
 - 3D lighting: `type="point"` lights with windowed inverse-square `range`, opt-in hard `shadows` on
   point and directional lights, and Blinn-Phong `specular` and `shininess` on lambert meshes.
 - Cylinder and cone colliders and `linear-damping` for dynamic `<hf-body>`.

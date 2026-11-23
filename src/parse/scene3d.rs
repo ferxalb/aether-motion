@@ -1,5 +1,6 @@
 //! `data-hf-3d` scenes: the host element's options and its `<hf-node>`, `<hf-mesh>`,
-//! `<hf-light>`, `<hf-beam>`, `<hf-body>`, `<hf-hinge>`, and `<hf-camera>` descendants.
+//! `<hf-light>`, `<hf-beam>`, `<hf-body>`, `<hf-hinge>`, and `<hf-camera>` descendants. Texture,
+//! shader, and smooth-shading attributes of meshes are read by the `look` submodule.
 //!
 //! The scene's elements are not 2D elements: they take no part in layout or painting and are
 //! consumed here, so the walk does not visit them. Every attribute is checked against the tag's
@@ -12,6 +13,7 @@
 //! custom properties; `data-var-*` bindings are applied to the DOM before this parse.
 
 mod beam;
+mod look;
 mod physics;
 
 use crate::camera::curve::Interp;
@@ -30,6 +32,7 @@ use crate::scene3d::{
 use anyhow::{anyhow, bail, Context, Result};
 use kuchiki::NodeRef;
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 
 /// Default supersampling per axis.
@@ -88,6 +91,11 @@ const CAMERA_ATTRIBUTES: [&str; 14] = [
 const NODE_CHANNELS: [&str; 10] = [
     "x", "y", "z", "rotateX", "rotateY", "rotate", "scale", "scaleX", "scaleY", "scaleZ",
 ];
+/// Mesh channels: the node channels plus the dissolve `progress` of the mesh's shader.
+const MESH_CHANNELS: [&str; 11] = [
+    "x", "y", "z", "rotateX", "rotateY", "rotate", "scale", "scaleX", "scaleY", "scaleZ",
+    "progress",
+];
 const CAMERA_CHANNELS: [&str; 7] = ["x", "y", "z", "yaw", "pitch", "roll", "zoom"];
 const KINEMATIC_CHANNELS: [&str; 6] = ["x", "y", "z", "rotateX", "rotateY", "rotate"];
 
@@ -97,7 +105,12 @@ pub(in crate::parse) fn is_host(node: &NodeRef) -> bool {
 }
 
 /// Reads the scene hosted by `node` (which has `data-hf-3d`), whose CSS box is `size` px.
-pub(in crate::parse) fn parse_scene(node: &NodeRef, tag: &str, vars: &Vars) -> Result<Scene3d> {
+pub(in crate::parse) fn parse_scene(
+    node: &NodeRef,
+    tag: &str,
+    vars: &Vars,
+    base: &Path,
+) -> Result<Scene3d> {
     match attr(node, "data-hf-3d").as_deref().map(str::trim) {
         Some("" | "true") => {}
         Some(other) => {
@@ -139,6 +152,7 @@ pub(in crate::parse) fn parse_scene(node: &NodeRef, tag: &str, vars: &Vars) -> R
         .unwrap_or(DEFAULT_ANTIALIAS);
     let mut builder = Builder {
         vars: Some(vars),
+        base: Some(base),
         ..Builder::default()
     };
     for child in node.children() {
@@ -151,6 +165,10 @@ pub(in crate::parse) fn parse_scene(node: &NodeRef, tag: &str, vars: &Vars) -> R
 struct Builder<'a> {
     /// Custom properties of the host, for `var()` in `color` attributes.
     vars: Option<&'a Vars>,
+    /// Folder of the composition, where texture paths start.
+    base: Option<&'a Path>,
+    textures: look::Textures,
+    looks: Vec<crate::scene3d::look::Look>,
     nodes: Vec<Node>,
     camera: Option<usize>,
     /// Pending camera target node ids.
@@ -225,8 +243,19 @@ impl Builder<'_> {
                 (NodeKind::Beam(beam), transform(node, &NODE_CHANNELS)?)
             }
             "hf-mesh" => {
-                allowed(node, &MESH_ATTRIBUTES)?;
-                (mesh(node, &mut self.triangles, self.vars)?, transform(node, &NODE_CHANNELS)?)
+                allowed(node, &[&MESH_ATTRIBUTES[..], &look::LOOK_ATTRIBUTES[..]].concat())?;
+                let keyed = keyframes(node, &MESH_CHANNELS)?;
+                let mut context = look::LookContext {
+                    base: self.base.unwrap_or_else(|| Path::new(".")),
+                    vars: self.vars,
+                    textures: &mut self.textures,
+                };
+                let (mut kind, look) = mesh(node, &mut self.triangles, self.vars, &mut context, &keyed)?;
+                if let (Some(look), NodeKind::Mesh { material, .. }) = (look, &mut kind) {
+                    material.look = Some(self.looks.len() as u32);
+                    self.looks.push(look);
+                }
+                (kind, transform(node, &MESH_CHANNELS)?)
             }
             "hf-light" => {
                 allowed(node, &LIGHT_ATTRIBUTES)?;
@@ -333,6 +362,7 @@ impl Builder<'_> {
             antialias,
             default_lights: self.lights == 0,
             physics: None,
+            looks: self.looks,
         })
     }
 }
@@ -434,14 +464,20 @@ fn color(node: &NodeRef, default: Color, vars: Option<&Vars>) -> Result<Color> {
     })
 }
 
-fn mesh(node: &NodeRef, total: &mut usize, vars: Option<&Vars>) -> Result<NodeKind> {
+fn mesh(
+    node: &NodeRef,
+    total: &mut usize,
+    vars: Option<&Vars>,
+    context: &mut look::LookContext,
+    keyed: &Keyed,
+) -> Result<(NodeKind, Option<crate::scene3d::look::Look>)> {
     let shape = attr(node, "shape").ok_or_else(|| {
         anyhow!("<hf-mesh> needs shape: plane, box, pyramid, cone, cylinder, sphere, or custom")
     })?;
     let shape = shape.trim();
     let used = |names: &[&str]| -> Result<()> {
         for name in [
-            "size", "radius", "height", "segments", "detail", "vertices", "indices",
+            "size", "radius", "height", "segments", "detail", "vertices", "indices", "uvs",
         ] {
             if !names.contains(&name) && attr(node, name).is_some() {
                 bail!("{name} does not apply to shape=\"{shape}\"");
@@ -538,7 +574,7 @@ fn mesh(node: &NodeRef, total: &mut usize, vars: Option<&Vars>) -> Result<NodeKi
             (p.mesh(), "sphere")
         }
         "custom" => {
-            used(&["vertices", "indices"])?;
+            used(&["vertices", "indices", "uvs"])?;
             let vertices = numbers(
                 &attr(node, "vertices")
                     .ok_or_else(|| anyhow!("shape=\"custom\" needs vertices"))?,
@@ -581,7 +617,11 @@ fn mesh(node: &NodeRef, total: &mut usize, vars: Option<&Vars>) -> Result<NodeKi
                 .iter()
                 .map(|c| c.map(|v| v as u32))
                 .collect();
-            (Mesh::custom(positions, triangles)?, "custom")
+            let mut mesh = Mesh::custom(positions, triangles)?;
+            if let Some(uvs) = look::uvs(node)? {
+                mesh = mesh.with_uvs(uvs)?;
+            }
+            (mesh, "custom")
         }
         other => bail!(
             "unknown shape \"{other}\"; use plane, box, pyramid, cone, cylinder, sphere, or custom"
@@ -618,15 +658,37 @@ fn mesh(node: &NodeRef, total: &mut usize, vars: Option<&Vars>) -> Result<NodeKi
         cull,
         specular: scalar(node, "specular", 0.0, (0.0, 1.0))?,
         shininess: scalar(node, "shininess", 32.0, (1.0, 512.0))?,
+        look: None,
     };
     if shading == Shading::Unlit && attr(node, "specular").is_some() {
         bail!("specular does not apply to material=\"unlit\"");
     }
-    Ok(NodeKind::Mesh {
-        mesh: Arc::new(mesh),
-        material,
-        shape: name,
-    })
+    let look = look::parse(node, context, keyed)?;
+    let mut mesh = mesh;
+    if let Some(look) = &look {
+        if look.needs_uvs() && mesh.uvs.is_empty() {
+            bail!("textures and the {} shader read UVs: give the custom mesh uvs=\"u v, ...\", one pair per vertex", look.shader.as_ref().map_or("chosen", |s| s.kind.name()));
+        }
+        if shading == Shading::Unlit
+            && look
+                .shader
+                .as_ref()
+                .is_some_and(|s| s.kind == crate::scene3d::look::ShaderKind::Toon)
+        {
+            bail!("shader=\"toon\" bands the lighting, so it needs material=\"lambert\"");
+        }
+        if look.smooth {
+            mesh.smooth_normals();
+        }
+    }
+    Ok((
+        NodeKind::Mesh {
+            mesh: Arc::new(mesh),
+            material,
+            shape: name,
+        },
+        look,
+    ))
 }
 
 fn light(node: &NodeRef, vars: Option<&Vars>) -> Result<Light> {
@@ -868,6 +930,11 @@ fn keyframes(node: &NodeRef, channels: &[&str]) -> Result<Keyed> {
 }
 
 impl Keyed {
+    /// Whether any keyframe animates `name`.
+    fn names(&self, name: &str) -> bool {
+        self.frames.iter().any(|f| f.2.contains_key(name))
+    }
+
     /// The channel `name`: constant `base` when no keyframe names it, otherwise a key at every
     /// keyframe (omitted values inherit the previous one, `base` before the first).
     fn channel(&self, name: &str, base: f64, range: (f64, f64)) -> Result<Channel> {

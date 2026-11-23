@@ -379,10 +379,7 @@ mod tests {
     }
 
     fn tri(a: [f64; 3], b: [f64; 3], c: [f64; 3], color: [u8; 3]) -> Triangle {
-        Triangle {
-            corners: [a, b, c],
-            color,
-        }
+        Triangle::flat([a, b, c], color)
     }
 
     /// Overlapping triangles, a depth tie, geometry clipped by the near plane and the guard band,

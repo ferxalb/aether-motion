@@ -18,6 +18,7 @@
 
 use super::camera::Placement;
 use super::frame::Triangle;
+use super::look::sample::{Shaded, Surfaces};
 use super::raster::{rasterize_with_beam, Region, RowSink, Scratch};
 use super::{beam, NodeKind, Scene3d};
 use anyhow::{bail, Result};
@@ -140,7 +141,8 @@ pub(crate) fn fall_back(reason: String) {
     }
 }
 
-const BEAM_CPU_REASON: &str = "native <hf-beam> light shafts require the CPU 3D backend";
+const BEAM_CPU_REASON: &str =
+    "native <hf-beam> light shafts require the CPU 3D backend, and so do textured and shaded meshes";
 
 /// The backend 3D scenes are drawn with in this process so far (`"cpu"` or `"gpu"`) and, when the
 /// GPU was asked for but not used, why.
@@ -199,6 +201,7 @@ struct Memo {
 pub struct Workspace {
     cpu_only: bool,
     triangles: Vec<Triangle>,
+    shaded: Shaded,
     raster: Scratch,
     memo: Memo,
     #[cfg(feature = "gpu")]
@@ -231,6 +234,7 @@ impl Workspace {
     /// Bytes currently held on the CPU.
     pub fn bytes(&self) -> usize {
         self.triangles.capacity() * std::mem::size_of::<Triangle>()
+            + self.shaded.tris.capacity() * std::mem::size_of::<super::look::sample::ShadedTri>()
             + self.raster.bytes()
             + self.memo.pixels.capacity() * 4
             + self.memo.rows.capacity()
@@ -281,11 +285,11 @@ impl Workspace {
             memo.rows.resize(height, false);
         }
         let shaft = scene.beam();
-        let cpu_only = self.cpu_only || shaft.is_some();
+        let cpu_only = self.cpu_only || scene.needs_cpu();
         if cpu_only && strict() {
             bail!("--require-gpu: {BEAM_CPU_REASON}");
         }
-        let view = scene.frame_into(t, &mut self.triangles);
+        let view = scene.frame_into(t, &mut self.triangles, &mut self.shaded);
         let beam = shaft.and_then(|(index, beam)| {
             let world = scene.world(t);
             let blocker = beam.occluder.and_then(|i| match &scene.nodes[i].kind {
@@ -334,6 +338,11 @@ impl Workspace {
                 bail!("--require-gpu: {reason}");
             }
             if !drawn {
+                let surfaces = (!self.shaded.tris.is_empty()).then(|| Surfaces {
+                    looks: &scene.looks,
+                    shaded: &self.shaded,
+                    view: &view,
+                });
                 rasterize_with_beam(
                     &view,
                     &self.triangles,
@@ -341,6 +350,7 @@ impl Workspace {
                     &region,
                     &mut self.raster,
                     beam.as_ref(),
+                    surfaces.as_ref(),
                     &mut record,
                 );
             }
@@ -461,6 +471,7 @@ mod tests {
                         cull: Cull::Back,
                         specular: 0.0,
                         shininess: 32.0,
+                        look: None,
                     },
                     shape: "box",
                 },
@@ -471,6 +482,7 @@ mod tests {
             antialias: 2,
             default_lights: true,
             physics: None,
+            looks: Vec::new(),
         }
     }
 
@@ -502,5 +514,93 @@ mod tests {
         let later = draw(&mut warm, &scene, 0.6);
         assert_ne!(later, first);
         assert_eq!(later, draw(&mut Workspace::default(), &scene, 0.6));
+    }
+
+    /// A 100 px box whose front face shows a 2x2 texture, drawn unlit so colors are exact.
+    fn textured_box(look: impl FnOnce(&mut crate::scene3d::look::Look)) -> Scene3d {
+        use crate::scene3d::look::texture::{Encoding, Texture};
+        let mut scene = spinning_box();
+        let texture = Texture::from_pixels(
+            2,
+            2,
+            vec![
+                [255, 0, 0, 255],
+                [0, 255, 0, 255],
+                [0, 0, 255, 255],
+                [255, 255, 0, 255],
+            ],
+            Encoding::Srgb,
+        );
+        let mut made = crate::scene3d::look::Look::plain();
+        made.albedo = Some(Arc::new(texture));
+        look(&mut made);
+        scene.looks.push(made);
+        scene.nodes[0].transform = Transform::default();
+        if let NodeKind::Mesh { mesh, material, .. } = &mut scene.nodes[0].kind {
+            *mesh = Arc::new(Primitive::Box { size: [100.0; 3] }.mesh());
+            material.shading = Shading::Unlit;
+            material.look = Some(0);
+        }
+        scene
+    }
+
+    #[test]
+    fn a_textured_face_shows_the_texture_the_right_way_round() {
+        let scene = textured_box(|_| {});
+        assert!(scene.needs_cpu());
+        let image = draw(&mut Workspace::default(), &scene, 0.0);
+        // The viewport is 96x64 at (3.25, -1.5): its center is the box's center.
+        let at = |dx: i32, dy: i32| image[(31 + dy) as usize * 100 + (51 + dx) as usize];
+        // Bilinear filtering blends a little at 0.5 px off a texel center, so compare loosely.
+        let near = |got: [u8; 4], want: [u8; 3]| {
+            got[3] == 255 && got[..3].iter().zip(want).all(|(&g, w)| g.abs_diff(w) <= 60)
+        };
+        assert!(near(at(-26, -26), [255, 0, 0]), "{:?}", at(-26, -26));
+        assert!(near(at(26, -26), [0, 255, 0]), "{:?}", at(26, -26));
+        assert!(near(at(-26, 26), [0, 0, 255]), "{:?}", at(-26, 26));
+        assert!(near(at(26, 26), [255, 255, 0]), "{:?}", at(26, 26));
+    }
+
+    #[test]
+    fn shaded_draws_are_identical_across_workspaces() {
+        let scene = textured_box(|look| {
+            look.shader = Some(crate::scene3d::look::Shader::new(
+                crate::scene3d::look::ShaderKind::Noise,
+            ));
+        });
+        let first = draw(&mut Workspace::default(), &scene, 0.3);
+        assert_eq!(draw(&mut Workspace::default(), &scene, 0.3), first);
+        assert!(first.iter().any(|p| p[3] == 255));
+    }
+
+    #[test]
+    fn a_fully_dissolved_mesh_draws_nothing() {
+        let scene = textured_box(|look| {
+            look.shader = Some(crate::scene3d::look::Shader::new(
+                crate::scene3d::look::ShaderKind::Dissolve,
+            ));
+            look.progress = Channel::constant(1.0);
+        });
+        assert!(draw(&mut Workspace::default(), &scene, 0.0)
+            .iter()
+            .all(|p| p[3] == 0));
+    }
+
+    #[test]
+    fn alpha_cutoff_removes_transparent_texels() {
+        use crate::scene3d::look::texture::{Encoding, Texture};
+        let scene = textured_box(|look| {
+            look.albedo = Some(Arc::new(Texture::from_pixels(
+                2,
+                1,
+                vec![[255, 255, 255, 255], [255, 255, 255, 0]],
+                Encoding::Srgb,
+            )));
+            look.alpha_cutoff = 0.5;
+        });
+        let image = draw(&mut Workspace::default(), &scene, 0.0);
+        let at = |dx: i32| image[31 * 100 + (51 + dx) as usize];
+        assert_eq!(at(-14)[3], 255);
+        assert_eq!(at(14)[3], 0);
     }
 }

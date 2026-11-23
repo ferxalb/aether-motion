@@ -18,7 +18,7 @@ fn fix_hint(message: &str) -> &'static str {
     {
         "put <hf-body> directly in a data-hf-3d viewport, use type=\"fixed|dynamic\" and shape=\"box\" with size=\"w h d\" or shape=\"sphere\" with radius, and put visible meshes inside the body; use a viewport at most 60 seconds long"
     } else if message.contains("data-hf-3d") || message.contains("<hf-") {
-        "put data-hf-3d on a sized <div> clip (optional data-hf-3d-antialias 1 to 4) and fill it with <hf-node>, <hf-body>, <hf-mesh shape=\"plane|box|pyramid|cone|cylinder|sphere|custom\">, <hf-light type=\"ambient|directional\">, and at most one <hf-camera>; place nodes with position, rotation, and scale (or data-hf-keyframes with x, y, z, rotateX, rotateY, rotate, scale; cameras use yaw, pitch, roll, zoom), color meshes with color and material=\"lambert|unlit\", and close every <hf-*> tag explicitly"
+        "put data-hf-3d on a sized <div> clip (optional data-hf-3d-antialias 1 to 4) and fill it with <hf-node>, <hf-body>, <hf-mesh shape=\"plane|box|pyramid|cone|cylinder|sphere|custom\">, <hf-light type=\"ambient|directional\">, and at most one <hf-camera>; place nodes with position, rotation, and scale (or data-hf-keyframes with x, y, z, rotateX, rotateY, rotate, scale; cameras use yaw, pitch, roll, zoom), color meshes with color and material=\"lambert|unlit\", add texture, normal-map, emissive-map, uv-scale, smooth, or shader=\"toon|rim|hologram|checker|stripes|gradient|noise|water|dissolve\" for surface looks, and close every <hf-*> tag explicitly"
     } else if message.contains("2.5D values")
         || message.contains("data-hf-space")
         || message.contains("3D plane values")
@@ -202,6 +202,22 @@ fn scenes3d_json(c: &Composition, (backend, fallback): (&str, Option<String>)) -
                 match &node.kind {
                     NodeKind::Mesh { mesh, material, shape } => meshes.push(json!({
                         "id": node.id, "shape": shape, "triangles": mesh.triangles.len(),
+                        "look": material.look.map(|i| {
+                            let look = &scene.looks[i as usize];
+                            let name = |t: &Option<std::sync::Arc<crate::scene3d::look::Texture>>| {
+                                t.as_ref().map(|t| json!({
+                                    "file": t.path().map(|p| p.display().to_string()),
+                                    "width": t.width(), "height": t.height(), "levels": t.levels(),
+                                }))
+                            };
+                            json!({
+                                "texture": name(&look.albedo), "normalMap": name(&look.normal_map),
+                                "emissiveMap": name(&look.emissive_map),
+                                "shader": look.shader.as_ref().map(|s| s.kind.name()),
+                                "smooth": look.smooth, "alphaCutoff": look.alpha_cutoff,
+                                "animated": look.is_animated(),
+                            })
+                        }),
                         "material": match material.shading { Shading::Lambert => "lambert", Shading::Unlit => "unlit" },
                         "cull": match material.cull { crate::scene3d::Cull::Back => "back", crate::scene3d::Cull::None => "none" },
                     })),

@@ -217,7 +217,7 @@ pub(in crate::parse) fn walk(
     }
     let scene3d = if super::scene3d::is_host(node) {
         Some(
-            super::scene3d::parse_scene(node, &tag, &vars).with_context(|| {
+            super::scene3d::parse_scene(node, &tag, &vars, base).with_context(|| {
                 format!(
                     "data-hf-3d scene <{tag}> ({})",
                     attr(node, "id").as_deref().unwrap_or("no id")
