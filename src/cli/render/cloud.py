@@ -32,6 +32,7 @@ app = modal.App("aether-render", image=image)
 
 @app.function(cpu=float(os.environ.get("AETHER_CLOUD_CPU", "8")), timeout=3600)
 def render(args):
+    print("container started, rendering", file=sys.stderr, flush=True)
     proc = subprocess.Popen(
         ["aether-motion", *args, "-o", "/tmp/out.mp4", "--force", "--progress", "json"],
         cwd="/job",
@@ -53,6 +54,7 @@ def render(args):
 
 @app.local_entrypoint()
 def main(args: str, out: str):
+    print("uploading bundle and preparing the remote image (the first run can take minutes)", file=sys.stderr, flush=True)
     for kind, data in render.remote_gen(json.loads(args)):
         if kind == "p":
             print(data, file=sys.stderr, flush=True)

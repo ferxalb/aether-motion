@@ -93,6 +93,35 @@ impl Drop for Bundle {
     }
 }
 
+/// Fails fast, with the fix, when Modal is missing or not signed in. Without this the runner can
+/// block on a login prompt nobody can see, which looks like a render stuck on "uploading".
+fn preflight() -> Result<()> {
+    let found = Command::new("modal")
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if !found {
+        bail!("--cloud needs the Modal CLI: run `pip install modal`, then `modal setup`");
+    }
+    let env_token = std::env::var_os("MODAL_TOKEN_ID").is_some()
+        && std::env::var_os("MODAL_TOKEN_SECRET").is_some();
+    let config = std::env::var_os("MODAL_CONFIG_PATH")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .or_else(|| std::env::var_os("USERPROFILE"))
+                .map(|h| PathBuf::from(h).join(".modal.toml"))
+        });
+    if !env_token && !config.is_some_and(|c| c.exists()) {
+        bail!("Modal is not signed in: run `modal setup` (or set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET)");
+    }
+    Ok(())
+}
+
 /// Renders `entry` remotely into `dest`.
 pub fn run(
     composition: &Composition,
@@ -101,6 +130,7 @@ pub fn run(
     opts: &Options,
     dest: &Path,
 ) -> Result<()> {
+    preflight()?;
     let root = fs::canonicalize(entry)?
         .parent()
         .map(Path::to_path_buf)
@@ -131,17 +161,18 @@ pub fn run(
     eprintln!(
         "{}",
         style.dim(&format!(
-            "rendering remotely · uploading {files} files ({:.1} MB)",
+            "rendering remotely · bundling {files} files ({:.1} MB)",
             bytes as f64 / 1e6
         ))
     );
     let mut child = Command::new("modal")
-        .args(["run", "--quiet"])
+        .args(["run"])
         .arg(&script)
         .args(["--args", &serde_json::to_string(&args)?, "--out"])
         .arg(dest)
         .env("AETHER_CLOUD_VERSION", env!("CARGO_PKG_VERSION"))
         .env("AETHER_CLOUD_BUNDLE", &bundle.0)
+        .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
@@ -162,6 +193,13 @@ pub fn run(
                 }
             }
             _ => {
+                // Show runner stages live (image build, upload, container start) so a slow
+                // first step is visible instead of looking frozen.
+                if !line.trim().is_empty()
+                    && !matches!(opts.progress, super::super::progress::ProgressMode::Off)
+                {
+                    eprintln!("{}", style.dim(line.trim_end()));
+                }
                 tail.push(line);
                 if tail.len() > 20 {
                     tail.remove(0);
