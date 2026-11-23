@@ -25,6 +25,8 @@ pub(super) fn body(node: &NodeRef, parent: Option<usize>) -> Result<Body> {
             "angular-velocity",
             "ccd",
             "angular-damping",
+            "linear-damping",
+            "height",
         ],
     )?;
     let kind = match attr(node, "type").as_deref() {
@@ -47,6 +49,7 @@ pub(super) fn body(node: &NodeRef, parent: Option<usize>) -> Result<Body> {
             "angular-velocity",
             "ccd",
             "angular-damping",
+            "linear-damping",
         ] {
             ensure!(attr(node, name).is_none(), "{name} requires a dynamic body");
         }
@@ -54,8 +57,8 @@ pub(super) fn body(node: &NodeRef, parent: Option<usize>) -> Result<Body> {
     let collider = match attr(node, "shape").as_deref() {
         Some("box") => {
             ensure!(
-                attr(node, "radius").is_none(),
-                "radius requires a sphere collider"
+                attr(node, "radius").is_none() && attr(node, "height").is_none(),
+                "radius and height require a sphere, cylinder, or cone collider"
             );
             let raw = attr(node, "size")
                 .ok_or_else(|| anyhow!("a box collider needs size=\"width height depth\""))?;
@@ -69,7 +72,30 @@ pub(super) fn body(node: &NodeRef, parent: Option<usize>) -> Result<Body> {
             );
             Collider::Box([w, h, d])
         }
+        Some(shape @ ("cylinder" | "cone")) => {
+            ensure!(
+                attr(node, "size").is_none(),
+                "size requires a box collider; use radius and height"
+            );
+            ensure!(
+                attr(node, "radius").is_some() && attr(node, "height").is_some(),
+                "a {shape} collider needs radius and height"
+            );
+            let dims = [
+                scalar(node, "radius", 1.0, (1.0, 100_000.0))?,
+                scalar(node, "height", 1.0, (1.0, 100_000.0))?,
+            ];
+            if shape == "cone" {
+                Collider::Cone(dims)
+            } else {
+                Collider::Cylinder(dims)
+            }
+        }
         Some("sphere") => {
+            ensure!(
+                attr(node, "height").is_none(),
+                "height requires a cylinder or cone collider"
+            );
             ensure!(attr(node, "size").is_none(), "size requires a box collider");
             ensure!(
                 attr(node, "radius").is_some(),
@@ -77,7 +103,7 @@ pub(super) fn body(node: &NodeRef, parent: Option<usize>) -> Result<Body> {
             );
             Collider::Sphere(scalar(node, "radius", 1.0, (1.0, 100_000.0))?)
         }
-        _ => bail!("<hf-body> needs shape=\"box\" or shape=\"sphere\""),
+        _ => bail!("<hf-body> needs shape=\"box\", \"sphere\", \"cylinder\", or \"cone\""),
     };
     let ccd = match attr(node, "ccd").as_deref() {
         None | Some("false") => false,
@@ -94,6 +120,7 @@ pub(super) fn body(node: &NodeRef, parent: Option<usize>) -> Result<Body> {
         angular_velocity: vector(node, "angular-velocity", [0.0; 3], MAX_ANGLE)?,
         ccd,
         angular_damping: scalar(node, "angular-damping", 0.0, (0.0, 100.0))?,
+        linear_damping: scalar(node, "linear-damping", 0.0, (0.0, 100.0))?,
     })
 }
 

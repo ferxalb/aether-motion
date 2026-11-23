@@ -459,6 +459,8 @@ mod tests {
                         shading: Shading::Lambert,
                         color: Color::WHITE,
                         cull: Cull::Back,
+                        specular: 0.0,
+                        shininess: 32.0,
                     },
                     shape: "box",
                 },

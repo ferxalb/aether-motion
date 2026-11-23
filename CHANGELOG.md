@@ -9,6 +9,9 @@ CLI/MCP output may still change between minor releases.
 
 ### Added
 
+- 3D lighting: `type="point"` lights with windowed inverse-square `range`, opt-in hard `shadows` on
+  point and directional lights, and Blinn-Phong `specular` and `shininess` on lambert meshes.
+- Cylinder and cone colliders and `linear-damping` for dynamic `<hf-body>`.
 - Native rigid-body physics for `data-hf-3d`. Fixed, dynamic, and keyframed kinematic bodies use
   box or sphere colliders and share a deterministic 120 Hz pose bake. Revolute hinges support
   local anchors and angular limits. Dynamic bodies can use continuous collision detection and

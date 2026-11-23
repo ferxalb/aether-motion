@@ -5,7 +5,7 @@
 
 use super::camera::View;
 use super::mesh::{cross, dot, sub};
-use super::shade::Lighting;
+use super::shade::{Caster, Lighting};
 use super::{Cull, NodeKind, Scene3d};
 
 /// A triangle to draw: world px corners and its opaque sRGB color.
@@ -45,8 +45,22 @@ impl Scene3d {
                     &light.kind,
                     light.color,
                     light.intensity.eval(t).max(0.0),
+                    light.shadows,
+                    placed.t,
                     turn,
                 );
+            }
+        }
+        let mut casters: Vec<Caster> = Vec::new();
+        if lighting.directional_shadows.iter().any(|&s| s)
+            || lighting.points.iter().any(|p| p.shadows)
+        {
+            for (node, placed) in self.nodes.iter().zip(&world) {
+                if let NodeKind::Mesh { mesh, .. } = &node.kind {
+                    casters.extend(mesh.triangles.iter().map(|tri| {
+                        tri.map(|i| placed.apply(mesh.positions[i as usize].map(f64::from)))
+                    }));
+                }
             }
         }
         for (node, placed) in self.nodes.iter().zip(&world) {
@@ -81,9 +95,18 @@ impl Scene3d {
                     }
                     unit = unit.map(|v| -v);
                 }
+                let centroid =
+                    std::array::from_fn(|i| (corners[0][i] + corners[1][i] + corners[2][i]) / 3.0);
+                let to_eye = view.toward_viewer(centroid);
+                let to_eye_len = dot(to_eye, to_eye).sqrt();
+                let to_eye = if to_eye_len > 1e-12 {
+                    to_eye.map(|v| v / to_eye_len)
+                } else {
+                    unit
+                };
                 triangles.push(Triangle {
                     corners,
-                    color: lighting.shade(material, unit),
+                    color: lighting.shade(material, unit, centroid, to_eye, &casters),
                 });
             }
         }

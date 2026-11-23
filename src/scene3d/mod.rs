@@ -38,6 +38,9 @@ pub const MAX_NODES: usize = 4096;
 pub const MAX_TRIANGLES: usize = 100_000;
 /// Most directional lights one scene may hold.
 pub const MAX_DIRECTIONAL_LIGHTS: usize = 8;
+pub const MAX_POINT_LIGHTS: usize = 8;
+/// Shadow tests cost faces x triangles, so scenes with shadow-casting lights stay small.
+pub const MAX_SHADOW_TRIANGLES: usize = 4_000;
 /// Supersampling factors per axis (`data-hf-3d-antialias`).
 pub const ANTIALIAS: std::ops::RangeInclusive<u32> = 1..=4;
 
@@ -143,6 +146,10 @@ pub struct Material {
     /// Opaque base color (alpha is ignored).
     pub color: Color,
     pub cull: Cull,
+    /// Blinn-Phong specular strength, 0 (matte, the default) to 1.
+    pub specular: f64,
+    /// Blinn-Phong exponent: higher is a tighter highlight.
+    pub shininess: f64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -151,6 +158,9 @@ pub enum LightKind {
     Ambient,
     /// Parallel light travelling along `direction` (local; turned by the node's rotation).
     Directional { direction: [f64; 3] },
+    /// Omnidirectional light at the node's world position. Intensity is full at the light and
+    /// falls off with a windowed inverse square that reaches zero at `range` px.
+    Point { range: f64 },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -158,6 +168,8 @@ pub struct Light {
     pub kind: LightKind,
     pub color: Color,
     pub intensity: Channel,
+    /// Whether scene meshes block this light's diffuse and specular terms (hard shadows).
+    pub shadows: bool,
 }
 
 /// How the camera maps depth to the screen.

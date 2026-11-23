@@ -35,6 +35,10 @@ pub struct Launch {
 pub enum Collider {
     Box([f64; 3]),
     Sphere(f64),
+    /// Y-axis cylinder, `[radius, height]`.
+    Cylinder([f64; 2]),
+    /// Y-axis cone with its base at the bottom, `[radius, height]`.
+    Cone([f64; 2]),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -65,6 +69,7 @@ pub struct Body {
     pub angular_velocity: [f64; 3],
     pub ccd: bool,
     pub angular_damping: f64,
+    pub linear_damping: f64,
 }
 
 /// Position in meters and quaternion in x, y, z, w order.
@@ -138,7 +143,8 @@ impl Bake {
                     .linvel(vector(body.velocity, 1.0 / PX_PER_METER))
                     .angvel(vector(body.angular_velocity, DEG_TO_RAD))
                     .ccd_enabled(body.ccd)
-                    .angular_damping(body.angular_damping as f32),
+                    .angular_damping(body.angular_damping as f32)
+                    .linear_damping(body.linear_damping as f32),
                 BodyKind::Fixed => RigidBodyBuilder::fixed(),
                 BodyKind::Kinematic => RigidBodyBuilder::kinematic_position_based(),
             };
@@ -148,6 +154,14 @@ impl Bake {
                     ColliderBuilder::cuboid(half(w), half(h), half(d))
                 }
                 Collider::Sphere(radius) => ColliderBuilder::ball((radius / PX_PER_METER) as f32),
+                Collider::Cylinder([radius, height]) => ColliderBuilder::cylinder(
+                    (height / (2.0 * PX_PER_METER)) as f32,
+                    (radius / PX_PER_METER) as f32,
+                ),
+                Collider::Cone([radius, height]) => ColliderBuilder::cone(
+                    (height / (2.0 * PX_PER_METER)) as f32,
+                    (radius / PX_PER_METER) as f32,
+                ),
             };
             let (handle, _) = world.insert(
                 builder.pose(start),

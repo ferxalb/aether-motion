@@ -48,9 +48,9 @@
   <div id="world" class="clip" data-start="0" data-duration="10" data-track-index="1"
        data-hf-3d data-hf-3d-antialias="3"
        data-hf-bloom="0.9" data-hf-bloom-threshold="0.82" data-hf-bloom-radius="36">
-    <!-- Sunset backlight from the sun's direction, a cool fill from the camera side, and sky ambient. -->
+    <!-- Sunset backlight from the sun's direction, a cool fill from the camera side, and sky ambient. The sun casts hard shadows; the lantern adds a warm point light. -->
     <hf-light type="ambient" color="#5c5f96" intensity="0.55"></hf-light>
-    <hf-light type="directional" color="#ffb27a" intensity="1.4" direction="0.29 0.12 0.95"></hf-light>
+    <hf-light type="directional" color="#ffb27a" intensity="1.4" direction="0.29 0.12 0.95" shadows="true"></hf-light>
     <hf-light type="directional" color="#d8c2e6" intensity="0.9" direction="0.6 0.55 -0.6"></hf-light>
 
     <hf-camera fov="42" target="-20 -200 -10" far="40000"
@@ -151,16 +151,17 @@
 
     <!-- The lighthouse, its lamp, and the sweeping beam. -->
     <hf-node id="lighthouse" position="-20 -88 -10">
-      <hf-mesh shape="cylinder" radius="44" height="92" segments="16" color="#f2ede4" position="0 -46 0"></hf-mesh>
-      <hf-mesh shape="cylinder" radius="40" height="92" segments="16" color="#c8443c" position="0 -138 0"></hf-mesh>
-      <hf-mesh shape="cylinder" radius="36" height="92" segments="16" color="#f2ede4" position="0 -230 0"></hf-mesh>
+      <hf-mesh shape="cylinder" radius="44" height="92" segments="16" specular="0.3" shininess="24" color="#f2ede4" position="0 -46 0"></hf-mesh>
+      <hf-mesh shape="cylinder" radius="40" height="92" segments="16" specular="0.3" shininess="24" color="#c8443c" position="0 -138 0"></hf-mesh>
+      <hf-mesh shape="cylinder" radius="36" height="92" segments="16" specular="0.3" shininess="24" color="#f2ede4" position="0 -230 0"></hf-mesh>
       <hf-mesh shape="cylinder" radius="54" height="10" segments="16" color="#2c2f3a" position="0 -281 0"></hf-mesh>
       <hf-mesh shape="cylinder" radius="28" height="40" segments="12" material="unlit" color="#ffe9a8" position="0 -306 0"></hf-mesh>
-      <hf-mesh shape="cone" radius="38" height="48" segments="16" color="#c8443c" position="0 -350 0"></hf-mesh>
+      <hf-mesh shape="cone" radius="38" height="48" segments="16" specular="0.3" shininess="24" color="#c8443c" position="0 -350 0"></hf-mesh>
       <hf-mesh id="lantern-mullion" shape="box" size="4 40 2.2" position="30 -306 1.6" color="#494035"></hf-mesh>
       <hf-mesh shape="box" size="4 40 2.2" position="-30 -306 -1.6" color="#494035"></hf-mesh>
       <hf-mesh shape="box" size="3 40 4" position="0 -306 30" color="#494035"></hf-mesh>
       <hf-mesh shape="box" size="3 40 4" position="0 -306 -30" color="#494035"></hf-mesh>
+      <hf-light type="point" color="#ffd89a" intensity="1.5" range="420" position="0 -306 0"></hf-light>
       <hf-node id="lantern-rotor" position="0 -306 0" data-hf-keyframes='[{"at":0,"rotateY":40},{"at":10,"rotateY":-320}]'>
         <hf-beam id="lighthouse-shaft" direction="1 0.026 0"
                  length="1300" radius="105" density="0.0048" color="#ffe3aa"

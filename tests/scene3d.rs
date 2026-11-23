@@ -331,7 +331,15 @@ fn check_reports_scenes_and_rejects_mistakes() {
             "<hf-mesh shape='box' material='pbr'></hf-mesh>",
             "PBR is not supported",
         ),
-        ("<hf-light type='point'></hf-light>", "unknown light type"),
+        ("<hf-light type='spot'></hf-light>", "unknown light type"),
+        (
+            "<hf-light type='ambient' shadows='true'></hf-light>",
+            "shadows does not apply",
+        ),
+        (
+            "<hf-light type='directional' range='5'></hf-light>",
+            "range applies to",
+        ),
         (
             "<hf-camera></hf-camera><hf-camera></hf-camera>",
             "at most one",

@@ -25,7 +25,7 @@ use crate::scene3d::mesh::{Mesh, Primitive, DETAIL, MAX_MESH_TRIANGLES, SEGMENTS
 use crate::scene3d::{
     CameraSpec, Channel, Cull, Light, LightKind, Material, Node, NodeKind, Projection, Scene3d,
     Shading, Target, Transform, ANTIALIAS, DEFAULT_FAR, DEFAULT_FOCAL, DEFAULT_NEAR,
-    MAX_DIRECTIONAL_LIGHTS, MAX_NODES, MAX_TRIANGLES,
+    MAX_DIRECTIONAL_LIGHTS, MAX_NODES, MAX_POINT_LIGHTS, MAX_SHADOW_TRIANGLES, MAX_TRIANGLES,
 };
 use anyhow::{anyhow, bail, Context, Result};
 use kuchiki::NodeRef;
@@ -43,11 +43,31 @@ const MAX_SCALE: f64 = 1000.0;
 
 const TRANSFORM_ATTRIBUTES: [&str; 5] =
     ["id", "position", "rotation", "scale", "data-hf-keyframes"];
-const MESH_ATTRIBUTES: [&str; 12] = [
-    "shape", "size", "radius", "height", "segments", "detail", "vertices", "indices", "color",
-    "material", "cull", "class",
+const MESH_ATTRIBUTES: [&str; 14] = [
+    "shape",
+    "size",
+    "radius",
+    "height",
+    "segments",
+    "detail",
+    "vertices",
+    "indices",
+    "color",
+    "material",
+    "cull",
+    "class",
+    "specular",
+    "shininess",
 ];
-const LIGHT_ATTRIBUTES: [&str; 5] = ["type", "color", "intensity", "direction", "class"];
+const LIGHT_ATTRIBUTES: [&str; 7] = [
+    "type",
+    "color",
+    "intensity",
+    "direction",
+    "class",
+    "range",
+    "shadows",
+];
 const CAMERA_ATTRIBUTES: [&str; 14] = [
     "id",
     "position",
@@ -140,6 +160,8 @@ struct Builder<'a> {
     ids: HashMap<String, usize>,
     lights: usize,
     directional: usize,
+    points: usize,
+    shadows: bool,
     triangles: usize,
 }
 
@@ -218,6 +240,13 @@ impl Builder<'_> {
                         bail!("a scene may have at most {MAX_DIRECTIONAL_LIGHTS} directional lights");
                     }
                 }
+                if matches!(light.kind, LightKind::Point { .. }) {
+                    self.points += 1;
+                    if self.points > MAX_POINT_LIGHTS {
+                        bail!("a scene may have at most {MAX_POINT_LIGHTS} point lights");
+                    }
+                }
+                self.shadows |= light.shadows;
                 (NodeKind::Light(light), transform(node, &channels)?)
             }
             "hf-camera" => {
@@ -262,6 +291,12 @@ impl Builder<'_> {
         if self.triangles > MAX_TRIANGLES {
             bail!(
                 "a data-hf-3d scene may hold at most {MAX_TRIANGLES} triangles (this one has {}); lower segments or detail",
+                self.triangles
+            );
+        }
+        if self.shadows && self.triangles > MAX_SHADOW_TRIANGLES {
+            bail!(
+                "a scene with shadows=\"true\" lights may hold at most {MAX_SHADOW_TRIANGLES} triangles (this one has {}); lower segments or detail",
                 self.triangles
             );
         }
@@ -581,7 +616,12 @@ fn mesh(node: &NodeRef, total: &mut usize, vars: Option<&Vars>) -> Result<NodeKi
             vars,
         )?,
         cull,
+        specular: scalar(node, "specular", 0.0, (0.0, 1.0))?,
+        shininess: scalar(node, "shininess", 32.0, (1.0, 512.0))?,
     };
+    if shading == Shading::Unlit && attr(node, "specular").is_some() {
+        bail!("specular does not apply to material=\"unlit\"");
+    }
     Ok(NodeKind::Mesh {
         mesh: Arc::new(mesh),
         material,
@@ -604,15 +644,35 @@ fn light(node: &NodeRef, vars: Option<&Vars>) -> Result<Light> {
             }
             LightKind::Directional { direction }
         }
-        Some(other) => bail!("unknown light type \"{other}\"; use ambient or directional (point, spot, and shadows are not supported)"),
-        None => bail!("<hf-light> needs type=\"ambient\" or type=\"directional\""),
+        Some("point") => {
+            if attr(node, "direction").is_some() {
+                bail!("direction applies to type=\"directional\" lights only");
+            }
+            LightKind::Point {
+                range: scalar(node, "range", 1000.0, (1.0, MAX_COORDINATE))?,
+            }
+        }
+        Some(other) => bail!("unknown light type \"{other}\"; use ambient, directional, or point (spot is not supported)"),
+        None => bail!("<hf-light> needs type=\"ambient\", \"directional\", or \"point\""),
     };
+    if !matches!(kind, LightKind::Point { .. }) && attr(node, "range").is_some() {
+        bail!("range applies to type=\"point\" lights only");
+    }
+    let shadows = match attr(node, "shadows").as_deref().map(str::trim) {
+        None | Some("false") => false,
+        Some("" | "true") => true,
+        Some(other) => bail!("shadows must be true or false (got \"{other}\")"),
+    };
+    if shadows && matches!(kind, LightKind::Ambient) {
+        bail!("shadows does not apply to ambient lights");
+    }
     let intensity = scalar(node, "intensity", 1.0, (0.0, 16.0))?;
     let keyed = keyframes(node, &[NODE_CHANNELS.as_slice(), &["intensity"]].concat())?;
     Ok(Light {
         kind,
         color: color(node, Color::WHITE, vars)?,
         intensity: keyed.channel("intensity", intensity, (0.0, 16.0))?,
+        shadows,
     })
 }
 

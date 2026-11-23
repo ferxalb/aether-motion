@@ -207,7 +207,8 @@ fn scenes3d_json(c: &Composition, (backend, fallback): (&str, Option<String>)) -
                     })),
                     NodeKind::Light(light) => lights.push(json!({
                         "id": node.id,
-                        "type": match light.kind { crate::scene3d::LightKind::Ambient => "ambient", _ => "directional" },
+                        "type": match light.kind { crate::scene3d::LightKind::Ambient => "ambient", crate::scene3d::LightKind::Point { .. } => "point", _ => "directional" },
+                        "shadows": light.shadows,
                         "animated": light.intensity.is_animated(),
                     })),
                     NodeKind::Body(body) => {
@@ -217,6 +218,8 @@ fn scenes3d_json(c: &Composition, (backend, fallback): (&str, Option<String>)) -
                             "shape": match body.collider {
                                 crate::scene3d::physics::Collider::Box(_) => "box",
                                 crate::scene3d::physics::Collider::Sphere(_) => "sphere",
+                                crate::scene3d::physics::Collider::Cylinder(_) => "cylinder",
+                                crate::scene3d::physics::Collider::Cone(_) => "cone",
                             },
                             "ccd": body.ccd,
                         });
