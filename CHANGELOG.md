@@ -9,6 +9,17 @@ CLI/MCP output may still change between minor releases.
 
 ### Added
 
+- Native rigid-body physics for `data-hf-3d`. Fixed, dynamic, and keyframed kinematic bodies use
+  box or sphere colliders and share a deterministic 120 Hz pose bake. Revolute hinges support
+  local anchors and angular limits. Dynamic bodies can use continuous collision detection and
+  angular damping. See [rigid-body physics](docs/3d.md#hf-body-rigid-body-physics).
+- `inspect`, `check`, and MCP `aether_check` report requested launch velocities, solved linear and
+  angular velocities after tick one, speed caps, and the first affected tick for over-limit
+  requests.
+- Native volumetric light shafts with `<hf-beam>`. A shaft follows its parent transform and
+  respects opaque scene depth. One named box mesh can cast a shadow through it. Shaft
+  compositions use the CPU backend. The [Hinged Lamp](examples/hinged-lamp.html) fixture covers
+  kinematic contact, hinge stability, shaft occlusion, and byte-identical split exports.
 - Opt-in CUDA backend for `data-hf-3d` scenes (`--3d-backend cuda`, Cargo feature `cuda`, Linux and
   NVIDIA only): a kernel does triangle coverage, depth, and resolve with the CPU rasterizer's
   arithmetic, loaded at run time with its precompiled kernel (`tools/build_cuda_kernel.py`).
@@ -29,6 +40,8 @@ CLI/MCP output may still change between minor releases.
 
 ### Changed
 
+- [Lighthouse Isle](examples/lighthouse-isle-3d.html) uses a rotating volumetric beacon.
+  A fixed lantern post casts a shadow through the shaft during the sweep.
 - `filter` functions may come in any order and apply in the order written; `blur()` and
   `drop-shadow()` still appear at most once.
 - `clip-path` and `mask-image` work on rotated and skewed elements and turn with them; they were
@@ -45,6 +58,8 @@ CLI/MCP output may still change between minor releases.
 
 ### Fixed
 
+- Volumetric shafts clip each camera ray to the finite cone before sampling, reducing visible
+  banding at oblique angles.
 - SVGZ (gzip-compressed SVG) is rejected instead of being inflated without a size bound.
 - Audio sources with a sample rate outside 8 to 384 kHz (including 0) are rejected at decode instead of breaking the resampler.
 - MCP `aether_snapshot`/`aether_render`: a non-numeric `t` or `scale` is an error instead of silently using the default.
