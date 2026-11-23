@@ -9,6 +9,7 @@
 //! their validation, the collision policy (`output`), and the reports. `ffmpeg` holds the optional
 //! FFmpeg encoder. `write_png`, `file_size`, and `backend_note` serve `preview` and `bench` too.
 
+mod cloud;
 mod ffmpeg;
 mod output;
 
@@ -146,6 +147,9 @@ pub fn run(raw: &[String]) -> Result<()> {
     let output = target.output.as_path();
     let kind = Kind::of(output)?;
     check_flags(&opts, kind, output)?;
+    if opts.cloud {
+        cloud::check(&opts, kind == Kind::Mp4 && !opts.ffmpeg)?;
+    }
     let collision = if opts.frames.is_some() {
         output::Collision::None
     } else {
@@ -161,6 +165,12 @@ pub fn run(raw: &[String]) -> Result<()> {
         staged.commit()?;
         let detail = format!("assembled {} parts · {}", parts.len(), file_size(output));
         report(style, output, &detail, start, None);
+        return Ok(());
+    }
+    if opts.cloud {
+        cloud::run(&composition, &target.entry, raw, &opts, dest)?;
+        staged.commit()?;
+        report(style, output, &file_size(output), start, None);
         return Ok(());
     }
     let mut renderer = renderer(&composition, &opts, target.project_size)?;

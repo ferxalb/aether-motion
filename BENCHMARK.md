@@ -466,7 +466,7 @@ settings. [Validation records](benchmarks/stability-validation-results.json)
 preserve the before/after files' hashes, sample counts, output sizes, single
 export times, targeted test results, and drawing regression measurements.
 
-- Gradient and outer-shadow caches cap all keys at 4,096 each, including Seen
+- Gradient and outer-shadow caches cap all keys at 65,536 each, including Seen
   and Direct entries. Exhaustion produces an explicit error, without evicting
   existing tiles or silently changing the cached/direct drawing decisions.
   An existing Seen entry can still be promoted at the cap. Oversized tile costs

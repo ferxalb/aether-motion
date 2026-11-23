@@ -14,7 +14,7 @@ use std::hash::Hash;
 
 /// Memory one surface may spend on cached tiles.
 const BUDGET_BYTES: usize = 64 * 1024 * 1024;
-const MAX_ENTRIES: usize = 4096;
+const MAX_ENTRIES: usize = 65_536;
 
 enum Slot<T> {
     /// Drawn once directly; a repeat builds the tile.
@@ -75,7 +75,7 @@ impl<K: Hash + Eq + Copy, T> TileCache<K, T> {
         match self.slots.get(&key) {
             None => {
                 if self.slots.len() >= MAX_ENTRIES {
-                    bail!("tile cache metadata exceeds 4096 entries; reduce animated size variation or split the composition");
+                    bail!("tile cache metadata exceeds {MAX_ENTRIES} entries; reduce animated size variation or split the composition");
                 }
                 self.slots.insert(key, Slot::Seen);
                 return Ok(None);

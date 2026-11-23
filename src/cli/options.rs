@@ -36,7 +36,12 @@ const VALUES: &[&str] = &[
 ];
 
 /// Flags without a value.
-const SWITCHES: &[&str] = &["--force", "--require-gpu"];
+const SWITCHES: &[&str] = &["--force", "--require-gpu", "--cloud"];
+
+/// Whether `flag` is followed by a value (for code that forwards the raw arguments).
+pub fn takes_value(flag: &str) -> bool {
+    VALUES.contains(&flag)
+}
 
 #[derive(Debug)]
 pub struct Options {
@@ -69,6 +74,8 @@ pub struct Options {
     pub force: bool,
     pub variables: Option<String>,
     pub variables_file: Option<String>,
+    /// Render remotely (not listed in the help catalog).
+    pub cloud: bool,
 }
 
 /// Parses `A..B` (segment indexes, end exclusive).
@@ -187,6 +194,7 @@ pub fn parse(command: &str, raw: &[String]) -> Result<Options> {
         force: args.has("--force"),
         variables: args.value("--variables").map(str::to_string),
         variables_file: args.value("--variables-file").map(str::to_string),
+        cloud: args.has("--cloud"),
     })
 }
 
