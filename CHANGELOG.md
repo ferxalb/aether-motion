@@ -7,6 +7,8 @@ CLI/MCP output may still change between minor releases.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-22
+
 ### Added
 
 - Textures and shaders for native 3D meshes. `<hf-mesh>` takes `texture`, `normal-map`,
