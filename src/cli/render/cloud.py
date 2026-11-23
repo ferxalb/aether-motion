@@ -13,24 +13,30 @@ import modal
 
 # The container is always Linux x64, whatever machine started the render. It runs the release
 # build of this very version, or an explicit Linux binary in AETHER_CLOUD_BIN (for unreleased builds).
-base = modal.Image.debian_slim().apt_install("curl")
-if os.environ.get("AETHER_CLOUD_BIN"):
-    base = base.add_local_file(os.environ["AETHER_CLOUD_BIN"], "/usr/local/bin/aether-motion", copy=True)
-else:
-    tag = "v" + os.environ["AETHER_CLOUD_VERSION"]
-    base = base.run_commands(
-        "curl -fsSL -o /tmp/am.tgz https://github.com/ferxalb/aether-motion/releases/download/"
-        f"{tag}/aether-motion-{tag}-x86_64-unknown-linux-gnu.tar.gz",
-        "mkdir /tmp/am && tar -xzf /tmp/am.tgz -C /tmp/am",
-        "install -m 755 $(find /tmp/am -name aether-motion -type f | head -n 1) /usr/local/bin/aether-motion",
+# The image is only described on the machine that starts the render: Modal re-imports this file
+# inside the container, where the AETHER_CLOUD_* variables do not exist, so reading them there
+# would crash the container on start (and Modal would restart it forever).
+if modal.is_local():
+    base = modal.Image.debian_slim().apt_install("curl")
+    if os.environ.get("AETHER_CLOUD_BIN"):
+        base = base.add_local_file(os.environ["AETHER_CLOUD_BIN"], "/usr/local/bin/aether-motion", copy=True)
+    else:
+        tag = "v" + os.environ["AETHER_CLOUD_VERSION"]
+        base = base.run_commands(
+            "curl -fsSL -o /tmp/am.tgz https://github.com/ferxalb/aether-motion/releases/download/"
+            f"{tag}/aether-motion-{tag}-x86_64-unknown-linux-gnu.tar.gz",
+            "mkdir /tmp/am && tar -xzf /tmp/am.tgz -C /tmp/am",
+            "install -m 755 $(find /tmp/am -name aether-motion -type f | head -n 1) /usr/local/bin/aether-motion",
+        )
+    image = base.run_commands("chmod +x /usr/local/bin/aether-motion").add_local_dir(
+        os.environ["AETHER_CLOUD_BUNDLE"], "/job"
     )
-image = base.run_commands("chmod +x /usr/local/bin/aether-motion").add_local_dir(
-    os.environ["AETHER_CLOUD_BUNDLE"], "/job"
-)
+else:
+    image = modal.Image.debian_slim()
 app = modal.App("aether-render", image=image)
 
 
-@app.function(cpu=float(os.environ.get("AETHER_CLOUD_CPU", "8")), timeout=3600)
+@app.function(cpu=float(os.environ.get("AETHER_CLOUD_CPU", "8")), timeout=3600, retries=0)
 def render(args):
     print("container started, rendering", file=sys.stderr, flush=True)
     proc = subprocess.Popen(
