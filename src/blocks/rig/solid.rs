@@ -477,20 +477,31 @@ fn schedule(o: &Options) -> Result<Vec<(f64, f64)>> {
     } else {
         1.0
     };
-    let estimate = laps * (pass.len() - 1) as f64;
-    if estimate > LIMIT as f64 {
-        bail!(
+    // The delay key (a hold from 0 until the motion starts) counts against the same budget.
+    let delay_key = usize::from(o.delay > 0.0);
+    let estimate = laps * (pass.len() - 1) as f64 + delay_key as f64;
+    let too_many = |count: f64| -> anyhow::Error {
+        anyhow::anyhow!(
             "this motion needs about {} keyframes over duration={} (limit {LIMIT}); shorten duration or lengthen cycle",
-            estimate.round(),
+            count.round(),
             fmt(o.duration)
-        );
+        )
+    };
+    if estimate > LIMIT as f64 {
+        return Err(too_many(estimate));
     }
     let mut out: Vec<(f64, f64)> = Vec::new();
+    if delay_key == 1 {
+        out.push((0.0, 0.0));
+    }
     let mut lap = 0.0;
     'laps: loop {
         for t in &pass {
             if lap > 0.0 && *t == 0.0 {
                 continue;
+            }
+            if out.len() >= LIMIT {
+                return Err(too_many(estimate.max(out.len() as f64 + 1.0)));
             }
             let motion = lap + t;
             let at = o.delay + motion;
@@ -503,16 +514,6 @@ fn schedule(o: &Options) -> Result<Vec<(f64, f64)>> {
             break;
         }
         lap += period;
-    }
-    if out.len() > LIMIT {
-        bail!(
-            "this motion needs {} keyframes over duration={}; shorten duration or lengthen cycle",
-            out.len(),
-            fmt(o.duration)
-        );
-    }
-    if o.delay > 0.0 {
-        out.insert(0, (0.0, 0.0));
     }
     Ok(out)
 }

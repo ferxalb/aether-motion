@@ -90,7 +90,10 @@ impl Preset {
     /// Sets channel `ch` to the periodic curve through `(phase, value)` keys.
     fn set(&mut self, ch: usize, keys: &[(f64, f64)]) {
         self.tracks.retain(|(c, _)| *c != ch);
-        self.tracks.push((ch, keys.to_vec()));
+        // Sorted once here, so `periodic` can read the keys in place on every evaluation.
+        let mut sorted = keys.to_vec();
+        sorted.sort_by(|a, b| a.0.total_cmp(&b.0));
+        self.tracks.push((ch, sorted));
     }
 
     fn hold(&mut self, ch: usize, value: f64) {
@@ -127,14 +130,17 @@ impl Preset {
     }
 }
 
-/// A periodic cubic Hermite curve through `keys` (phases in 0..1, any order), with Catmull-Rom
-/// tangents over non-uniform spacing.
+/// A periodic cubic Hermite curve through `keys` (phases in 0..1, sorted by phase), with
+/// Catmull-Rom tangents over non-uniform spacing.
 fn periodic(keys: &[(f64, f64)], p: f64) -> f64 {
     if keys.len() == 1 {
         return keys[0].1;
     }
-    let mut k = keys.to_vec();
-    k.sort_by(|a, b| a.0.total_cmp(&b.0));
+    debug_assert!(
+        keys.windows(2).all(|w| w[0].0 <= w[1].0),
+        "keys must be sorted"
+    );
+    let k = keys;
     let n = k.len();
     // Key i, unrolled around the loop so neighbors exist on both sides.
     let at = |i: isize| -> (f64, f64) {
