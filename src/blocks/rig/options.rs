@@ -185,6 +185,10 @@ impl Options {
 
         let motion = Motion::parse(&get("motion"))?;
         let delay = number("delay", 0.0, 3600.0)?;
+        // The held start pose is written at 0 and the motion starts at `delay`: keep them apart.
+        if delay > 0.0 && delay < super::motion::MIN_STEP {
+            bail!("delay must be 0 or at least 0.001 s, got {delay}");
+        }
         let duration = number("duration", 0.1, 3600.0)?;
         let phase = number("phase", 0.0, 1.0)?;
         let looped = match get("loop").as_str() {

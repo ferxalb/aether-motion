@@ -954,6 +954,8 @@ mod tests {
         )]))
         .unwrap();
         assert!(html.contains("{\"at\":0.0013,"), "{html}");
+        // A delay under a millisecond would share its time with the held pose at 0.
+        assert!(render(&values(&[("delay", "0.0000004")])).is_err());
         // A travel window under a millisecond is an error, not a lost move.
         assert!(render(&values(&[
             ("motion", "none"),
@@ -969,6 +971,13 @@ mod tests {
                 r#"[{"at":0.001,"r-elbow":0},{"at":0.002,"r-elbow":360},{"at":1}]"#,
             )],
             vec![("motion", "walk"), ("travel", "auto"), ("delay", "0.5")],
+            vec![
+                (
+                    "timeline",
+                    r#"[{"at":0,"r-elbow":0},{"at":0.001,"r-elbow":360},{"at":1}]"#,
+                ),
+                ("delay", "0.001"),
+            ],
             vec![
                 (
                     "sequence",

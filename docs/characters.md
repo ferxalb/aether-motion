@@ -47,7 +47,7 @@ Shared by both blocks:
 | `motion` | `idle` | A looping preset: `none`, `idle`, `walk`, `run`, `wave`, `cheer`, `jump`, `sit`, or `point`. |
 | `cycle` | `auto` | Seconds per loop. `auto` uses the preset's own (walk 1.1, run 0.72, jump 1.8). |
 | `phase` | `0` | Where in the loop the motion starts (0 to 1). |
-| `delay` | `0` | Seconds after the clip start before the motion starts. The first pose holds until then. |
+| `delay` | `0` | Seconds after the clip start before the motion starts (0, or at least 0.001). The first pose holds until then. |
 | `duration` | `6` | Clip length in seconds. Used for travel and, in 3D, for the length of the keyframes. |
 | `sequence` | | A JSON list of motions to play one after another (see below). Replaces `motion`. |
 | `timeline` | | A JSON list of poses at times (see below). Replaces `motion`. |
