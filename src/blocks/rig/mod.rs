@@ -61,6 +61,17 @@ pub(crate) fn fmt(v: f64) -> String {
     text.to_string()
 }
 
+/// A time in seconds with up to six decimals, so key times at least a microsecond apart (timeline
+/// keys are 1 ms apart, generated samples more) never print as the same value.
+pub(crate) fn fmt_time(v: f64) -> String {
+    let rounded = (v * 1e6).round() / 1e6;
+    if rounded == 0.0 {
+        return "0".to_string();
+    }
+    let text = format!("{rounded:.6}");
+    text.trim_end_matches('0').trim_end_matches('.').to_string()
+}
+
 /// Indices of the samples to keep so that linear interpolation between kept samples reproduces
 /// every dropped one within `tolerance` on each channel. `series[i]` holds the channel values at
 /// `times[i]`; the first and last samples are always kept.

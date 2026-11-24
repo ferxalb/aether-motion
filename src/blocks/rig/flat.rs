@@ -201,6 +201,35 @@ fn limb(a: (f64, f64), ra: f64, b: (f64, f64), rb: f64, color: &str, far: bool) 
     filled(&hull(a, ra, b, rb), bbox, color, far, shade)
 }
 
+/// A point of a cubic Bézier curve.
+fn cubic(p0: (f64, f64), p1: (f64, f64), p2: (f64, f64), p3: (f64, f64), t: f64) -> (f64, f64) {
+    let u = 1.0 - t;
+    let (a, b, c, d) = (u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t);
+    (
+        a * p0.0 + b * p1.0 + c * p2.0 + d * p3.0,
+        a * p0.1 + b * p1.1 + c * p2.1 + d * p3.1,
+    )
+}
+
+/// A point of a quadratic Bézier curve.
+fn quad(p0: (f64, f64), p1: (f64, f64), p2: (f64, f64), t: f64) -> (f64, f64) {
+    let u = 1.0 - t;
+    (
+        u * u * p0.0 + 2.0 * u * t * p1.0 + t * t * p2.0,
+        u * u * p0.1 + 2.0 * u * t * p1.1 + t * t * p2.1,
+    )
+}
+
+/// Contact points of one foot with ids unique to it: the first two are the flat sole's ends (the
+/// heel and toe in a side view).
+fn sole_points(foot: usize, points: &[(f64, f64)]) -> Vec<(usize, f64, f64)> {
+    points
+        .iter()
+        .enumerate()
+        .map(|(i, (x, y))| (foot * 64 + i, *x, *y))
+        .collect()
+}
+
 /// Builds the joint tree of the figure.
 fn skeleton(view: View, o: &Options) -> Joint {
     let p = &o.palette;
@@ -310,10 +339,22 @@ fn skeleton(view: View, o: &Options) -> Joint {
                 far,
                 [0.0, -14.0, 0.0, 24.0],
             ));
-            shoe.contacts = vec![
-                (foot * 2, HEEL, ANKLE_HEIGHT),
-                (foot * 2 + 1, TOE, ANKLE_HEIGHT),
-            ];
+            // The flat sole's ends, then points along the rounded heel and toe, so a tilted
+            // foot rests on whichever part of its outline is lowest.
+            let g = ANKLE_HEIGHT;
+            let mut points = vec![(HEEL, g), (TOE, g)];
+            for k in 1..12 {
+                let t = f64::from(k) / 12.0;
+                points.push(cubic(
+                    (-15.0, -6.0),
+                    (-22.0, -4.0),
+                    (-23.0, g),
+                    (HEEL, g),
+                    t,
+                ));
+                points.push(cubic((TOE, g), (60.0, g), (61.0, 9.0), (50.0, 4.0), t));
+            }
+            shoe.contacts = sole_points(foot, &points);
         } else {
             let out = -sign * 3.0;
             let d = format!(
@@ -337,10 +378,16 @@ fn skeleton(view: View, o: &Options) -> Joint {
                 false,
                 [out - 17.0, 0.0, out + 17.0, 0.0],
             ));
-            shoe.contacts = vec![
-                (foot * 2, out - FRONT_SOLE_HALF, ANKLE_HEIGHT),
-                (foot * 2 + 1, out + FRONT_SOLE_HALF, ANKLE_HEIGHT),
-            ];
+            // The flat sole's ends, points along both rounded corners, and the corners' tops.
+            let g = ANKLE_HEIGHT;
+            let (a, b) = (out - FRONT_SOLE_HALF, out + FRONT_SOLE_HALF);
+            let mut points = vec![(a, g), (b, g), (out - 17.0, 15.0), (out + 17.0, 15.0)];
+            for k in 1..12 {
+                let t = f64::from(k) / 12.0;
+                points.push(quad((out + 17.0, 15.0), (out + 17.0, g), (b, g), t));
+                points.push(quad((a, g), (out - 17.0, g), (out - 17.0, 15.0), t));
+            }
+            shoe.contacts = sole_points(foot, &points);
         }
         let shin = Joint {
             name: format!("{}-knee", s.tag),
@@ -608,7 +655,7 @@ fn refine(times: &mut Vec<f64>, turn_at: &dyn Fn(f64) -> Vec<f64>) {
 
 /// Ends an element's open CSS rule with its transform: static when it never changes, otherwise an
 /// animation through the samples that a straight line between kept samples cannot reproduce
-/// within 0.12 units. Offsets carry four decimals of a percent; if two kept samples still share an
+/// within 0.12 units. Offsets carry six decimals of a percent; if two kept samples still share an
 /// offset, the later one wins, so the true endpoint of a pass is never lost.
 fn animate(
     css: &mut String,
@@ -646,9 +693,9 @@ fn animate(
     let _ = writeln!(css, " }}");
 }
 
-/// A keyframe offset with four decimals and no trailing zeros.
+/// A keyframe offset with six decimals and no trailing zeros.
 fn percent(v: f64) -> String {
-    let text = format!("{:.4}", v.clamp(0.0, 100.0));
+    let text = format!("{:.6}", v.clamp(0.0, 100.0));
     text.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
@@ -685,7 +732,13 @@ pub fn render(values: &BTreeMap<String, String>) -> Result<String> {
 
     let period = o.source.period();
     let gait = match o.travel {
-        Travel::Auto => Some(stride(&o, period.unwrap_or(1.0), &fk, o.source.repeats())),
+        Travel::Auto => Some(stride(
+            &o,
+            period.unwrap_or(1.0),
+            &fk,
+            o.source.repeats(),
+            &o.source.pass_times(48, 20.0),
+        )?),
         Travel::Speed(_) => None,
     };
     let frames_at = |t: f64| flat.frames(&placed(&o, t, &fk, gait.as_ref()));
@@ -846,7 +899,7 @@ mod tests {
     fn colliding_offsets_keep_the_later_sample() {
         let o = Options::parse(Flavor::Flat, &BTreeMap::new(), |_| Ok(View::Side)).unwrap();
         let mut css = String::from("  #a {");
-        let times = [0.0, 0.999_999_9, 1.0];
+        let times = [0.0, 0.999_999_999, 1.0];
         let values: Vec<String> = ["rotate(0deg)", "rotate(90deg)", "rotate(0deg)"]
             .iter()
             .map(|v| v.to_string())
@@ -855,6 +908,52 @@ mod tests {
         animate(&mut css, "a", &times, &values, &series, Some(1.0), &o);
         assert!(css.contains("100% { transform: rotate(0deg) }"), "{css}");
         assert!(!css.contains("rotate(90deg)"));
+    }
+
+    #[test]
+    fn tilted_front_soles_rest_on_their_lowest_drawn_point() {
+        let mut v = BTreeMap::new();
+        v.insert("motion".to_string(), "none".to_string());
+        v.insert("r-hip-side".to_string(), "15".to_string());
+        v.insert("l-hip-side".to_string(), "15".to_string());
+        let o = Options::parse(Flavor::Flat, &v, |_| Ok(View::Front)).unwrap();
+        let root = skeleton(View::Front, &o);
+        let fk = |pose: &Pose| contacts(&root, pose);
+        let pose = placed(&o, 0.0, &fk, None);
+        // Densely sample the drawn corner curves of the left shoe under the placed pose: none of
+        // them may dip below the ground by more than a hundredth of a unit.
+        let mut lowest = f64::MIN;
+        let lift = pose[BODY_Y];
+        let out = 3.0;
+        let g = ANKLE_HEIGHT;
+        let mut pts = Vec::new();
+        for i in 0..=100 {
+            let t = i as f64 / 100.0;
+            pts.push(quad(
+                (out + 17.0, 15.0),
+                (out + 17.0, g),
+                (out + 11.0, g),
+                t,
+            ));
+            pts.push(quad(
+                (out - 11.0, g),
+                (out - 17.0, g),
+                (out - 17.0, 15.0),
+                t,
+            ));
+        }
+        // The ankle frame of the left foot: hip (30, 0) turned by -15, then the shin straight down.
+        let a = (-15.0f64).to_radians();
+        let (sin, cos) = a.sin_cos();
+        for (x, y) in pts {
+            let (lx, ly) = (x, y + THIGH + SHIN);
+            let wy = -GROUND + lx * sin + ly * cos + lift;
+            lowest = lowest.max(wy);
+        }
+        assert!(
+            lowest < 0.01,
+            "a drawn sole point is {lowest} units below the ground"
+        );
     }
 
     #[test]
@@ -897,7 +996,7 @@ mod tests {
             let lowest = fk(&pose).iter().map(|c| c.down).fold(f64::MIN, f64::max);
             assert!((lowest + lift).abs() < 1e-9);
         }
-        let gait = stride(&o, 1.1, &fk, true);
+        let gait = stride(&o, 1.1, &fk, true, &[]).unwrap();
         let speed = gait.speed;
         // The planted point stays still: hips(t) = speed * t + offset(t) cancels its motion.
         let world = |t: f64| -> f64 {

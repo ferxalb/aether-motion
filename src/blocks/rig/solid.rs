@@ -7,11 +7,11 @@
 //! kinematics that put the soles on the floor and match the travel speed to the stride. The block
 //! is a full scene (viewport, lights, floor, following camera) or just the figure's node tree.
 
-use super::motion::View;
+use super::motion::{View, MIN_STEP};
 use super::options::{Flavor, Options, Travel};
 use super::place::{placed, stride, Contact, Stride};
 use super::skeleton::*;
-use super::{fmt, keep, Out};
+use super::{fmt, fmt_time, keep, Out};
 use crate::blocks::template::escape_html;
 use anyhow::{bail, Result};
 use std::collections::BTreeMap;
@@ -472,14 +472,21 @@ fn schedule(o: &Options) -> Result<Vec<(f64, f64)>> {
         bail!("the motion's period is too short to animate; space keys at least 1 ms apart");
     }
     // Estimate before generating, so a long clip of short cycles fails fast.
-    let laps = if o.source.repeats() {
-        ((o.duration - o.delay).max(0.0) / period).ceil() + 1.0
+    // Count only the samples the clip reaches: whole laps, then the part of the last lap up to the
+    // first sample at or past the clip's end.
+    let reach = (o.duration - o.delay).max(0.0);
+    let per_lap = (pass.len() - 1) as f64;
+    let needed = if o.source.repeats() {
+        let laps = (reach / period).floor();
+        let rest = reach - laps * period;
+        let partial = pass.partition_point(|t| *t < rest).min(pass.len() - 1) as f64 + 1.0;
+        1.0 + laps * per_lap + partial
     } else {
-        1.0
+        (pass.partition_point(|t| *t < reach).min(pass.len() - 1) + 1) as f64
     };
     // The delay key (a hold from 0 until the motion starts) counts against the same budget.
     let delay_key = usize::from(o.delay > 0.0);
-    let estimate = laps * (pass.len() - 1) as f64 + delay_key as f64;
+    let estimate = needed + delay_key as f64;
     let too_many = |count: f64| -> anyhow::Error {
         anyhow::anyhow!(
             "this motion needs about {} keyframes over duration={} (limit {LIMIT}); shorten duration or lengthen cycle",
@@ -534,7 +541,7 @@ fn keyframes(times: &[f64], channels: &[(&str, Vec<f64>)]) -> String {
         .into_iter()
         .map(|i| {
             let t = &times[i];
-            let mut key = format!("{{\"at\":{}", fmt(*t));
+            let mut key = format!("{{\"at\":{}", fmt_time(*t));
             for (name, values) in &moving {
                 let _ = write!(key, ",\"{name}\":{}", fmt(values[i]));
             }
@@ -617,7 +624,8 @@ pub fn render(values: &BTreeMap<String, String>) -> Result<String> {
             o.source.period().unwrap_or(1.0),
             &fk,
             o.source.repeats(),
-        )),
+            &o.source.pass_times(32, 20.0),
+        )?),
         Travel::Speed(_) => None,
     };
     let mut poses: Vec<Pose> = plan
@@ -654,7 +662,7 @@ pub fn render(values: &BTreeMap<String, String>) -> Result<String> {
             .map(|i| {
                 format!(
                     "{{\"at\":{},\"x\":{},\"z\":{}}}",
-                    fmt(times[i]),
+                    fmt_time(times[i]),
                     fmt(x + path[i] * dir_x),
                     fmt(z + path[i] * dir_z)
                 )
@@ -665,14 +673,15 @@ pub fn render(values: &BTreeMap<String, String>) -> Result<String> {
         } else {
             String::new()
         }
-    } else if speed != 0.0 && travel_time > 0.0 {
+    } else if speed != 0.0 && travel_time >= MIN_STEP {
+        // Shorter than a millisecond there is nothing to travel: the two keys would coincide.
         let d = speed * travel_time;
         format!(
             " data-hf-keyframes='[{{\"at\":{},\"x\":{},\"z\":{}}},{{\"at\":{},\"x\":{},\"z\":{}}}]'",
-            fmt(o.delay),
+            fmt_time(o.delay),
             fmt(x),
             fmt(z),
-            fmt(o.duration),
+            fmt_time(o.duration),
             fmt(x + d * dir_x),
             fmt(z + d * dir_z)
         )
@@ -716,7 +725,7 @@ pub fn render(values: &BTreeMap<String, String>) -> Result<String> {
             format!(
                 " data-hf-keyframes='[{{\"at\":0,\"rotateY\":{}}},{{\"at\":{},\"rotateY\":{},\"easing\":\"smooth\"}}]'",
                 fmt(angle),
-                fmt(o.duration),
+                fmt_time(o.duration),
                 fmt(angle + orbit)
             )
         } else {
@@ -882,7 +891,7 @@ mod tests {
         let fk = |pose: &Pose| contacts(&root, pose);
         let lowest = fk(&rest()).iter().map(|c| c.down).fold(f64::MIN, f64::max);
         assert!(lowest.abs() < 1e-9, "{lowest}");
-        let speed = stride(&o, 1.1, &fk, true).speed;
+        let speed = stride(&o, 1.1, &fk, true, &[]).unwrap().speed;
         assert!(speed > 80.0 && speed < 400.0, "walk speed {speed}");
     }
 
@@ -909,5 +918,28 @@ mod tests {
             ("duration", "3600")
         ]))
         .is_err());
+        // A short clip of a long looped sequence needs only the samples it reaches.
+        assert!(render(&values(&[
+            ("duration", "1"),
+            ("loop", "true"),
+            ("sequence", r#"[{"motion":"idle","duration":600}]"#),
+        ]))
+        .is_ok());
+        // A first key near zero keeps its own time next to the sample at zero.
+        let html = render(&values(&[(
+            "timeline",
+            r#"[{"at":0.0003},{"at":0.0015,"r-elbow":90},{"at":1,"r-elbow":90}]"#,
+        )]))
+        .unwrap();
+        assert!(html.contains("{\"at\":0.0003,"), "{html}");
+        // A travel window under a millisecond writes no track.
+        let html = render(&values(&[
+            ("motion", "none"),
+            ("delay", "0.9999"),
+            ("duration", "1"),
+            ("travel", "100000"),
+        ]))
+        .unwrap();
+        assert!(!html.contains("\"x\":"));
     }
 }

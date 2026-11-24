@@ -51,42 +51,90 @@ pub struct Stride {
     pub speed: f64,
     period: f64,
     periodic: bool,
-    /// The hip offset at `table.len()` evenly spaced times over one period.
+    /// Sample times over one period (sorted, from 0 to the period) and the hip offset at each.
+    times: Vec<f64>,
     table: Vec<f64>,
 }
 
 impl Stride {
     /// The forward offset of the hips at `t` seconds (beyond the constant speed).
     pub fn offset(&self, t: f64) -> f64 {
-        let steps = self.table.len() - 1;
         let u = if self.periodic {
-            (t / self.period).rem_euclid(1.0)
+            (t / self.period).rem_euclid(1.0) * self.period
         } else {
-            (t / self.period).clamp(0.0, 1.0)
-        } * steps as f64;
-        let i = (u.floor() as usize).min(steps - 1);
-        let s = u - i as f64;
-        self.table[i] + (self.table[i + 1] - self.table[i]) * s
+            t.clamp(0.0, self.period)
+        };
+        let i = self
+            .times
+            .partition_point(|x| *x <= u)
+            .clamp(1, self.times.len() - 1);
+        let (t0, t1) = (self.times[i - 1], self.times[i]);
+        let s = if t1 > t0 { (u - t0) / (t1 - t0) } else { 0.0 };
+        self.table[i - 1] + (self.table[i] - self.table[i - 1]) * s
     }
 }
+
+/// Most kinematic evaluations one stride may use.
+const STRIDE_BUDGET: usize = 200_000;
+/// Largest change of any pose channel (degrees) between neighboring stride samples.
+const STRIDE_TURN: f64 = 3.0;
 
 /// Follows the lowest sole point through `period` seconds: while one point stays lowest it is held
 /// still on the ground, and when another point takes over the hold passes to it without a jump.
 /// A `periodic` motion advances by one stride per period, split into a constant speed and a
 /// periodic part.
-pub fn stride(options: &Options, period: f64, fk: Kinematics, periodic: bool) -> Stride {
-    // 240 steps per second resolves every gait (the shortest preset cycle has 170 of them);
-    // periods are at most 600 s, so this stays under 144,000 kinematic evaluations.
-    let steps = ((period * 240.0).ceil() as usize).clamp(720, 144_000);
+///
+/// Samples are a 240 Hz grid (at least 720 per period) plus every authored time in `marks`
+/// (timeline keys, sequence boundaries), refined wherever a joint turns more than 3 degrees
+/// between neighbors, so a short gait inside a long sequence or a quick keyed move is followed.
+/// A motion that would need more than 200,000 samples is an error, not a silently wrong path.
+pub fn stride(
+    options: &Options,
+    period: f64,
+    fk: Kinematics,
+    periodic: bool,
+    marks: &[f64],
+) -> anyhow::Result<Stride> {
+    let steps = ((period * 240.0).ceil() as usize).max(720);
+    if steps > STRIDE_BUDGET {
+        anyhow::bail!("travel=auto cannot follow a {period} s motion; keep it under 800 s");
+    }
+    let mut times: Vec<f64> = (0..=steps)
+        .map(|i| period * i as f64 / steps as f64)
+        .chain(marks.iter().map(|m| m.clamp(0.0, period)))
+        .collect();
+    times.sort_by(f64::total_cmp);
+    times.dedup();
+    let pose_at = |t: f64| -> Pose {
+        let mut pose = options.pose(t);
+        pose[BODY_X] = 0.0;
+        pose[BODY_Y] = 0.0;
+        pose
+    };
+    let mut poses: Vec<Pose> = times.iter().map(|t| pose_at(*t)).collect();
+    let mut i = 0;
+    while i + 1 < times.len() {
+        let turn = poses[i]
+            .iter()
+            .zip(&poses[i + 1])
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0, f64::max);
+        if turn > STRIDE_TURN && times[i + 1] - times[i] > 1e-5 {
+            if times.len() >= STRIDE_BUDGET {
+                anyhow::bail!(
+                    "travel=auto needs more than {STRIDE_BUDGET} samples to follow this motion; slow its fastest moves"
+                );
+            }
+            let mid = (times[i] + times[i + 1]) / 2.0;
+            times.insert(i + 1, mid);
+            poses.insert(i + 1, pose_at(mid));
+        } else {
+            i += 1;
+        }
+    }
     // The planted point keeps its hold while it stays within `GRIP` of the lowest point, so two
     // feet near the ground (a stop, a double support) do not trade the hold back and forth.
     const GRIP: f64 = 4.0;
-    let contacts = |i: usize| -> Vec<Contact> {
-        let mut pose = options.pose(period * i as f64 / steps as f64);
-        pose[BODY_X] = 0.0;
-        pose[BODY_Y] = 0.0;
-        fk(&pose)
-    };
     let pick = |points: &[Contact], held: Option<usize>| -> (usize, f64) {
         let lowest = points
             .iter()
@@ -99,11 +147,11 @@ pub fn stride(options: &Options, period: f64, fk: Kinematics, periodic: bool) ->
             .map_or((lowest.foot, lowest.forward), |c| (c.foot, c.forward))
     };
     // hips(t) = anchor - forward of the planted point; the anchor moves only at a hand-over.
-    let (mut foot, start) = pick(&contacts(0), None);
+    let (mut foot, start) = pick(&fk(&poses[0]), None);
     let mut anchor = start;
-    let mut hips = vec![0.0; steps + 1];
+    let mut hips = vec![0.0; times.len()];
     for (i, slot) in hips.iter_mut().enumerate().skip(1) {
-        let points = contacts(i);
+        let points = fk(&poses[i]);
         let (f, x) = pick(&points, Some(foot));
         if f != foot {
             // Keep the hips continuous: the new point is held where it is now.
@@ -116,16 +164,18 @@ pub fn stride(options: &Options, period: f64, fk: Kinematics, periodic: bool) ->
         }
         *slot = anchor - x;
     }
-    let advance = if periodic { hips[steps] - hips[0] } else { 0.0 };
+    let last = hips.len() - 1;
+    let advance = if periodic { hips[last] - hips[0] } else { 0.0 };
     let table = hips
         .iter()
-        .enumerate()
-        .map(|(i, h)| h - hips[0] - advance * i as f64 / steps as f64)
+        .zip(&times)
+        .map(|(h, t)| h - hips[0] - advance * t / period)
         .collect();
-    Stride {
+    Ok(Stride {
         speed: advance / period,
         period,
         periodic,
+        times,
         table,
-    }
+    })
 }
