@@ -569,6 +569,8 @@ pub enum Content {
     DrawnSvg(std::sync::Arc<crate::vector::DrawOnSvg>),
     /// `data-hf-3d`: a low-poly 3D scene drawn into the element's padding box.
     Scene3d(std::sync::Arc<crate::scene3d::Scene3d>),
+    /// `data-hf-shader`: a procedural image evaluated per pixel over the padding box.
+    Shader(std::sync::Arc<crate::shader::Shader>),
 }
 
 /// Indexed still images with a clip-local playback clock.

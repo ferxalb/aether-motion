@@ -1,0 +1,14 @@
+<!-- Animated aurora backdrop for a 1920x1080 composition: luminous ribbons drift over a dark sky with faint stars, drawn by a native procedural shader. Put it first in the root; it follows the theme's --accent, --accent-2, and --bg colors. speed scales the motion. -->
+<div id="{{id|aurora}}" data-hf-shader="
+  let p = vec2(uv.x * aspect, uv.y);
+  let s = t * speed;
+  let warp = fbm(vec3(p * 1.1, s * 0.08), 4);
+  let q = vec2(p.x * 0.8 + warp * 1.3, p.y * 2.2 + sin(p.x * 1.7 + s * 0.2) * 0.4);
+  let band = fbm(vec3(q * vec2(0.7, 1.0), s * 0.05 + 3.1), 5);
+  let ribbon = smoothstep(0.44, 0.7, band) * smoothstep(0.0, 0.22, uv.y) * smoothstep(0.98, 0.5, uv.y);
+  let curtain = 0.65 + 0.35 * noise(vec2(p.x * 26.0 + warp * 5.0, s * 0.35));
+  let glow = mix(tint_a, tint_b, smoothstep(0.3, 0.8, 1.0 - uv.y + (warp - 0.5) * 0.9 + uv.x * 0.15));
+  let sky = mix(base * 0.8, base * 2.0 + tint_a * 0.05, smoothstep(0.2, 1.0, uv.y));
+  let star = step(0.9975, hash(floor(px / 2.0))) * smoothstep(0.8, 0.1, uv.y) * (1.0 - ribbon);
+  rgb(sky + glow * ribbon * curtain * 1.2 + glow * ribbon * ribbon * 0.25 + star * 0.6)
+" data-hf-shader-resolution="0.5" data-hf-shader-uniforms='{"tint_a": "var(--accent, #4be0b8)", "tint_b": "var(--accent-2, #6f8dff)", "base": "var(--bg, #070b16)", "speed": {{speed|1}}}' style="position: absolute; left: 0; top: 0; width: 1920px; height: 1080px;"></div>

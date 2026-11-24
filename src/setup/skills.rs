@@ -47,6 +47,10 @@ pub const FILES: &[(&str, &str)] = &[
         include_str!("../../skills/aether-motion-import/references/remotion.md"),
     ),
     (
+        "aether-motion-shaders/SKILL.md",
+        include_str!("../../skills/aether-motion-shaders/SKILL.md"),
+    ),
+    (
         "aether-motion-svg/SKILL.md",
         include_str!("../../skills/aether-motion-svg/SKILL.md"),
     ),

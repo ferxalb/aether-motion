@@ -1,6 +1,6 @@
 ---
 name: aether-motion-blocks
-description: Find and use AETHER Motion's ready-made HTML blocks and themes for titles, cards, counters, calls to action, backgrounds, and controllable 2D and 3D human characters. Use before hand-building a visual or a figure that may already exist in the local block catalog.
+description: Find and use AETHER Motion's ready-made HTML blocks and themes for titles, cards, counters, calls to action, procedural shader backgrounds (aurora, liquid gradient, perspective grid), complete intro and lower-third scenes, and controllable 2D and 3D human characters. Use before hand-building a visual or a figure that may already exist in the local block catalog.
 ---
 
 # AETHER Motion blocks and themes
@@ -18,7 +18,7 @@ Use the local AETHER Motion catalog before hand-authoring a named visual. Its bl
 
 Blocks target 1920×1080, inherit timing from the clip that contains them, and read colors from the supported CSS custom properties. Add a `theme-midnight`, `theme-sunrise`, or `theme-paper` block when a shared palette helps; set the composition root background to `var(--bg)` so it follows the theme.
 
-The local catalog includes `hero-title`, `feature-card`, `stat-card`, `counter-card`, `cta`, `glow`, the generated characters `human-2d` and `human-3d`, and the three themes. Treat the catalog output as authoritative for actual parameters and defaults. Adjust the generated HTML for the requested message and brand while preserving the block's unique identifiers and supported features.
+The local catalog includes `hero-title`, `feature-card`, `stat-card`, `counter-card`, `cta`, `glow`, the procedural shader backgrounds `aurora`, `liquid-gradient`, and `tech-grid`, the complete scenes `lower-third` and `intro-scene`, the generated characters `human-2d` and `human-3d`, and the three themes. Shader blocks take their colors from the theme through `var()` and expose `speed` (and other) parameters; see the `aether-motion-shaders` skill to adapt their programs. Treat the catalog output as authoritative for actual parameters and defaults. Adjust the generated HTML for the requested message and brand while preserving the block's unique identifiers and supported features.
 
 Check the block against the shot's palette, lighting, hierarchy, and timing. Keep accents and glows local so they preserve legibility. Inspect the block at its strongest motion or effect and adapt it to the output aspect ratio before reuse.
 

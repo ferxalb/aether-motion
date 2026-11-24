@@ -144,6 +144,8 @@ aether-motion block theme-midnight
 
 The [premium promo](examples/premium-promo.html) combines titles, feature cards, counters, and a closing call to action. Use `aether-motion block list` for the current catalog and parameter defaults.
 
+The shader blocks `aurora`, `liquid-gradient`, and `tech-grid` are animated procedural backgrounds, and `intro-scene` and `lower-third` are complete scenes built on them. All follow the theme's colors. See [Shaders](docs/shaders.md).
+
 `human-2d` and `human-3d` are controllable characters with rigid, jointed limbs that never stretch or kink. Each has motion presets, chained sequences, keyed joint angles, and feet that stay planted while the figure walks:
 
 ```bash
@@ -164,6 +166,7 @@ See [Characters](docs/characters.md).
 | Native physics and light shafts: kinematic contact, revolute hinge, and box shadow | [Hinged lamp](examples/hinged-lamp.html) |
 | Controllable 2D characters: walk, stop on a planted foot, wave, and cheer | [Characters in 2D](examples/characters-2d.html) |
 | A controllable 3D character with a following, orbiting camera | [Characters in 3D](examples/characters-3d.html) |
+| Procedural shaders: liquid gradient, aurora, perspective grid, and a noise-dissolve lower third | [Shader showcase](examples/shader-showcase.html) |
 | Parallax, image sequences, and bloom | [The Morning Shift](examples/cinematic-dystopia.html) |
 | Wrapped kinetic typography | [Kinetic text](examples/kinetic-wrap.html) |
 | Word-highlighted captions | [Captions](examples/captions.html) |
@@ -185,6 +188,7 @@ Native MP4 exports use H.264 at up to 60 fps with limited-range BT.709 yuv420p. 
 - Supported HTML, CSS, and motion attributes ([Composition reference](AGENTS.md), [Limits](limits.md))
 - Importing, fitting, and reusing scenes ([Motion Scenes](docs/motion-scenes.md))
 - Native 3D scenes, cameras, lights, backends, and limits ([3D](docs/3d.md))
+- Procedural `data-hf-shader` layers and the expression language ([Shaders](docs/shaders.md)), and the plan for particles, charts, and scenes ([Procedural rendering roadmap](docs/procedural.md))
 - Source layout, resource limits, and rendering internals ([Architecture](docs/architecture.md))
 - Performance measurements and methods ([Benchmarks](BENCHMARK.md))
 - Release history and publishing workflow ([Changelog](CHANGELOG.md), [Release process](docs/releasing.md))

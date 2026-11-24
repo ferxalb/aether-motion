@@ -3,7 +3,7 @@
 //!
 //! Phases are summed across worker threads, so with several threads their total exceeds the wall
 //! time. `Raster` covers drawing a frame; `Bloom`, `LayerBlur`, `EffectLayer`, `PlaneLayer`,
-//! `PlaneWarp`, and `Scene3d` are parts of it
+//! `PlaneWarp`, `Scene3d`, `ShaderEval`, and `ShaderBlend` are parts of it
 //! (`EffectLayer` is every element drawn through an offscreen effect layer, bloom included). When
 //! the variable is not set, a phase costs one relaxed atomic load; profiling never changes output.
 
@@ -42,9 +42,13 @@ pub enum Phase {
     /// `data-hf-3d` scenes: evaluation, rasterization (CPU or GPU), and compositing (part of
     /// `Raster`).
     Scene3d,
+    /// `data-hf-shader` evaluation (part of `Raster`).
+    ShaderEval,
+    /// `data-hf-shader` resampling and compositing (part of `Raster`).
+    ShaderBlend,
 }
 
-const PHASES: [Phase; 16] = [
+const PHASES: [Phase; 18] = [
     Phase::Raster,
     Phase::Convert,
     Phase::Encode,
@@ -61,6 +65,8 @@ const PHASES: [Phase; 16] = [
     Phase::PlaneLayer,
     Phase::PlaneWarp,
     Phase::Scene3d,
+    Phase::ShaderEval,
+    Phase::ShaderBlend,
 ];
 
 static NANOS: [AtomicU64; PHASES.len()] = [const { AtomicU64::new(0) }; PHASES.len()];
@@ -89,6 +95,8 @@ impl Phase {
             Self::PlaneLayer => "plane-layer",
             Self::PlaneWarp => "plane-warp",
             Self::Scene3d => "scene-3d",
+            Self::ShaderEval => "shader-eval",
+            Self::ShaderBlend => "shader-blend",
         }
     }
 }

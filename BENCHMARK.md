@@ -1443,3 +1443,27 @@ most 20 of 2,073,600 pixels of the example differ by more than 1% (peak 24 level
 triangle edges); `tests/scene3d_gpu.rs` measured a mean difference of 0.0004 levels or less and at
 most 6 of 129,600 pixels more than 2 levels apart at 480x270. Without an adapter the GPU build falls
 back to the CPU, byte-identical to the CPU build.
+
+## Procedural shaders
+
+[`examples/shader-showcase.html`](examples/shader-showcase.html) at 1920x1080, `bench --count 15
+--threads 1` from three starting frames. `shader-eval` runs the compiled program, and `shader-blend`
+resamples the grid and composites it. Frame 30 has the intro backdrop at quarter resolution and the ring
+at full resolution, frame 165 has the aurora at half resolution and the lower third, and frame 300 has
+the grid at half resolution and the call to action.
+
+| Start | `shader-eval` per call | `shader-blend` per call, before | after | Frame, before | after |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 30 | 16.8 ms | 23.2 ms | 7.7 ms | 118.8 ms | 73.0 ms |
+| 165 | 54.7 ms | 24.0 ms | 8.4 ms | 188.7 ms | 141.6 ms |
+| 300 | 17.2 ms | 70.7 ms | 26.4 ms | 103.8 ms | 61.7 ms |
+
+The first version sampled and blended pixel by pixel with branches and per-pixel bilinear lookups.
+The second interpolates each grid row horizontally once (two rows are kept) and runs the vertical
+interpolation and the blend as branch-free row kernels (`lerp_rows`, `shader_blend_row` in
+`paint/kernels.rs`, AVX2 at run time). The arithmetic per pixel is unchanged. All seven stills of the
+example were byte-identical before and after, and identical with `AETHER_SIMD=off` (63.8 ms per
+frame from frame 300, against 61.7 ms). The baseline AVX2 evaluator gives the same values as the
+scalar one: `shader::tests::simd_build_matches_the_baseline` compares them bit for bit. Stills of
+nine existing examples (three frames each) were byte-identical to the build before shaders.
+

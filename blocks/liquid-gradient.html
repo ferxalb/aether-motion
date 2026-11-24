@@ -1,0 +1,13 @@
+<!-- Liquid gradient backdrop for a 1920x1080 composition: three colors folded into slowly flowing, domain-warped marble, drawn by a native procedural shader at quarter resolution (it is smooth everywhere). Put it first in the root. Colors default to the theme's --bg, --accent, and --accent-2; speed scales the flow and zoom the size of the folds. -->
+<div id="{{id|liquid}}" data-hf-shader="
+  let p = vec2(uv.x * aspect, uv.y) * zoom;
+  let s = t * speed * 0.1;
+  let q = vec2(fbm(vec3(p, s), 3), fbm(vec3(p + vec2(5.2, 1.3), s), 3));
+  let f = fbm(vec3(p + q * 3.0, s * 1.5), 4);
+  let k = saturate((f - 0.5) * 3.2 + 0.5);
+  let m = saturate((q.x - 0.5) * 3.0 + 0.5 + (k - 0.5) * 0.5);
+  let c = mix(color_a, color_b, smoothstep(0.15, 0.85, k));
+  let c = mix(c, color_c, smoothstep(0.35, 0.9, m) * 0.9);
+  let shade = 0.7 + 0.45 * smoothstep(0.0, 1.0, k);
+  rgb(c * shade * vignette(0.5))
+" data-hf-shader-resolution="0.25" data-hf-shader-uniforms='{"color_a": "{{base|var(--bg, #070b16)}}", "color_b": "{{color-a|var(--accent-2, #6f8dff)}}", "color_c": "{{color-b|var(--accent, #4be0b8)}}", "speed": {{speed|1}}, "zoom": {{zoom|1.3}}}' style="position: absolute; left: 0; top: 0; width: 1920px; height: 1080px;"></div>
