@@ -375,7 +375,10 @@ pub const COMMANDS: &[Command] = &[
         group: Group::Compose,
         summary: "Print a ready-made block or theme as HTML",
         usage: &["aether-motion block [list]", "aether-motion block <name> [--set key=value]..."],
-        about: &["Prints to stdout, so the HTML can be piped or pasted. Blocks target 1920x1080 and read colors from custom properties that the theme blocks set."],
+        about: &[
+            "Prints to stdout, so the HTML can be piped or pasted. Blocks target 1920x1080 and read colors from custom properties that the theme blocks set.",
+            "human-2d and human-3d are generated characters: pick a motion preset, a sequence of motions, or a JSON timeline of poses, and offset any joint by name. See docs/characters.md.",
+        ],
         sections: &[Section {
             title: "Options",
             options: &[opt("--set", "<key=value>", "Set a parameter (repeatable).")],
@@ -383,6 +386,14 @@ pub const COMMANDS: &[Command] = &[
         examples: &[
             ("aether-motion block list", "Every block and theme with its parameters"),
             ("aether-motion block theme-midnight", "Print a theme"),
+            (
+                "aether-motion block human-2d --set motion=walk --set travel=auto --set x=300",
+                "A side-view figure walking across the frame without foot sliding",
+            ),
+            (
+                "aether-motion block human-3d --set motion=wave --set orbit=60",
+                "A 3D figure waving while the camera orbits it",
+            ),
         ],
     },
     Command {

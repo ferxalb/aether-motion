@@ -43,9 +43,16 @@ pub fn listing(style: Style) -> Result<String> {
                     out.push_str(&format!("{indent}{line}\n"));
                 }
             }
+            // The rigs' pose channels (all default 0) are summarized on one line after the rest.
+            let channels = blocks::pose_channels();
+            let posed = block
+                .params
+                .iter()
+                .any(|p| channels.contains(&p.name.as_str()));
             let params: Vec<String> = block
                 .params
                 .iter()
+                .filter(|p| !channels.contains(&p.name.as_str()))
                 .map(|p| {
                     let value = if p.default.contains(' ') || p.default.is_empty() {
                         format!("\"{}\"", p.default)
@@ -71,6 +78,15 @@ pub fn listing(style: Style) -> Result<String> {
                     row.push_str(&param);
                 }
                 out.push_str(&format!("{indent}{}\n", style.dim(&row)));
+            }
+            if posed {
+                let line = format!(
+                    "pose offsets (deg; body-x, body-y in px), default 0: {}",
+                    channels.join(" ")
+                );
+                for row in wrap(&line, text_width) {
+                    out.push_str(&format!("{indent}{}\n", style.dim(&row)));
+                }
             }
         }
     }

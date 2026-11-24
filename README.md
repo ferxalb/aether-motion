@@ -144,6 +144,15 @@ aether-motion block theme-midnight
 
 The [premium promo](examples/premium-promo.html) combines titles, feature cards, counters, and a closing call to action. Use `aether-motion block list` for the current catalog and parameter defaults.
 
+`human-2d` and `human-3d` are controllable characters with rigid, jointed limbs that never stretch or kink. Each has motion presets, chained sequences, keyed joint angles, and feet that stay planted while the figure walks:
+
+```bash
+aether-motion block human-2d --set motion=walk --set travel=auto --set x=300 --set y=900
+aether-motion block human-3d --set sequence='[{"motion":"walk","duration":2.2},{"motion":"wave","duration":3}]' --set travel=auto
+```
+
+See [Characters](docs/characters.md).
+
 ## Examples by feature
 
 | Feature | Composition |
@@ -153,6 +162,8 @@ The [premium promo](examples/premium-promo.html) combines titles, feature cards,
 | 2.5D planes and a perspective camera | [Lantern Valley](examples/depth-lantern-valley.html) |
 | Native low-poly 3D with a rotating volumetric lighthouse beam | [Lighthouse Isle](examples/lighthouse-isle-3d.html) |
 | Native physics and light shafts: kinematic contact, revolute hinge, and box shadow | [Hinged lamp](examples/hinged-lamp.html) |
+| Controllable 2D characters: walk, stop on a planted foot, wave, and cheer | [Characters in 2D](examples/characters-2d.html) |
+| A controllable 3D character with a following, orbiting camera | [Characters in 3D](examples/characters-3d.html) |
 | Parallax, image sequences, and bloom | [The Morning Shift](examples/cinematic-dystopia.html) |
 | Wrapped kinetic typography | [Kinetic text](examples/kinetic-wrap.html) |
 | Word-highlighted captions | [Captions](examples/captions.html) |
