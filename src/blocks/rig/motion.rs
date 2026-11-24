@@ -615,6 +615,10 @@ impl Timeline {
             if out.times.last().is_some_and(|last| at < last + MIN_STEP) {
                 bail!("timeline times must increase by at least {MIN_STEP} s (timeline[{index}].at = {at})");
             }
+            // The motion also samples t = 0, so a first key must be at 0 or a millisecond after.
+            if out.times.is_empty() && at > 0.0 && at < MIN_STEP {
+                bail!("timeline[{index}].at must be 0 or at least {MIN_STEP} s");
+            }
             let mut ease = Ease::Linear;
             for (key, value) in object {
                 match key.as_str() {
@@ -1081,6 +1085,7 @@ mod tests {
         )
         .is_ok());
         assert!(Timeline::parse(r#"[{"at":0},{"at":0.0000005,"r-elbow":90}]"#).is_err());
+        assert!(Timeline::parse(r#"[{"at":0.0000004},{"at":0.002}]"#).is_err());
         let t = Timeline::parse(r#"[{"at":0},{"at":0.0015,"r-elbow":90},{"at":1}]"#).unwrap();
         let times = Source::Keys {
             timeline: t,

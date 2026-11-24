@@ -957,6 +957,13 @@ mod tests {
     }
 
     #[test]
+    fn travel_auto_rejects_moves_too_fast_to_follow() {
+        let timeline = r#"[{"at":0},{"at":0.5},{"at":0.502,"body":3600},{"at":10}]"#;
+        let html = render(&values(&[("timeline", timeline), ("travel", "auto")]));
+        assert!(html.is_err());
+    }
+
+    #[test]
     fn hull_contains_both_circles() {
         let d = hull((0.0, 0.0), 20.0, (0.0, 100.0), 10.0);
         assert!(d.starts_with('M') && d.ends_with('Z'));

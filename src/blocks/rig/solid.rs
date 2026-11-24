@@ -673,8 +673,13 @@ pub fn render(values: &BTreeMap<String, String>) -> Result<String> {
         } else {
             String::new()
         }
-    } else if speed != 0.0 && travel_time >= MIN_STEP {
-        // Shorter than a millisecond there is nothing to travel: the two keys would coincide.
+    } else if speed != 0.0 && travel_time > 0.0 {
+        if travel_time < MIN_STEP {
+            bail!(
+                "travel needs at least {MIN_STEP} s between delay and duration (got {} s)",
+                fmt_time(travel_time)
+            );
+        }
         let d = speed * travel_time;
         format!(
             " data-hf-keyframes='[{{\"at\":{},\"x\":{},\"z\":{}}},{{\"at\":{},\"x\":{},\"z\":{}}}]'",
@@ -925,21 +930,46 @@ mod tests {
             ("sequence", r#"[{"motion":"idle","duration":600}]"#),
         ]))
         .is_ok());
-        // A first key near zero keeps its own time next to the sample at zero.
+        // A first key a millisecond after zero keeps its own time next to the sample at zero.
         let html = render(&values(&[(
             "timeline",
-            r#"[{"at":0.0003},{"at":0.0015,"r-elbow":90},{"at":1,"r-elbow":90}]"#,
+            r#"[{"at":0.0013},{"at":0.0025,"r-elbow":90},{"at":1,"r-elbow":90}]"#,
         )]))
         .unwrap();
-        assert!(html.contains("{\"at\":0.0003,"), "{html}");
-        // A travel window under a millisecond writes no track.
-        let html = render(&values(&[
+        assert!(html.contains("{\"at\":0.0013,"), "{html}");
+        // A travel window under a millisecond is an error, not a lost move.
+        assert!(render(&values(&[
             ("motion", "none"),
             ("delay", "0.9999"),
             ("duration", "1"),
             ("travel", "100000"),
         ]))
-        .unwrap();
-        assert!(!html.contains("\"x\":"));
+        .is_err());
+        // Every written keyframe list has strictly increasing times.
+        for pairs in [
+            vec![(
+                "timeline",
+                r#"[{"at":0.001,"r-elbow":0},{"at":0.002,"r-elbow":360},{"at":1}]"#,
+            )],
+            vec![("motion", "walk"), ("travel", "auto"), ("delay", "0.5")],
+            vec![
+                (
+                    "sequence",
+                    r#"[{"motion":"walk","duration":1.1},{"motion":"wave","duration":2}]"#,
+                ),
+                ("travel", "auto"),
+            ],
+        ] {
+            let html = render(&values(&pairs)).unwrap();
+            for list in html.split("data-hf-keyframes='").skip(1) {
+                let json = &list[..list.find('\'').unwrap()];
+                let keys: Vec<serde_json::Value> = serde_json::from_str(json).unwrap();
+                let times: Vec<f64> = keys.iter().map(|k| k["at"].as_f64().unwrap()).collect();
+                assert!(
+                    times.windows(2).all(|w| w[0] < w[1]),
+                    "{pairs:?}: {times:?}"
+                );
+            }
+        }
     }
 }

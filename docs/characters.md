@@ -152,7 +152,8 @@ aether-motion block human-2d --set motion=none --set timeline='[
 ]'
 ```
 
-Keys are at most 600 s and at least 1 ms apart, so every key keeps its own keyframe. Each key holds
+Keys are at most 600 s and at least 1 ms apart, and the first key is at 0 or at least 1 ms after
+it, so every key keeps its own keyframe. Each key holds
 every channel. An omitted channel keeps the previous key's value, starting from the
 rest pose, which has the arms 5 degrees from the body. The easing of a key shapes the segment that
 ends there. The easings are `linear`, `ease-in`, `ease-out`, `ease-in-out`, `ease-in-cubic`,
@@ -172,7 +173,10 @@ keeps its hold while it stays within 4 units of the lowest. For a looping walk o
 a constant speed plus a small periodic surge of the hips. For a `sequence` or a `timeline`, it is the
 whole path, which ends where the figure stops. Planted feet do not slide. Measured on a 1080p
 render, a planted sole stays within 1 px through each stance. `travel=auto` needs a side view in 2D.
-A number instead is a constant speed in px per second along the facing direction.
+A number instead is a constant speed in px per second along the facing direction. Travel needs at
+least 1 ms between `delay` and `duration`. `travel=auto` follows joints that turn up to 3 degrees
+between its samples, which it refines down to 10 microseconds. A keyed move faster than that is an
+error, not a sliding foot.
 
 In 3D, the camera and the contact shadow follow the figure's travel.
 

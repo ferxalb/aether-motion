@@ -119,7 +119,13 @@ pub fn stride(
             .zip(&poses[i + 1])
             .map(|(a, b)| (a - b).abs())
             .fold(0.0, f64::max);
-        if turn > STRIDE_TURN && times[i + 1] - times[i] > 1e-5 {
+        if turn > STRIDE_TURN {
+            if times[i + 1] - times[i] <= 1e-5 {
+                anyhow::bail!(
+                    "travel=auto cannot follow a joint turning {turn:.0} degrees in under 10 microseconds near t = {:.4} s; slow that move",
+                    times[i]
+                );
+            }
             if times.len() >= STRIDE_BUDGET {
                 anyhow::bail!(
                     "travel=auto needs more than {STRIDE_BUDGET} samples to follow this motion; slow its fastest moves"
