@@ -13,6 +13,8 @@ Use this skill for `data-hf-3d` viewports. The authoritative contract is the `da
 - **`data-hf-space`**: illustrated plates, photos, text, or SVG placed in depth. Prefer it when the artwork is 2D.
 - Combine them: a 3D viewport is an ordinary element, so it can sit between 2D sky and title layers, inside a 2D camera, or as a plane of a 2.5D space.
 
+For a person in the scene, generate the `human-3d` block (`aether-motion block human-3d`, or `aether_block`) instead of modeling limbs by hand. It prints a full scene, or with `scene=figure` an `<hf-node>` figure for your viewport, with motion presets, sequences, keyed joints, and feet planted on the floor. See `docs/characters.md`.
+
 ## Build the scene
 
 1. Put one sized clip in the composition: `<div class="clip" data-hf-3d data-hf-3d-antialias="2|3" style="position:absolute; left:0; top:0; width:1920px; height:1080px">`. Leave its background transparent when 2D layers (sky, gradients, glow) draw behind it.

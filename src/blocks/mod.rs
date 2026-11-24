@@ -1,17 +1,25 @@
 //! Ready-made blocks and themes: parametrized HTML fragments for premium compositions.
 //!
-//! `catalog` embeds the templates from `blocks/`, `template` fills their `{{name|default}}` placeholders.
+//! `catalog` embeds the templates from `blocks/` and lists the generated rigs, `template` fills the
+//! templates' `{{name|default}}` placeholders, and `rig` computes the controllable human figures.
 //! This facade serves the CLI (`aether-motion block ...`) and the `aether_block` MCP tool.
 
 mod catalog;
+mod rig;
 mod template;
 
 pub use template::Param;
 
 use anyhow::{anyhow, bail, Result};
-use catalog::{Entry, Kind, ENTRIES};
+use catalog::{Entry, Kind, Source, ENTRIES};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
+
+/// The pose channels of the human rigs: every one is also a parameter (a static offset, default 0)
+/// and a key of their `timeline` and `sequence` steps.
+pub fn pose_channels() -> &'static [&'static str] {
+    &rig::CHANNELS
+}
 
 /// Public description of one catalog entry.
 #[derive(Clone, Debug)]
@@ -39,8 +47,18 @@ fn info(entry: &Entry) -> Result<BlockInfo> {
             Kind::Block => "block",
             Kind::Theme => "theme",
         },
-        description: description(entry.template),
-        params: template::params(entry.template)?,
+        description: match entry.source {
+            Source::Template(text) => description(text),
+            Source::Rig(rig) => rig.description().to_string(),
+        },
+        params: match entry.source {
+            Source::Template(text) => template::params(text)?,
+            Source::Rig(rig) => rig
+                .params()
+                .into_iter()
+                .map(|(name, default)| Param { name, default })
+                .collect(),
+        },
     })
 }
 
@@ -72,7 +90,10 @@ pub fn render(name: &str, values: &BTreeMap<String, String>) -> Result<String> {
         let names: Vec<&str> = ENTRIES.iter().map(|e| e.name).collect();
         anyhow!("unknown block '{name}'; available: {}", names.join(", "))
     })?;
-    template::render(entry.template, values)
+    match entry.source {
+        Source::Template(text) => template::render(text, values),
+        Source::Rig(rig) => rig.render(values),
+    }
 }
 
 fn format_list() -> Result<String> {
@@ -125,6 +146,7 @@ mod tests {
     fn blocks_render_with_defaults_and_overrides() {
         for entry in ENTRIES {
             let html = render(entry.name, &BTreeMap::new()).unwrap();
+            assert!(!html.is_empty(), "{} rendered nothing", entry.name);
             assert!(!html.contains("{{"), "{} left a placeholder", entry.name);
         }
         let mut values = BTreeMap::new();

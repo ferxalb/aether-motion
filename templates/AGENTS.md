@@ -15,3 +15,5 @@ Agents: the `aether-motion` MCP server is configured in `.mcp.json` (tools `aeth
 with an explicit error.
 
 Ready-made scenes: `aether-motion add` lists blocks, `aether-motion add <block> --set key=value` appends one.
+For a person, use the character blocks: `aether-motion add human-2d --set motion=walk --set travel=auto`
+(or `human-3d`). They have motion presets, `sequence`, `timeline`, and per-joint offsets such as `r-elbow=40`.
