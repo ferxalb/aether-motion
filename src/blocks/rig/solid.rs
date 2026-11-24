@@ -477,10 +477,13 @@ fn schedule(o: &Options) -> Result<Vec<(f64, f64)>> {
     let reach = (o.duration - o.delay).max(0.0);
     let per_lap = (pass.len() - 1) as f64;
     let needed = if o.source.repeats() {
+        // The sample at 0, every later sample before the end, and the first one at or past it.
+        // Whole laps hold `per_lap` samples after 0; the last lap's samples before `rest`
+        // (counted with its 0, which is the previous lap's end) add the rest.
         let laps = (reach / period).floor();
         let rest = reach - laps * period;
-        let partial = pass.partition_point(|t| *t < rest).min(pass.len() - 1) as f64 + 1.0;
-        1.0 + laps * per_lap + partial
+        let before = pass.partition_point(|t| *t < rest) as f64;
+        laps * per_lap + before + 1.0
     } else {
         (pass.partition_point(|t| *t < reach).min(pass.len() - 1) + 1) as f64
     };
@@ -921,6 +924,20 @@ mod tests {
             ("motion", "run"),
             ("cycle", "0.1"),
             ("duration", "3600")
+        ]))
+        .is_err());
+        // The budget is exact: a 1 s walk cycle has 32 samples per lap, so 624 laps and 31/32
+        // of a lap need 20,000 keyframes, which fits; a little longer does not.
+        assert!(render(&values(&[
+            ("motion", "walk"),
+            ("cycle", "1"),
+            ("duration", "624.96875"),
+        ]))
+        .is_ok());
+        assert!(render(&values(&[
+            ("motion", "walk"),
+            ("cycle", "1"),
+            ("duration", "625.01"),
         ]))
         .is_err());
         // A short clip of a long looped sequence needs only the samples it reaches.
