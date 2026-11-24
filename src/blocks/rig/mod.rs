@@ -69,27 +69,42 @@ pub(crate) fn keep(times: &[f64], series: &[Vec<f64>], tolerance: f64) -> Vec<us
     if n <= 2 {
         return (0..n).collect();
     }
-    let fits = |a: usize, b: usize| -> bool {
-        (a + 1..b).all(|m| {
-            let s = (times[m] - times[a]) / (times[b] - times[a]);
-            series[m]
-                .iter()
-                .zip(&series[a])
-                .zip(&series[b])
-                .all(|((v, va), vb)| (va + (vb - va) * s - v).abs() <= tolerance)
-        })
-    };
+    // From the last kept sample, the line to a later sample fits every sample between them when
+    // its slope lies inside each between-sample's window [(v - tol - va) / dt, (v + tol - va) / dt].
+    // Intersecting those windows as the run grows keeps this linear in the number of samples.
+    let channels = series[0].len();
     let mut kept = vec![0];
     let mut anchor = 0;
-    let mut end = 2;
+    let mut lo = vec![f64::NEG_INFINITY; channels];
+    let mut hi = vec![f64::INFINITY; channels];
+    let mut end = 1;
     while end < n {
-        if !fits(anchor, end) {
+        let dt = times[end] - times[anchor];
+        let fits = (0..channels).all(|c| {
+            let slope = (series[end][c] - series[anchor][c]) / dt;
+            slope >= lo[c] - 1e-12 && slope <= hi[c] + 1e-12
+        });
+        if !fits {
+            // The run ends at the previous sample; restart the windows from it.
             anchor = end - 1;
             kept.push(anchor);
+            lo.fill(f64::NEG_INFINITY);
+            hi.fill(f64::INFINITY);
+        }
+        // `end` becomes a between-sample of every longer run from `anchor`.
+        let dt = times[end] - times[anchor];
+        if dt > 0.0 {
+            for c in 0..channels {
+                let v = series[end][c] - series[anchor][c];
+                lo[c] = lo[c].max((v - tolerance) / dt);
+                hi[c] = hi[c].min((v + tolerance) / dt);
+            }
         }
         end += 1;
     }
-    kept.push(n - 1);
+    if kept.last() != Some(&(n - 1)) {
+        kept.push(n - 1);
+    }
     kept
 }
 
@@ -136,6 +151,20 @@ mod tests {
             .map(|t| vec![if *t <= 5.0 { *t } else { 10.0 - t }])
             .collect();
         assert_eq!(keep(&times, &series, 1e-9), vec![0, 5, 10]);
+        // A long hold then a move: every dropped sample stays within tolerance.
+        let times: Vec<f64> = (0..20_000).map(f64::from).collect();
+        let series: Vec<Vec<f64>> = times
+            .iter()
+            .map(|t| {
+                vec![if *t < 19_990.0 {
+                    0.0
+                } else {
+                    (t - 19_990.0) * 3.0
+                }]
+            })
+            .collect();
+        let kept = keep(&times, &series, 0.1);
+        assert_eq!(kept, vec![0, 19_990, 19_999]);
     }
 
     #[test]

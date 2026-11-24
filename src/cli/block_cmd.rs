@@ -45,14 +45,14 @@ pub fn listing(style: Style) -> Result<String> {
             }
             // The rigs' pose channels (all default 0) are summarized on one line after the rest.
             let channels = blocks::pose_channels();
-            let posed = block
-                .params
+            // Only the rigs have every channel; a template's own `body` parameter stays listed.
+            let posed = channels
                 .iter()
-                .any(|p| channels.contains(&p.name.as_str()));
+                .all(|c| block.params.iter().any(|p| p.name == *c));
             let params: Vec<String> = block
                 .params
                 .iter()
-                .filter(|p| !channels.contains(&p.name.as_str()))
+                .filter(|p| !posed || !channels.contains(&p.name.as_str()))
                 .map(|p| {
                     let value = if p.default.contains(' ') || p.default.is_empty() {
                         format!("\"{}\"", p.default)
@@ -110,5 +110,8 @@ mod tests {
         for block in crate::blocks::list().unwrap() {
             assert!(text.contains(block.name), "{} missing", block.name);
         }
+        // A template's own `body` parameter is listed, not mistaken for a pose channel.
+        assert!(text.contains("body=\"No browser"));
+        assert_eq!(text.matches("pose offsets").count(), 2);
     }
 }

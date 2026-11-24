@@ -298,8 +298,10 @@ fn skeleton(view: View, o: &Options) -> Joint {
         };
         if side {
             let d = format!(
-                "M-15 -6C-22 -4 -23 {g} -12 {g}L50 {g}C60 {g} 61 9 50 4C40 0 24 -4 12 -10C4 -14 -8 -10 -15 -6Z",
-                g = fmt(ANKLE_HEIGHT)
+                "M-15 -6C-22 -4 -23 {g} {h} {g}L{t} {g}C60 {g} 61 9 50 4C40 0 24 -4 12 -10C4 -14 -8 -10 -15 -6Z",
+                g = fmt(ANKLE_HEIGHT),
+                h = fmt(HEEL),
+                t = fmt(TOE)
             );
             shoe = shoe.shape(filled(
                 &d,
@@ -315,13 +317,15 @@ fn skeleton(view: View, o: &Options) -> Joint {
         } else {
             let out = -sign * 3.0;
             let d = format!(
-                "M{} 0C{} -9 {} -9 {} 0L{} 15C{} {g} {} {g} {} 15Z",
+                "M{} 0C{} -9 {} -9 {} 0L{} 15Q{} {g} {} {g}L{} {g}Q{} {g} {} 15Z",
                 fmt(out - 15.0),
                 fmt(out - 15.0),
                 fmt(out + 15.0),
                 fmt(out + 15.0),
                 fmt(out + 17.0),
                 fmt(out + 17.0),
+                fmt(out + FRONT_SOLE_HALF),
+                fmt(out - FRONT_SOLE_HALF),
                 fmt(out - 17.0),
                 fmt(out - 17.0),
                 g = fmt(ANKLE_HEIGHT)
@@ -334,8 +338,8 @@ fn skeleton(view: View, o: &Options) -> Joint {
                 [out - 17.0, 0.0, out + 17.0, 0.0],
             ));
             shoe.contacts = vec![
-                (foot * 2, out - SOLE_HALF, ANKLE_HEIGHT),
-                (foot * 2 + 1, out + SOLE_HALF, ANKLE_HEIGHT),
+                (foot * 2, out - FRONT_SOLE_HALF, ANKLE_HEIGHT),
+                (foot * 2 + 1, out + FRONT_SOLE_HALF, ANKLE_HEIGHT),
             ];
         }
         let shin = Joint {
@@ -602,6 +606,52 @@ fn refine(times: &mut Vec<f64>, turn_at: &dyn Fn(f64) -> Vec<f64>) {
     }
 }
 
+/// Ends an element's open CSS rule with its transform: static when it never changes, otherwise an
+/// animation through the samples that a straight line between kept samples cannot reproduce
+/// within 0.12 units. Offsets carry four decimals of a percent; if two kept samples still share an
+/// offset, the later one wins, so the true endpoint of a pass is never lost.
+fn animate(
+    css: &mut String,
+    sel: &str,
+    times: &[f64],
+    values: &[String],
+    series: &[Vec<f64>],
+    period: Option<f64>,
+    o: &Options,
+) {
+    let moving = values.iter().any(|v| *v != values[0]);
+    let Some(period) = period.filter(|_| moving) else {
+        let _ = writeln!(css, " transform: {}; }}", values[0]);
+        return;
+    };
+    let iterations = if o.source.repeats() { "infinite" } else { "1" };
+    let _ = writeln!(
+        css,
+        " animation: {sel} {}s linear {}s {iterations} both; }}",
+        fmt(period),
+        fmt(o.delay)
+    );
+    let mut stops: Vec<(String, &str)> = Vec::new();
+    for i in keep(times, series, 0.12) {
+        let at = percent(times[i] / period * 100.0);
+        match stops.last_mut() {
+            Some(last) if last.0 == at => last.1 = &values[i],
+            _ => stops.push((at, &values[i])),
+        }
+    }
+    let _ = write!(css, "  @keyframes {sel} {{");
+    for (at, value) in stops {
+        let _ = write!(css, " {at}% {{ transform: {value} }}");
+    }
+    let _ = writeln!(css, " }}");
+}
+
+/// A keyframe offset with four decimals and no trailing zeros.
+fn percent(v: f64) -> String {
+    let text = format!("{:.4}", v.clamp(0.0, 100.0));
+    text.trim_end_matches('0').trim_end_matches('.').to_string()
+}
+
 /// Renders the 2D rig.
 pub fn render(values: &BTreeMap<String, String>) -> Result<String> {
     let view_of = |raw: &BTreeMap<String, String>| -> Result<View> {
@@ -690,14 +740,28 @@ pub fn render(values: &BTreeMap<String, String>) -> Result<String> {
         let half = if side { 82.0 } else { 92.0 };
         let _ = writeln!(
             css,
-            "  #{id}-shadow {{ position: absolute; left: -{h}px; top: -12px; width: {w}px; height: 24px; background: radial-gradient(ellipse farthest-side, rgba(0,0,0,0.34), rgba(0,0,0,0)); }}",
+            "  #{id}-shadow {{ position: absolute; left: -{h}px; top: -12px; width: {w}px; height: 24px; background: radial-gradient(ellipse farthest-side, rgba(0,0,0,0.34), rgba(0,0,0,0));",
             h = fmt(half),
             w = fmt(half * 2.0)
+        );
+        // The shadow stays under the hips (a sequence's travel and a gait's surge move them).
+        let values: Vec<String> = frames
+            .iter()
+            .map(|fs| format!("translateX({}px)", fmt(fs[0].0 * f)))
+            .collect();
+        let series: Vec<Vec<f64>> = frames.iter().map(|fs| vec![fs[0].0]).collect();
+        animate(
+            &mut css,
+            &format!("{id}-shadow"),
+            &times,
+            &values,
+            &series,
+            period,
+            &o,
         );
         let _ = writeln!(body, "    <div id=\"{id}-shadow\"></div>");
     }
 
-    let iterations = if o.source.repeats() { "infinite" } else { "1" };
     let mut gradient = 0usize;
     for segment in &flat.segments {
         let sel = format!("{id}-{}", segment.name);
@@ -745,37 +809,14 @@ pub fn render(values: &BTreeMap<String, String>) -> Result<String> {
             n = fmt(-r),
             d = fmt(2.0 * r)
         );
-        let moving = values.iter().any(|v| *v != values[0]);
-        match period.filter(|_| moving) {
-            None => {
-                let _ = writeln!(css, " transform: {}; }}", values[0]);
-            }
-            Some(period) => {
-                let _ = writeln!(
-                    css,
-                    " animation: {sel} {}s linear {}s {iterations} both; }}",
-                    fmt(period),
-                    fmt(o.delay)
-                );
-                let _ = write!(css, "  @keyframes {sel} {{");
-                let series: Vec<Vec<f64>> = frames
-                    .iter()
-                    .map(|fs| {
-                        let fr = fs[segment.joint];
-                        vec![fr.0, fr.1, fr.2]
-                    })
-                    .collect();
-                let mut last = String::new();
-                for i in keep(&times, &series, 0.12) {
-                    let at = fmt(times[i] / period * 100.0);
-                    if at != last {
-                        let _ = write!(css, " {at}% {{ transform: {} }}", values[i]);
-                        last = at;
-                    }
-                }
-                let _ = writeln!(css, " }}");
-            }
-        }
+        let series: Vec<Vec<f64>> = frames
+            .iter()
+            .map(|fs| {
+                let fr = fs[segment.joint];
+                vec![fr.0, fr.1, fr.2]
+            })
+            .collect();
+        animate(&mut css, &sel, &times, &values, &series, period, &o);
     }
     let _ = writeln!(body, "  </div>");
     let _ = writeln!(body, "</div>");
@@ -799,6 +840,21 @@ mod tests {
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect()
+    }
+
+    #[test]
+    fn colliding_offsets_keep_the_later_sample() {
+        let o = Options::parse(Flavor::Flat, &BTreeMap::new(), |_| Ok(View::Side)).unwrap();
+        let mut css = String::from("  #a {");
+        let times = [0.0, 0.999_999_9, 1.0];
+        let values: Vec<String> = ["rotate(0deg)", "rotate(90deg)", "rotate(0deg)"]
+            .iter()
+            .map(|v| v.to_string())
+            .collect();
+        let series = vec![vec![0.0], vec![90.0], vec![0.0]];
+        animate(&mut css, "a", &times, &values, &series, Some(1.0), &o);
+        assert!(css.contains("100% { transform: rotate(0deg) }"), "{css}");
+        assert!(!css.contains("rotate(90deg)"));
     }
 
     #[test]

@@ -376,8 +376,8 @@ pub const COMMANDS: &[Command] = &[
         summary: "Print a ready-made block or theme as HTML",
         usage: &["aether-motion block [list]", "aether-motion block <name> [--set key=value]..."],
         about: &[
-            "Prints to stdout, so the HTML can be piped or pasted. Blocks target 1920x1080 and read colors from custom properties that the theme blocks set.",
-            "human-2d and human-3d are generated characters: pick a motion preset, a sequence of motions, or a JSON timeline of poses, and offset any joint by name. See docs/characters.md.",
+            "Prints to stdout, so the HTML can be piped or pasted. Blocks target 1920x1080, and the template blocks read colors from custom properties that the theme blocks set.",
+            "human-2d and human-3d are generated characters: pick a motion preset, a sequence of motions, or a JSON timeline of poses, and offset any joint by name. human-2d draws SVG and needs explicit color values (no var()); human-3d accepts var(). See docs/characters.md.",
         ],
         sections: &[Section {
             title: "Options",

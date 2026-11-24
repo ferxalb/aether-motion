@@ -452,7 +452,7 @@ fn contacts(root: &Joint, pose: &Pose) -> Vec<Contact> {
 /// Darkens a `#rrggbb` color toward black by `amount` (0..1).
 fn darken(hex: &str, amount: f64) -> Option<String> {
     let h = hex.strip_prefix('#')?;
-    if h.len() != 6 {
+    if h.len() != 6 || !h.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
     }
     let channel = |i: usize| u8::from_str_radix(&h[i..i + 2], 16).ok();
@@ -463,10 +463,28 @@ fn darken(hex: &str, amount: f64) -> Option<String> {
 
 /// Keyframe times (seconds from the clip start) and the matching motion times.
 fn schedule(o: &Options) -> Result<Vec<(f64, f64)>> {
+    const LIMIT: usize = 20_000;
     let pass = o.source.pass_times(32, 20.0);
     let Some(period) = o.source.period() else {
         return Ok(vec![(0.0, 0.0)]);
     };
+    if period <= 0.0 || pass.len() < 2 {
+        bail!("the motion's period is too short to animate; space keys at least 1 ms apart");
+    }
+    // Estimate before generating, so a long clip of short cycles fails fast.
+    let laps = if o.source.repeats() {
+        ((o.duration - o.delay).max(0.0) / period).ceil() + 1.0
+    } else {
+        1.0
+    };
+    let estimate = laps * (pass.len() - 1) as f64;
+    if estimate > LIMIT as f64 {
+        bail!(
+            "this motion needs about {} keyframes over duration={} (limit {LIMIT}); shorten duration or lengthen cycle",
+            estimate.round(),
+            fmt(o.duration)
+        );
+    }
     let mut out: Vec<(f64, f64)> = Vec::new();
     let mut lap = 0.0;
     'laps: loop {
@@ -486,7 +504,7 @@ fn schedule(o: &Options) -> Result<Vec<(f64, f64)>> {
         }
         lap += period;
     }
-    if out.len() > 20_000 {
+    if out.len() > LIMIT {
         bail!(
             "this motion needs {} keyframes over duration={}; shorten duration or lengthen cycle",
             out.len(),
@@ -752,6 +770,9 @@ pub fn render(values: &BTreeMap<String, String>) -> Result<String> {
     }
     let start = o.number("start", 0.0, 3600.0)?;
     let track = o.number("track", 0.0, 1000.0)?;
+    if track.fract() != 0.0 {
+        bail!("track must be a whole number (it becomes data-track-index)");
+    }
     let left = o.number("left", -100_000.0, 100_000.0)?;
     let top = o.number("top", -100_000.0, 100_000.0)?;
     let width = o.number("width", 1.0, 100_000.0)?;
@@ -879,5 +900,13 @@ mod tests {
         assert!(!figure.contains("data-hf-keyframes"));
         assert!(render(&values(&[("scene", "half")])).is_err());
         assert_eq!(darken("#808080", 0.5).as_deref(), Some("#404040"));
+        assert_eq!(darken("#aé000", 0.5), None);
+        assert!(render(&values(&[("track", "1.5")])).is_err());
+        assert!(render(&values(&[
+            ("motion", "run"),
+            ("cycle", "0.1"),
+            ("duration", "3600")
+        ]))
+        .is_err());
     }
 }

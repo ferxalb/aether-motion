@@ -127,11 +127,14 @@ pub const R_KNEE: f64 = 19.5;
 pub const R_ANKLE: f64 = 13.0;
 pub const R_NECK: f64 = 13.0;
 
-/// Sole contact points relative to the ankle joint (side view, facing +x): heel and toe.
-pub const HEEL: f64 = -14.0;
-pub const TOE: f64 = 52.0;
-/// Half width of the sole seen from the front.
+/// Sole contact points relative to the ankle joint (side view, facing +x): the ends of the flat
+/// part of the drawn sole, at heel and toe.
+pub const HEEL: f64 = -12.0;
+pub const TOE: f64 = 50.0;
+/// Half width of the 3D sole.
 pub const SOLE_HALF: f64 = 15.0;
+/// Half width of the flat part of the 2D sole seen from the front.
+pub const FRONT_SOLE_HALF: f64 = 11.0;
 
 /// The standing pose every motion starts from: arms hang slightly away from the body.
 pub fn rest() -> Pose {

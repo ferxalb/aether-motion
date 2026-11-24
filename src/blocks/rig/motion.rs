@@ -73,6 +73,9 @@ pub enum View {
 pub struct Preset {
     pub cycle: f64,
     tracks: Vec<(usize, Vec<(f64, f64)>)>,
+    /// Ballistic lifts `(channel, start, end, height)`: a parabola between the two phases and
+    /// exactly zero outside them, added to the channel (negative is up).
+    flights: Vec<(usize, f64, f64, f64)>,
 }
 
 impl Preset {
@@ -80,6 +83,7 @@ impl Preset {
         Self {
             cycle,
             tracks: Vec::new(),
+            flights: Vec::new(),
         }
     }
 
@@ -112,6 +116,12 @@ impl Preset {
         let p = phase.rem_euclid(1.0);
         for (ch, keys) in &self.tracks {
             pose[*ch] = periodic(keys, p);
+        }
+        for (ch, start, end, height) in &self.flights {
+            if p > *start && p < *end {
+                let u = (p - start) / (end - start);
+                pose[*ch] -= height * 4.0 * u * (1.0 - u);
+            }
         }
         pose
     }
@@ -472,19 +482,9 @@ pub fn preset(motion: Motion, view: View) -> Option<Preset> {
                     (0.86, 6.0),
                 ],
             );
-            // Flight, added after the feet are placed on the ground.
-            p.set(
-                BODY_Y,
-                &[
-                    (0.0, 0.0),
-                    (0.29, 0.0),
-                    (0.36, -130.0),
-                    (0.44, -185.0),
-                    (0.52, -130.0),
-                    (0.6, 0.0),
-                    (0.8, 0.0),
-                ],
-            );
+            // Flight, added after the feet are placed on the ground: zero on the ground, so the
+            // feet never sink before takeoff or after landing.
+            p.flights.push((BODY_Y, 0.29, 0.6, 185.0));
             p
         }
         Motion::Sit => {
@@ -603,11 +603,11 @@ impl Timeline {
                 .get("at")
                 .and_then(serde_json::Value::as_f64)
                 .ok_or_else(|| anyhow!("timeline[{index}] needs a numeric at (seconds)"))?;
-            if !(0.0..=3600.0).contains(&at) {
-                bail!("timeline[{index}].at must be between 0 and 3600 seconds");
+            if !(0.0..=MAX_SPAN).contains(&at) {
+                bail!("timeline[{index}].at must be between 0 and {MAX_SPAN} seconds");
             }
-            if out.times.last().is_some_and(|last| at <= *last) {
-                bail!("timeline times must be strictly increasing (timeline[{index}].at = {at})");
+            if out.times.last().is_some_and(|last| at < last + MIN_STEP) {
+                bail!("timeline times must increase by at least {MIN_STEP} s (timeline[{index}].at = {at})");
             }
             let mut ease = Ease::Linear;
             for (key, value) in object {
@@ -754,12 +754,18 @@ impl Sequence {
             .with_context(|| format!("sequence[{index}]"))?;
             let duration = number("duration")?
                 .ok_or_else(|| anyhow!("sequence[{index}] needs a duration in seconds"))?;
-            if !(0.01..=3600.0).contains(&duration) {
-                bail!("sequence[{index}].duration must be between 0.01 and 3600 seconds");
+            if !(0.01..=MAX_SPAN).contains(&duration) {
+                bail!("sequence[{index}].duration must be between 0.01 and {MAX_SPAN} seconds");
             }
-            let blend = number("blend")?.unwrap_or(if index == 0 { 0.0 } else { 0.4 });
-            if blend < 0.0 || blend > duration {
-                bail!("sequence[{index}].blend must be between 0 and the step's duration");
+            let blend = number("blend")?.unwrap_or(if index == 0 {
+                0.0
+            } else {
+                0.4f64.min(duration)
+            });
+            if blend < 0.0 || blend > duration || (blend > 0.0 && blend < 0.01) {
+                bail!(
+                    "sequence[{index}].blend must be 0, or between 0.01 s and the step's duration"
+                );
             }
             let phase = number("phase")?;
             if phase.is_some_and(|p| !(0.0..=1.0).contains(&p)) {
@@ -825,6 +831,9 @@ impl Sequence {
                 step
             })
             .collect();
+        if start > MAX_SPAN {
+            bail!("sequence lasts {start} s; the limit is {MAX_SPAN} s");
+        }
         Ok(Self { steps, starts })
     }
 
@@ -962,16 +971,31 @@ impl Source {
     }
 }
 
-/// `0..=span` every `1 / per_second` seconds, plus `marks`, sorted and deduplicated.
+/// Longest timeline or sequence, in seconds: it bounds every sample grid built from them.
+pub const MAX_SPAN: f64 = 600.0;
+/// Smallest spacing of authored times (timeline keys): one millisecond, so every key keeps its own
+/// keyframe when times and CSS offsets are written out.
+pub const MIN_STEP: f64 = 0.001;
+
+/// `marks` (authored times, all kept) plus `0..=span` every `1 / per_second` seconds, leaving out
+/// generated times closer than `MIN_STEP` to a mark; sorted, without duplicates.
 fn grid(span: f64, per_second: f64, marks: &[f64]) -> Vec<f64> {
-    let mut times: Vec<f64> = marks.iter().map(|m| m.clamp(0.0, span)).collect();
+    let mut marks: Vec<f64> = marks.iter().map(|m| m.clamp(0.0, span)).collect();
+    marks.push(0.0);
+    marks.push(span);
+    marks.sort_by(f64::total_cmp);
+    marks.dedup();
     let steps = (span * per_second).ceil() as usize;
+    let mut times = marks.clone();
     for i in 0..=steps {
-        times.push((i as f64 / per_second).min(span));
+        let t = (i as f64 / per_second).min(span);
+        let near = marks.iter().any(|m| (m - t).abs() < MIN_STEP);
+        if !near {
+            times.push(t);
+        }
     }
-    times.push(0.0);
     times.sort_by(f64::total_cmp);
-    times.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
+    times.dedup();
     times
 }
 
@@ -1032,6 +1056,33 @@ mod tests {
             Sequence::parse(r#"[{"motion":"walk","duration":1,"arm":2}]"#, View::Side).is_err()
         );
         assert!(Sequence::parse(r#"[{"motion":"fly","duration":1}]"#, View::Side).is_err());
+    }
+
+    #[test]
+    fn jump_never_pushes_the_body_below_the_ground() {
+        let p = preset(Motion::Jump, View::Side).unwrap();
+        for i in 0..=1000 {
+            assert!(p.pose(i as f64 / 1000.0)[BODY_Y] <= 0.0);
+        }
+        assert!(p.pose(0.445)[BODY_Y] < -180.0);
+    }
+
+    #[test]
+    fn short_steps_get_a_short_default_blend_and_keys_stay_distinct() {
+        assert!(Sequence::parse(
+            r#"[{"motion":"idle","duration":1},{"motion":"wave","duration":0.2}]"#,
+            View::Side
+        )
+        .is_ok());
+        assert!(Timeline::parse(r#"[{"at":0},{"at":0.0000005,"r-elbow":90}]"#).is_err());
+        let t = Timeline::parse(r#"[{"at":0},{"at":0.0015,"r-elbow":90},{"at":1}]"#).unwrap();
+        let times = Source::Keys {
+            timeline: t,
+            looped: false,
+        }
+        .pass_times(32, 20.0);
+        assert!(times.contains(&0.0015));
+        assert!(times.windows(2).all(|w| w[1] - w[0] >= MIN_STEP));
     }
 
     #[test]

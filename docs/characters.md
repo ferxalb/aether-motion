@@ -122,8 +122,9 @@ sideways in a front view or in 3D.
 ## Motions in sequence
 
 `sequence` chains motions. Each step needs `motion` and `duration` (seconds). Optional fields are
-`cycle`, `phase`, and `blend`. `blend` is the time to cross into the step, with a default of 0.4 s
-and 0 for the first step. Any pose channel in a step is an offset for that step only:
+`cycle`, `phase`, and `blend`. `blend` is the time to cross into the step: 0, or from 0.01 s up to the
+step's duration. It defaults to 0.4 s (or the step's duration if shorter), and to 0 for the first
+step. A sequence lasts at most 600 s. Any pose channel in a step is an offset for that step only:
 
 ```bash
 aether-motion block human-2d --set travel=auto --set duration=6 --set sequence='[
@@ -151,7 +152,8 @@ aether-motion block human-2d --set motion=none --set timeline='[
 ]'
 ```
 
-Each key holds every channel. An omitted channel keeps the previous key's value, starting from the
+Keys are at most 600 s and at least 1 ms apart, so every key keeps its own keyframe. Each key holds
+every channel. An omitted channel keeps the previous key's value, starting from the
 rest pose, which has the arms 5 degrees from the body. The easing of a key shapes the segment that
 ends there. The easings are `linear`, `ease-in`, `ease-out`, `ease-in-out`, `ease-in-cubic`,
 `ease-out-cubic`, `ease-in-out-cubic`, and `smooth`, a Catmull-Rom curve through the keys that comes

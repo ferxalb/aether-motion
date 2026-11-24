@@ -75,11 +75,9 @@ impl Stride {
 /// A `periodic` motion advances by one stride per period, split into a constant speed and a
 /// periodic part.
 pub fn stride(options: &Options, period: f64, fk: Kinematics, periodic: bool) -> Stride {
-    let steps = if periodic {
-        720
-    } else {
-        ((period * 240.0).ceil() as usize).clamp(2, 400_000)
-    };
+    // 240 steps per second resolves every gait (the shortest preset cycle has 170 of them);
+    // periods are at most 600 s, so this stays under 144,000 kinematic evaluations.
+    let steps = ((period * 240.0).ceil() as usize).clamp(720, 144_000);
     // The planted point keeps its hold while it stays within `GRIP` of the lowest point, so two
     // feet near the ground (a stop, a double support) do not trade the hold back and forth.
     const GRIP: f64 = 4.0;
