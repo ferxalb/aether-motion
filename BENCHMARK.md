@@ -1467,3 +1467,65 @@ frame from frame 300, against 61.7 ms). The baseline AVX2 evaluator gives the sa
 scalar one: `shader::tests::simd_build_matches_the_baseline` compares them bit for bit. Stills of
 nine existing examples (three frames each) were byte-identical to the build before shaders.
 
+
+## Opt-in C++ texture kernel (`cpp-kernel`)
+
+`examples/textured-shaded-3d.html`, 1920x1080, `data-hf-3d-antialias="2"`, frames 88 to 93 (the
+costliest stretch, with the brick wall's albedo and normal maps, the emissive rune strip, and the
+cutout leaf), on one generic 4-core x86-64 Linux cloud container with AVX-512 and GCC 13. A
+callgrind profile of frame 90 put 90% of instructions in per-sample shading: procedural shaders
+24% (half of it `powf`), lighting 21%, and texture sampling 13% (two `i64` divisions per texel
+for wrapping, a software `floor`, an unpredictable encoding branch). Simulated D1 misses were
+0.1%: the cost is arithmetic, not memory. Cache and branch figures come from cachegrind
+simulation; this host exposes no hardware counters.
+
+Release builds with `--features cpp-kernel` chose the texture read with `AETHER_TEX_KERNEL`. The
+baseline is the release build of the commit before the change. Variants ran round-robin after a
+warmup round.
+
+| Variant | `render --frames 88..93 --threads 2`, 3 runs (s) | Mean | `tex-kernel`, 6 frames, 1 thread (s) |
+| --- | --- | ---: | ---: |
+| Baseline (per-sample Rust) | 6.15, 6.25, 6.49 | 6.30 | - |
+| `off` (per-sample, feature build) | 6.08, 6.29, 6.06 | 6.14 | - |
+| `rust` (batched Rust) | 5.99, 6.12, 5.96 | 6.02 | 0.68, 0.69, 0.68 |
+| `rust-avx2` | 6.06, 6.31, 6.16 | 6.18 | 0.79, 0.70, 0.76 |
+| `cpp-scalar` | 6.11, 6.31, 6.01 | 6.14 | 0.73, 0.73, 0.74 |
+| `cpp-avx2` | 5.82, 5.67, 5.81 | 5.76 | 0.36, 0.38, 0.38 |
+| `cpp-avx512` | 5.68, 5.70, 5.83 | 5.74 | 0.31, 0.30, 0.28 |
+
+Every variant's six PNGs decode to pixels identical to the baseline's, and
+`kernel::tests::every_mode_matches_texture_sample` checks each mode against `Texture::sample`
+bit for bit. The SIMD kernels gather texels (`vpgatherdd`) and table values (`vgatherdpd`)
+instead of dividing (`byte / 255` comes from a compile-time table with the same quotients),
+skip alpha unless a cutout reads it, floor with `vroundpd`/`vrndscalepd`, and contain no FMA.
+The batched Rust variants are not vectorized, and `rust-avx2` calls closures compiled for the
+baseline ISA, so their software `floor` remains.
+
+Only x86-64 Linux with GCC was built and measured. Apple Silicon has no NEON path yet (aarch64
+builds compile only the scalar C++ kernel and default to the Rust path), and the MSVC and Apple
+Clang flags in `build.rs` have not been validated on Windows or macOS.
+
+## Per-sample `powf` only for `rim` and `hologram`
+
+`Shader::surface` raised the grazing-angle term `(1 - facing)^power` for every shaded sample,
+but only `rim` and `hologram` read it. It is now computed inside those two arms, from the same
+normal and eye, so their values are unchanged; the other shaders (`toon`, `checker`, `stripes`,
+`gradient`, `noise`, `water`, `dissolve`) skip a glibc `pow` call per sample. A callgrind
+profile of frame 90 had attributed about 9.5% of instructions to the `pow` calls made from
+`Shader::surface`, most of them this unused term.
+
+`examples/textured-shaded-3d.html` frames 88 to 93 (1920x1080, antialias 2: the `checker`
+ground, `toon` sphere, `water`, and `dissolve` skip the term; the `hologram` column computes it),
+default-feature release builds before and after, alternated after a warmup round, on the same
+generic 4-core x86-64 Linux container:
+
+| Build | `render --frames 88..93 --threads 2` (s) | Mean | `bench --frame 88 --count 6` `scene-3d` (s) | Mean |
+| --- | --- | ---: | --- | ---: |
+| Before | 6.18, 6.19, 6.41 | 6.26 | 6.11, 6.05, 6.03 | 6.06 |
+| After | 5.44, 5.24, 5.48 | 5.39 | 5.28, 5.25, 5.19 | 5.24 |
+
+The render is 14% faster and the `scene-3d` phase 14% (more than the instruction share, since
+`pow` costs more cycles per instruction than the surrounding arithmetic). The six frames decode to
+the same pixels as before and as the release build of the commit before the `cpp-kernel` change. A scratch scene with a
+`rim` sphere, a `hologram` column, `toon`, `stripes`, and a `checker` ground, all in view, also
+renders the same pixels before and after (frames 0, 15, 29).

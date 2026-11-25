@@ -8,6 +8,8 @@
 //! closed-form Rust functions of UV, world position, normal, and clip time, never user code, so a
 //! frame stays a pure function of time.
 
+#[cfg(feature = "cpp-kernel")]
+pub mod kernel;
 pub mod sample;
 pub mod shader;
 pub mod texture;

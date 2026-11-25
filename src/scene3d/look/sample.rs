@@ -10,7 +10,7 @@
 //! depend on threads, tiles, or render segments.
 
 use super::shader::{Input, Surface};
-use super::{Look, Wrap};
+use super::{Look, Texture, Wrap};
 use crate::scene3d::camera::View;
 use crate::scene3d::shade::{to_srgb, Lighting};
 use crate::scene3d::Material;
@@ -133,9 +133,51 @@ fn level_of(size: [usize; 2], d: [[f64; 2]; 2]) -> f64 {
     }
 }
 
+/// A sample's perspective-correct attributes and the screen footprint of its UVs: everything
+/// [`finish`] needs before it reads a texture.
+#[derive(Clone, Copy, Debug)]
+pub struct Point {
+    attr: [f64; ATTRS],
+    /// Transformed UVs (`uv-scale`, `uv-offset`, `uv-scroll` applied).
+    pub uv: [f64; 2],
+    /// d(uv)/dx and d(uv)/dy per sample step.
+    steps: [[f64; 2]; 2],
+}
+
+impl Point {
+    /// The mip level [`Texture::sample`] is given for `texture` at this point.
+    pub fn lod(&self, texture: &Texture) -> f64 {
+        level_of([texture.width(), texture.height()], self.steps)
+    }
+}
+
+/// The texture of a look that [`finish`] reads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Slot {
+    Albedo,
+    Normal,
+    Emissive,
+}
+
 /// The sRGB color (`R | G << 8 | B << 16`) of the sample at `(x, y)` (sample units), or `None`
 /// when the sample is cut out and must not be drawn.
 pub fn shade(surfaces: &Surfaces, tri: &ShadedTri, planes: &Planes, x: f64, y: f64) -> Option<u32> {
+    let p = point(surfaces, tri, planes, x, y)?;
+    let wrap: Wrap = surfaces.looks[tri.look as usize].wrap;
+    finish(surfaces, tri, &p, |_, texture| {
+        texture.sample(p.uv, p.lod(texture), wrap)
+    })
+}
+
+/// The interpolated [`Point`] at `(x, y)`, or `None` when it lies behind the eye.
+#[inline(always)]
+pub fn point(
+    surfaces: &Surfaces,
+    tri: &ShadedTri,
+    planes: &Planes,
+    x: f64,
+    y: f64,
+) -> Option<Point> {
     let at = |p: &[f64; 3]| p[0] + p[1] * x + p[2] * y;
     let winv = at(&planes[0]);
     if winv.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
@@ -144,8 +186,7 @@ pub fn shade(surfaces: &Surfaces, tri: &ShadedTri, planes: &Planes, x: f64, y: f
     let q = 1.0 / winv;
     let attr: [f64; ATTRS] = std::array::from_fn(|k| at(&planes[k + 1]) * q);
     let look = &surfaces.looks[tri.look as usize];
-    let shaded = surfaces.shaded;
-    let time = shaded.time;
+    let time = surfaces.shaded.time;
     let (su, sv) = (look.uv_scale[0], look.uv_scale[1]);
     let uv = [
         attr[0] * su + look.uv_offset[0] + look.uv_scroll[0] * time,
@@ -159,14 +200,32 @@ pub fn shade(surfaces: &Surfaces, tri: &ShadedTri, planes: &Planes, x: f64, y: f
             (planes[2][axis] - attr[1] * wg) * q * sv,
         ]
     };
-    let steps = [grad(1), grad(2)];
-    let lod = |texture: &super::Texture| level_of([texture.width(), texture.height()], steps);
-    let wrap: Wrap = look.wrap;
+    Some(Point {
+        attr,
+        uv,
+        steps: [grad(1), grad(2)],
+    })
+}
+
+/// Shades `p` with the textures read through `read(slot, texture)` (which must return what
+/// [`Texture::sample`] returns for `p.uv` and `p.lod(texture)`).
+#[inline(always)]
+pub fn finish(
+    surfaces: &Surfaces,
+    tri: &ShadedTri,
+    p: &Point,
+    mut read: impl FnMut(Slot, &Texture) -> [f64; 4],
+) -> Option<u32> {
+    let attr = p.attr;
+    let uv = p.uv;
+    let look = &surfaces.looks[tri.look as usize];
+    let shaded = surfaces.shaded;
+    let time = shaded.time;
 
     let mut albedo = [1.0; 3];
     let mut alpha = 1.0;
     if let Some(texture) = &look.albedo {
-        let s = texture.sample(uv, lod(texture), wrap);
+        let s = read(Slot::Albedo, texture);
         albedo = [s[0], s[1], s[2]];
         alpha = s[3];
     }
@@ -190,7 +249,7 @@ pub fn shade(surfaces: &Surfaces, tri: &ShadedTri, planes: &Planes, x: f64, y: f
                 } else {
                     side
                 };
-                let s = map.sample(uv, lod(map), wrap);
+                let s = read(Slot::Normal, map);
                 let k = look.normal_strength;
                 let local = [
                     (s[0] * 2.0 - 1.0) * k,
@@ -207,7 +266,7 @@ pub fn shade(surfaces: &Surfaces, tri: &ShadedTri, planes: &Planes, x: f64, y: f
 
     let mut emissive = look.emissive;
     if let Some(map) = &look.emissive_map {
-        let s = map.sample(uv, lod(map), wrap);
+        let s = read(Slot::Emissive, map);
         emissive = std::array::from_fn(|i| emissive[i] * s[i]);
     }
     let eye = unit(surfaces.view.toward_viewer(pos)).unwrap_or(normal);

@@ -35,6 +35,13 @@ gpu = ["dep:wgpu", "dep:pollster"]
 # CUDA backend for `data-hf-3d` scenes (Linux, NVIDIA), selected with `--3d-backend cuda`. Opt-in:
 # it loads libcuda at run time and needs the kernel built by `tools/build_cuda_kernel.py`.
 cuda = []
+# Opt-in C++ kernel for the texture reads of textured 3D meshes (scalar, AVX2, AVX-512F, chosen
+# at run time); builds native/texture_kernel.cpp with the system C++ compiler. See
+# src/scene3d/look/kernel.rs.
+cpp-kernel = ["dep:cc"]
+
+[build-dependencies]
+cc = { version = "1", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
