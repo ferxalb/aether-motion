@@ -1,0 +1,23 @@
+<!-- Lower third for a 1920x1080 scene: a name and a role on a glass bar that dissolves in along a procedural noise edge with a glowing rim. Wrap it in a clip that sets data-start and data-duration (3 s or more) and add data-hf-fade-out to that clip for the exit. -->
+<style>
+  #{{id|lower}} { position: absolute; left: 120px; top: 812px; width: 860px; height: 150px; }
+  .{{id|lower}}-bar { position: absolute; left: 0; top: 0; width: 860px; height: 150px; border-radius: 22px; overflow: hidden; }
+  .{{id|lower}}-mark { position: absolute; left: 40px; top: 36px; width: 8px; height: 78px; border-radius: 4px; background: linear-gradient(180deg, var(--accent, #4be0b8), var(--accent-2, #6f8dff)); }
+  .{{id|lower}}-name { position: absolute; left: 76px; top: 26px; width: 760px; font-size: 52px; font-weight: 800; color: var(--text, #f5f8ff); }
+  .{{id|lower}}-role { position: absolute; left: 78px; top: 90px; width: 760px; font-size: 28px; font-weight: 500; letter-spacing: 2px; color: var(--muted, #8fa3c4); }
+</style>
+<div id="{{id|lower}}">
+  <div class="{{id|lower}}-bar" data-hf-shader="
+    let n = fbm(px / 46.0 + vec2(0.0, t * 0.25), 4);
+    let f = uv.x * 0.8 + n * 0.2;
+    let edge = progress * 1.12 - 0.06;
+    let body = smoothstep(edge, edge - 0.03, f);
+    let rim = smoothstep(0.022, 0.0, abs(f - edge)) * smoothstep(1.0, 0.9, progress) * step(0.001, progress);
+    let sheen = 0.85 + 0.3 * noise(vec2(px.x / 170.0 - t * 0.35, px.y / 70.0));
+    let c = mix(panel, panel * 1.5, uv.y) * sheen;
+    rgba(mix(c, accent, rim), max(body * 0.94, rim))
+  " data-hf-shader-uniforms='{"panel": "{{panel|#121a2e}}", "accent": "var(--accent, #4be0b8)", "progress": 0}' data-hf-shader-keyframes='[{"at": 0, "progress": 0}, {"at": 0.9, "progress": 1, "easing": "ease-in-out-cubic"}]'></div>
+  <div class="{{id|lower}}-mark" data-hf-keyframes='[{"at": 0.35, "y": 20, "opacity": 0}, {"at": 0.85, "y": 0, "opacity": 1, "easing": "ease-out-expo"}]'></div>
+  <div class="{{id|lower}}-name" data-hf-keyframes='[{"at": 0.45, "x": -24, "opacity": 0}, {"at": 1.05, "x": 0, "opacity": 1, "easing": "ease-out-expo"}]'>{{name|Ada Lovelace}}</div>
+  <div class="{{id|lower}}-role" data-hf-keyframes='[{"at": 0.6, "x": -24, "opacity": 0}, {"at": 1.2, "x": 0, "opacity": 1, "easing": "ease-out-expo"}]'>{{role|FIRST PROGRAMMER}}</div>
+</div>

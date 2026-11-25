@@ -18,6 +18,7 @@ mod rich_text;
 mod scene3d;
 mod scenes;
 mod sequence;
+mod shader;
 mod space;
 mod speed;
 mod split;

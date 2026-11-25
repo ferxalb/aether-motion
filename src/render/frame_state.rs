@@ -1,4 +1,4 @@
-//! Per-element visual state (alpha, pose, 2.5D depth, 3D scene key, image-sequence or video frame, animated filter and drop-shadow, pixel-effect, and clip-path values) sampled at one
+//! Per-element visual state (alpha, pose, 2.5D depth, 3D scene and shader keys, image-sequence or video frame, animated filter and drop-shadow, pixel-effect, and clip-path values) sampled at one
 //! instant; compared across frames to reuse pixels.
 
 use crate::model::{Content, Element};
@@ -35,6 +35,8 @@ pub(in crate::render) struct FrameState {
     /// Key of a `data-hf-3d` scene's animated state (see `Scene3d::key`): 0 when it never moves,
     /// otherwise different whenever a node, light, or the camera changes. Counts as movement.
     pub(in crate::render) scene_3d: u32,
+    /// `crate::shader::Shader::key` of a `data-hf-shader` element; 0 for still shaders and others.
+    pub(in crate::render) shader: u64,
 }
 
 /// How far ahead (seconds) a scale is compared to decide that it is changing. Comparing values at
@@ -108,6 +110,10 @@ impl FrameState {
             camera_3d: element.depth.camera_at(elapsed),
             scene_3d: match &element.content {
                 Content::Scene3d(scene) => scene.key(elapsed),
+                _ => 0,
+            },
+            shader: match &element.content {
+                Content::Shader(shader) => shader.key(elapsed),
                 _ => 0,
             },
         }

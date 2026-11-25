@@ -1,0 +1,36 @@
+<!-- Complete intro scene for a 1920x1080 composition: a liquid gradient backdrop, a glowing ring that draws itself around a monogram, a title that rises out of a mask, and a subtitle. Wrap it in a full-size clip that sets data-start and data-duration (4 s or more); add data-hf-fade-out or a data-hf-transition to that clip for the exit. Colors follow the theme. -->
+<style>
+  #{{id|intro}} { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+  .{{id|intro}}-bg { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+  .{{id|intro}}-ring { position: absolute; left: 780px; top: 150px; width: 360px; height: 360px; }
+  .{{id|intro}}-mono { position: absolute; left: 780px; top: 266px; width: 360px; font-size: 104px; font-weight: 800; color: var(--text, #f5f8ff); text-align: center; }
+  .{{id|intro}}-title { position: absolute; left: 160px; top: 590px; width: 1600px; font-size: 104px; font-weight: 800; color: var(--text, #f5f8ff); text-align: center; text-shadow: 0 8px 40px #00000080; }
+  .{{id|intro}}-sub { position: absolute; left: 360px; top: 742px; width: 1200px; font-size: 36px; line-height: 1.3; color: var(--muted, #8fa3c4); text-align: center; }
+</style>
+<div id="{{id|intro}}">
+  <div class="{{id|intro}}-bg" data-hf-shader="
+    let p = vec2(uv.x * aspect, uv.y) * 1.4;
+    let s = t * 0.08;
+    let q = vec2(fbm(vec3(p, s), 4), fbm(vec3(p + vec2(5.2, 1.3), s), 4));
+    let f = fbm(vec3(p + q * 2.2, s * 1.4), 4);
+    let k = saturate((f - 0.5) * 2.6 + 0.5);
+    let c = mix(base, tint_b * 0.6, smoothstep(0.2, 0.9, k));
+    let c = mix(c, tint_a * 0.55, smoothstep(0.4, 0.9, saturate((q.x - 0.5) * 2.6 + 0.5)) * 0.8);
+    let focus = 1.0 - smoothstep(0.1, 0.9, length((uv - vec2(0.5, 0.42)) * vec2(aspect, 1.0)) * 0.9);
+    rgb(c * (0.45 + 0.75 * focus))
+  " data-hf-shader-resolution="0.25" data-hf-shader-uniforms='{"base": "var(--bg, #070b16)", "tint_a": "var(--accent, #4be0b8)", "tint_b": "var(--accent-2, #6f8dff)"}' data-hf-keyframes='[{"at": 0, "opacity": 0}, {"at": 1, "opacity": 1, "easing": "ease-out-cubic"}]'></div>
+  <div class="{{id|intro}}-ring" data-hf-bloom="1.4" data-hf-bloom-radius="36" data-hf-shader="
+    let p = (uv - 0.5) * 2.0;
+    let pol = polar(p);
+    let along = fract(pol.y + 0.25);
+    let ring = smoothstep(0.04, 0.0, abs(pol.x - 0.8));
+    let drawn = smoothstep(progress, progress - 0.015, along);
+    let head = smoothstep(0.06, 0.0, abs(along - progress)) * step(along, progress) * smoothstep(1.02, 0.95, progress);
+    let shimmer = 0.8 + 0.4 * noise(vec2(pol.y * 28.0, t * 1.4));
+    let c = mix(tint_a, tint_b, 0.5 - 0.5 * cos(along * tau)) * shimmer + head * 0.6;
+    rgba(c, ring * drawn)
+  " data-hf-shader-uniforms='{"tint_a": "var(--accent, #4be0b8)", "tint_b": "var(--accent-2, #6f8dff)", "progress": 0}' data-hf-shader-keyframes='[{"at": 0.3, "progress": 0}, {"at": 1.8, "progress": 1.03, "easing": "ease-in-out-cubic"}]'></div>
+  <div class="{{id|intro}}-mono" data-hf-keyframes='[{"at": 0.9, "y": 16, "opacity": 0}, {"at": 1.6, "y": 0, "opacity": 1, "easing": "ease-out-expo"}]'>{{monogram|A}}</div>
+  <div class="{{id|intro}}-title" data-hf-reveal="from-bottom" data-hf-reveal-at="1.3" data-hf-reveal-duration="0.9" data-hf-keyframes='[{"at": 1.3, "y": 36}, {"at": 2.2, "y": 0, "easing": "ease-out-expo"}]'>{{title|Motion, rendered natively}}</div>
+  <div class="{{id|intro}}-sub" data-hf-keyframes='[{"at": 2.0, "y": 22, "opacity": 0}, {"at": 2.8, "y": 0, "opacity": 1, "easing": "ease-out-expo"}]'>{{subtitle|Deterministic frames from plain HTML.}}</div>
+</div>

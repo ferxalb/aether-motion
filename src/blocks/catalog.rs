@@ -58,6 +58,31 @@ pub(super) const ENTRIES: &[Entry] = &[
         source: Source::Template(include_str!("../../blocks/glow.html")),
     },
     Entry {
+        name: "aurora",
+        kind: Kind::Block,
+        source: Source::Template(include_str!("../../blocks/aurora.html")),
+    },
+    Entry {
+        name: "liquid-gradient",
+        kind: Kind::Block,
+        source: Source::Template(include_str!("../../blocks/liquid-gradient.html")),
+    },
+    Entry {
+        name: "tech-grid",
+        kind: Kind::Block,
+        source: Source::Template(include_str!("../../blocks/tech-grid.html")),
+    },
+    Entry {
+        name: "lower-third",
+        kind: Kind::Block,
+        source: Source::Template(include_str!("../../blocks/lower-third.html")),
+    },
+    Entry {
+        name: "intro-scene",
+        kind: Kind::Block,
+        source: Source::Template(include_str!("../../blocks/intro-scene.html")),
+    },
+    Entry {
         name: "human-2d",
         kind: Kind::Block,
         source: Source::Rig(Rig::Human2d),

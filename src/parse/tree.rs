@@ -227,8 +227,25 @@ pub(in crate::parse) fn walk(
     } else {
         None
     };
+    let shader = if super::shader::is_host(node) {
+        if scene3d.is_some() {
+            bail!("data-hf-shader cannot be combined with data-hf-3d on the same element; wrap it");
+        }
+        Some(
+            super::shader::parse_shader(node, &tag, &vars).with_context(|| {
+                format!(
+                    "<{tag}> ({})",
+                    attr(node, "id").as_deref().unwrap_or("no id")
+                )
+            })?,
+        )
+    } else {
+        None
+    };
     let content = if let Some(scene) = scene3d {
         Content::Scene3d(std::sync::Arc::new(scene))
+    } else if let Some(shader) = shader {
+        Content::Shader(std::sync::Arc::new(shader))
     } else if let Some(sequence) = sequence {
         Content::Sequence(sequence)
     } else if tag == "svg" {

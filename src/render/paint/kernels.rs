@@ -20,6 +20,15 @@ pub(in crate::render) fn use_avx2() -> bool {
     })
 }
 
+/// Whether the AVX2 builds run (`use_avx2` on x86-64, never elsewhere), for callers outside this
+/// module that dispatch their own loops.
+pub(in crate::render) fn simd_enabled() -> bool {
+    #[cfg(target_arch = "x86_64")]
+    return use_avx2();
+    #[cfg(not(target_arch = "x86_64"))]
+    false
+}
+
 /// `round_to_u8` for finite values, in a form that vectorizes: clamp with `max`/`min` (a NaN would
 /// become 0), truncate, and add one when the exact fractional part reaches one half.
 #[inline(always)]
@@ -319,10 +328,96 @@ pub(in crate::render) fn shadow_pixel(pixel: &mut [u8; 4], m: u16, rgb: [f32; 3]
     pixel[3] = if paint { 255 } else { pixel[3] };
 }
 
+dispatched!(
+    /// Linear interpolation of two rows of premultiplied shader colors: `out = top + (bottom -
+    /// top) * w` per channel (`render/paint/shader.rs`).
+    lerp_rows => lerp_rows_impl(out: &mut [[f32; 4]], top: &[[f32; 4]], bottom: &[[f32; 4]], w: f32)
+);
+
+#[inline(always)]
+fn lerp_rows_impl(out: &mut [[f32; 4]], top: &[[f32; 4]], bottom: &[[f32; 4]], w: f32) {
+    for ((o, t), b) in out.iter_mut().zip(top).zip(bottom) {
+        for ch in 0..4 {
+            o[ch] = t[ch] + (b[ch] - t[ch]) * w;
+        }
+    }
+}
+
+dispatched!(
+    /// Composites a row of premultiplied shader colors over RGBA `dest`: each pixel is scaled by
+    /// `cover` (edge coverage times opacity), blended as `c * 255 + d * (1 - a)` plus the ordered
+    /// dither offset `dither[(phase + k) & 3]` (under half a level), and rounded. Pixels with no
+    /// alpha are left untouched, alpha included, as an early skip would leave them.
+    shader_blend_row => shader_blend_row_impl(
+        dest: &mut [u8],
+        src: &[[f32; 4]],
+        cover: &[f32],
+        dither: &[f32; 4],
+        phase: usize,
+    )
+);
+
+#[inline(always)]
+fn shader_blend_row_impl(
+    dest: &mut [u8],
+    src: &[[f32; 4]],
+    cover: &[f32],
+    dither: &[f32; 4],
+    phase: usize,
+) {
+    for (k, ((d, p), &c)) in dest.chunks_exact_mut(4).zip(src).zip(cover).enumerate() {
+        let a = p[3] * c;
+        let keep = 1.0 - a;
+        let offset = dither[(phase + k) & 3];
+        let paint = a > 0.0;
+        for ch in 0..3 {
+            let value = round_clamped(p[ch] * c * 255.0 + f32::from(d[ch]) * keep + offset);
+            d[ch] = if paint { value } else { d[ch] };
+        }
+        d[3] = if paint { 255 } else { d[3] };
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::render::paint::float_ops::round_to_u8;
+
+    #[test]
+    fn shader_blend_row_matches_the_skipping_blend() {
+        let src: Vec<[f32; 4]> = (0..37)
+            .map(|i| {
+                let a = (i % 7) as f32 / 6.0;
+                [a * 0.9, a * 0.31, a * (i % 3) as f32 / 2.0, a]
+            })
+            .collect();
+        let cover: Vec<f32> = (0..37).map(|i| ((i * 13) % 11) as f32 / 10.0).collect();
+        let dither = [-0.4, 0.1, 0.3, -0.2];
+        let start: Vec<u8> = (0..37 * 4).map(|i| (i * 53 % 256) as u8).collect();
+        let mut dest = start.clone();
+        shader_blend_row(&mut dest, &src, &cover, &dither, 2);
+        for k in 0..37 {
+            let (p, c) = (src[k], cover[k]);
+            let a = p[3] * c;
+            let mut expected = [
+                start[k * 4],
+                start[k * 4 + 1],
+                start[k * 4 + 2],
+                start[k * 4 + 3],
+            ];
+            if a > 0.0 {
+                for ch in 0..3 {
+                    expected[ch] = round_clamped(
+                        p[ch] * c * 255.0
+                            + f32::from(expected[ch]) * (1.0 - a)
+                            + dither[(2 + k) & 3],
+                    );
+                }
+                expected[3] = 255;
+            }
+            assert_eq!(&dest[k * 4..k * 4 + 4], &expected, "pixel {k}");
+        }
+    }
 
     #[test]
     fn round_clamped_matches_round_to_u8() {

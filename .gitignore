@@ -24,6 +24,9 @@ aether-motion-api
 *.md
 !docs/native-physics-and-volumetrics.md
 !docs/characters.md
+!docs/shaders.md
+!docs/procedural.md
+!skills/aether-motion-shaders/SKILL.md
 
 # Procedural textures of examples/textured-shaded-3d.html.
 !examples/assets/textures/*.png
