@@ -1504,3 +1504,28 @@ baseline ISA, so their software `floor` remains.
 Only x86-64 Linux with GCC was built and measured. Apple Silicon has no NEON path yet (aarch64
 builds compile only the scalar C++ kernel and default to the Rust path), and the MSVC and Apple
 Clang flags in `build.rs` have not been validated on Windows or macOS.
+
+## Per-sample `powf` only for `rim` and `hologram`
+
+`Shader::surface` raised the grazing-angle term `(1 - facing)^power` for every shaded sample,
+but only `rim` and `hologram` read it. It is now computed inside those two arms, from the same
+normal and eye, so their values are unchanged; the other shaders (`toon`, `checker`, `stripes`,
+`gradient`, `noise`, `water`, `dissolve`) skip a glibc `pow` call per sample. A callgrind
+profile of frame 90 had attributed about 9.5% of instructions to the `pow` calls made from
+`Shader::surface`, most of them this unused term.
+
+`examples/textured-shaded-3d.html` frames 88 to 93 (1920x1080, antialias 2: the `checker`
+ground, `toon` sphere, `water`, and `dissolve` skip the term; the `hologram` column computes it),
+default-feature release builds before and after, alternated after a warmup round, on the same
+generic 4-core x86-64 Linux container:
+
+| Build | `render --frames 88..93 --threads 2` (s) | Mean | `bench --frame 88 --count 6` `scene-3d` (s) | Mean |
+| --- | --- | ---: | --- | ---: |
+| Before | 6.18, 6.19, 6.41 | 6.26 | 6.11, 6.05, 6.03 | 6.06 |
+| After | 5.44, 5.24, 5.48 | 5.39 | 5.28, 5.25, 5.19 | 5.24 |
+
+The render is 14% faster and the `scene-3d` phase 14% (more than the instruction share, since
+`pow` costs more cycles per instruction than the surrounding arithmetic). The six frames decode to
+the same pixels as before and as the release build of the commit before the `cpp-kernel` change. A scratch scene with a
+`rim` sphere, a `hologram` column, `toon`, `stripes`, and a `checker` ground, all in view, also
+renders the same pixels before and after (frames 0, 15, 29).

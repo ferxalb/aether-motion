@@ -261,16 +261,21 @@ fn normalize(v: [f64; 3]) -> [f64; 3] {
 impl Shader {
     /// Edits the sample before lighting.
     pub fn surface(&self, input: &Input, s: &mut Surface) {
-        let facing = dot3(s.normal, input.eye).clamp(0.0, 1.0);
-        let edge = (1.0 - facing).powf(self.power);
+        // Grazing-angle term of `rim` and `hologram`, evaluated only by them (a `powf` per sample).
+        let edge = |normal: [f64; 3]| {
+            let facing = dot3(normal, input.eye).clamp(0.0, 1.0);
+            (1.0 - facing).powf(self.power)
+        };
         match self.kind {
             ShaderKind::Toon => {}
             ShaderKind::Rim => {
+                let edge = edge(s.normal);
                 for (e, c) in s.emissive.iter_mut().zip(self.color) {
                     *e += c * edge * self.strength;
                 }
             }
             ShaderKind::Hologram => {
+                let edge = edge(s.normal);
                 let phase = (input.pos[1] + input.time * self.speed) * self.scale / 100.0;
                 let lines = 0.5 + 0.5 * (phase * std::f64::consts::TAU).sin();
                 let flicker = 0.9 + 0.1 * (input.time * 37.0).sin();
