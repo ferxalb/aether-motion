@@ -365,7 +365,8 @@ fn shader_blend_row_impl(
     dither: &[f32; 4],
     phase: usize,
 ) {
-    for (k, ((d, p), &c)) in dest.chunks_exact_mut(4).zip(src).zip(cover).enumerate() {
+    let (pixels, _) = dest.as_chunks_mut::<4>();
+    for (k, ((d, p), &c)) in pixels.iter_mut().zip(src).zip(cover).enumerate() {
         let a = p[3] * c;
         let keep = 1.0 - a;
         let offset = dither[(phase + k) & 3];

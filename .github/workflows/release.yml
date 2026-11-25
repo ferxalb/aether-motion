@@ -24,7 +24,7 @@ jobs:
             target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -59,7 +59,7 @@ jobs:
             cp "target/$TARGET/release/aether-motion" "$name/"
             tar czf "$name.tar.gz" "$name"
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.2
         if: github.ref_type == 'tag'
         with:
           name: ${{ matrix.target }}
@@ -74,7 +74,7 @@ jobs:
     needs: build
     runs-on: macos-15
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8.0.2
         with:
           pattern: '*-apple-darwin'
           merge-multiple: true
@@ -100,7 +100,7 @@ jobs:
           fi
           arch -x86_64 "$binary" --version
           tar czf "$universal.tar.gz" "$universal"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: universal-apple-darwin
           path: aether-motion-${{ github.ref_name }}-universal-apple-darwin.tar.gz
@@ -114,8 +114,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/download-artifact@v8.0.2
         with:
           path: dist
           merge-multiple: true
@@ -139,7 +139,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -147,7 +147,7 @@ jobs:
           package-manager-cache: false
       - name: Use npm 11 with staged publishing support
         run: npm install -g 'npm@^11.15.0' && npm --version
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8.0.2
         with:
           path: dist
           merge-multiple: true
@@ -167,7 +167,7 @@ jobs:
         run: |
           mkdir npm-tarballs
           npm pack ./npm-dist/cli --pack-destination npm-tarballs
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: npm-tarballs
           path: npm-tarballs/*.tgz

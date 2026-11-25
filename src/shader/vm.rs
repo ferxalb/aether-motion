@@ -224,7 +224,8 @@ fn run_impl(code: &Code, values: &[f32], grid: &Grid, out: &mut [f32], regs: &mu
             let count = CHUNK.min(grid.width - x0);
             let [r, g, b, a] = code.output.map(|reg| regs[reg as usize]);
             let row = &mut out[(j * grid.width + x0) * 4..(j * grid.width + x0 + count) * 4];
-            for (i, pixel) in row.chunks_exact_mut(4).enumerate() {
+            let (pixels, _) = row.as_chunks_mut::<4>();
+            for (i, pixel) in pixels.iter_mut().enumerate() {
                 #[allow(clippy::manual_clamp)]
                 let alpha = a[i].max(0.0).min(1.0);
                 #[allow(clippy::manual_clamp)]
