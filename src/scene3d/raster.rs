@@ -19,6 +19,12 @@ use super::camera::{ClipMatrix, Placement, View};
 use super::frame::Triangle;
 use super::look::sample::{self, Planes, ShadedTri, Surfaces, ATTRS};
 
+/// Samples of a textured triangle collected for batched texture reads (`cpp-kernel` builds).
+#[cfg(feature = "cpp-kernel")]
+type Batch = super::look::kernel::Batch;
+#[cfg(not(feature = "cpp-kernel"))]
+type Batch = ();
+
 /// Receives resolved rows: `(x, y, row)` with `row` straight-alpha RGBA starting at target px
 /// `(x, y)`.
 pub type RowSink<'a> = dyn FnMut(usize, usize, &[[u8; 4]]) + 'a;
@@ -129,6 +135,7 @@ pub struct Scratch {
     color: Vec<u32>,
     depth: Vec<f32>,
     out: Vec<[u8; 4]>,
+    batch: Batch,
 }
 
 impl Scratch {
@@ -257,6 +264,7 @@ pub(super) fn rasterize_with_beam(
                     stride,
                     &mut scratch.color,
                     &mut scratch.depth,
+                    &mut scratch.batch,
                 );
             }
             // Resolve each output row of the tile.
@@ -553,6 +561,7 @@ fn clip_plane<const N: usize>(polygon: &[[f64; N]], plane: fn([f64; 4]) -> f64) 
 
 /// Covers the samples of one tile (`origin` .. `limit`, absolute region samples) with `s`, in its
 /// flat color or, with a `shaded` piece, in the color [`sample::shade`] gives each sample.
+#[allow(clippy::too_many_arguments)]
 fn fill(
     s: &Setup,
     shaded: Option<(&Piece, &Surfaces)>,
@@ -561,6 +570,7 @@ fn fill(
     stride: usize,
     color: &mut [u32],
     depth: &mut [f32],
+    batch: &mut Batch,
 ) {
     let x0 = s.bounds[0].max(origin[0]);
     let x1 = s.bounds[2].min(limit[0]);
@@ -585,6 +595,16 @@ fn fill(
     }
     let [z0, zx, zy] = s.depth;
     let width = x1 - x0;
+    // Textured triangles may collect their samples and shade them together once every row is
+    // known (each sample is covered once per triangle, so the deferred depth writes are exact).
+    #[cfg(feature = "cpp-kernel")]
+    let batched = shaded.is_some_and(|(piece, surfaces)| Batch::wants(surfaces, piece.tri));
+    #[cfg(feature = "cpp-kernel")]
+    if batched {
+        batch.clear();
+    }
+    #[cfg(not(feature = "cpp-kernel"))]
+    let _ = batch;
     for y in y0..y1 {
         // The covered samples of this row, solved exactly from each edge's integer inequality
         // `value + step * i >= 0` (the same decision a per-sample test makes).
@@ -613,6 +633,10 @@ fn fill(
                             depth[at] = z;
                             color[at] = s.color;
                         }
+                        #[cfg(feature = "cpp-kernel")]
+                        Some(_) if batched => {
+                            batch.push(at, x as f64 + 0.5, y as f64 + 0.5, z);
+                        }
                         Some((piece, surfaces)) => {
                             let tri = &surfaces.shaded.tris[piece.tri as usize];
                             let (sx, sy) = (x as f64 + 0.5, y as f64 + 0.5);
@@ -628,6 +652,10 @@ fn fill(
         for k in 0..3 {
             row_values[k] += step_y[k];
         }
+    }
+    #[cfg(feature = "cpp-kernel")]
+    if let Some((piece, surfaces)) = shaded.filter(|_| batched) {
+        super::look::kernel::flush(batch, surfaces, piece.tri, &piece.planes, color, depth);
     }
 }
 
@@ -813,6 +841,7 @@ mod tests {
                 stride,
                 &mut actual.0,
                 &mut actual.1,
+                &mut Batch::default(),
             );
             assert_eq!(expected, actual, "{v:?}");
         }

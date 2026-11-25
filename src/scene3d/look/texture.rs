@@ -211,6 +211,27 @@ impl Texture {
     }
 }
 
+/// Raw access for the opt-in native sampling kernels (`look::kernel`).
+#[cfg(feature = "cpp-kernel")]
+impl Texture {
+    /// Level `i` as `(rgba pixels, width, height)`.
+    pub(super) fn level_raw(&self, i: usize) -> (&[[u8; 4]], usize, usize) {
+        let level = &self.levels[i];
+        (&level.pixels, level.width, level.height)
+    }
+
+    /// Whether texels are sRGB (decoded through [`srgb_lut`]) rather than linear data.
+    pub(super) fn is_srgb(&self) -> bool {
+        self.encoding == Encoding::Srgb
+    }
+}
+
+/// The sRGB-to-linear table [`Texture::sample`] decodes color texels with.
+#[cfg(feature = "cpp-kernel")]
+pub(super) fn srgb_lut() -> &'static [f64; 256] {
+    srgb_table()
+}
+
 /// The next mip level: each pixel is the mean of a 2x2 block (edges clamp for odd sizes).
 fn shrink(source: &Level, encoding: Encoding) -> Level {
     let (width, height) = ((source.width / 2).max(1), (source.height / 2).max(1));
