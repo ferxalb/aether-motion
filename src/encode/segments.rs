@@ -110,24 +110,27 @@ pub(super) fn encode_segments(
     let failed = AtomicBool::new(false);
     let (sender, receiver) = mpsc::channel::<Result<EncodedSegment>>();
     std::thread::scope(|scope| -> Result<(usize, usize)> {
-        for mut fork in forks {
+        for (slot, mut fork) in forks.into_iter().enumerate() {
             let (sender, next, failed, end) = (sender.clone(), &next, &failed, segments.end);
             std::thread::Builder::new()
                 .name("aether-segment".into())
-                .spawn_scoped(scope, move || loop {
-                    let index = next.fetch_add(1, Ordering::Relaxed);
-                    if index >= end || failed.load(Ordering::Relaxed) {
-                        break;
-                    }
-                    let start = index * segment_len;
-                    let stop = (start + segment_len).min(frame_count);
-                    let result =
-                        encode_segment(&mut fork, index, start..stop, (fps, quality), tracker);
-                    if result.is_err() {
-                        failed.store(true, Ordering::Relaxed);
-                    }
-                    if sender.send(result).is_err() {
-                        break;
+                .spawn_scoped(scope, move || {
+                    crate::system::pin_worker(slot);
+                    loop {
+                        let index = next.fetch_add(1, Ordering::Relaxed);
+                        if index >= end || failed.load(Ordering::Relaxed) {
+                            break;
+                        }
+                        let start = index * segment_len;
+                        let stop = (start + segment_len).min(frame_count);
+                        let result =
+                            encode_segment(&mut fork, index, start..stop, (fps, quality), tracker);
+                        if result.is_err() {
+                            failed.store(true, Ordering::Relaxed);
+                        }
+                        if sender.send(result).is_err() {
+                            break;
+                        }
                     }
                 })
                 .context("could not start an encoding thread")?;

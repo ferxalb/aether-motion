@@ -28,7 +28,7 @@ impl Surface {
     /// A zeroed surface; the caller fills it before the first frame.
     pub(in crate::render) fn blank(width: u32, height: u32, scale: f32, backdrop: Color) -> Self {
         Self {
-            pixels: vec![0; width as usize * height as usize * 4],
+            pixels: crate::system::zeroed_buffer(width as usize * height as usize * 4),
             width,
             height,
             painted: None,

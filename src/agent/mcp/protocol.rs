@@ -46,6 +46,8 @@ fn run_tool(name: &str, arguments: &Value, params: &Value) -> Value {
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         call(name, arguments, reporter.as_ref().map(|r| r as _))
     }));
+    // The server outlives each call: give the frames, caches, and encoders it freed back to the OS.
+    crate::system::trim_heap();
     let message = match outcome {
         Ok(Ok(result)) => return result,
         Ok(Err(error)) => format!("{error:#}"),

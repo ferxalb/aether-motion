@@ -1529,3 +1529,14 @@ The render is 14% faster and the `scene-3d` phase 14% (more than the instruction
 the same pixels as before and as the release build of the commit before the `cpp-kernel` change. A scratch scene with a
 `rim` sphere, a `hologram` column, `toon`, `stripes`, and a `checker` ground, all in view, also
 renders the same pixels before and after (frames 0, 15, 29).
+
+## Native host layer and batch jobs (2026-11-26)
+
+Release build with `--features native`, 4-CPU container, `bench examples/premium-promo.html --frame 150 --threads 1`, three alternating runs each (ms per frame; median in bold). The kernel's transparent huge pages were in `madvise` mode.
+
+| Size, frames | Huge-page hint on | Off |
+| --- | --- | --- |
+| 1080p, 20 | 72.7 / **72.4** / 70.5 | 74.3 / **72.0** / 70.9 |
+| 4K, 10 | 277.4 / **273.8** / 265.2 | 269.1 / **271.0** / 282.4 |
+
+The difference is within run-to-run noise at both sizes, and peak RSS was the same (57.5 MiB at 1080p, about 102.5 MiB at 4K, from `AETHER_PROFILE=1`), so the hint stays opt-in (`AETHER_HUGE_PAGES=on`). The 1080p MP4s with and without it are byte-identical (`cmp`), and a `render` run through `batch` equals the same `render` run as its own process.

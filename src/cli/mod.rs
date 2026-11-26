@@ -5,7 +5,7 @@
 //! (`error: ...` with a hint; exit code 2 for usage errors, 1 for everything else).
 //!
 //! Commands, one file each: `init`, `preview`, `check_cmd`, `add`, `block_cmd`, `captions_cmd`,
-//! `agent_cmd`, `doctor`, `inspect`, `bench`, and `render/` (project mode without a file, direct
+//! `agent_cmd`, `doctor`, `inspect`, `bench`, `batch` (many commands in one long-lived process), and `render/` (project mode without a file, direct
 //! mode with one; its flags, shared with `inspect` and `bench`, are parsed once in `options`).
 //! Shared pieces: `args` (parsing and [`args::UsageError`]), `suggest` ("did you mean"), `help`
 //! (the command catalog and its layout), `ui` (colors, status lines, wrapping), `project`
@@ -15,6 +15,7 @@
 mod add;
 mod agent_cmd;
 pub mod args;
+mod batch;
 mod bench;
 mod block_cmd;
 mod captions_cmd;
@@ -37,9 +38,9 @@ use args::UsageError;
 use ui::Style;
 
 /// Every command `main` dispatches, in overview order.
-pub const COMMAND_NAMES: [&str; 12] = [
+pub const COMMAND_NAMES: [&str; 13] = [
     "init", "preview", "render", "check", "add", "block", "captions", "agent", "mcp", "doctor",
-    "inspect", "bench",
+    "inspect", "bench", "batch",
 ];
 
 /// Runs the CLI on `args` (without the program name) and returns the process exit code.
@@ -77,7 +78,7 @@ pub fn main(args: &[String]) -> i32 {
     }
     // Printing commands end quietly when their reader goes away (`... | head`), as Unix tools do.
     // The MCP server and renders keep the default, so a closed pipe stays a reported error there.
-    if !matches!(command.as_str(), "mcp" | "render") {
+    if !matches!(command.as_str(), "mcp" | "render" | "batch") {
         restore_sigpipe();
     }
     // `-h` and `--help` anywhere after the command show its page instead of running it.
@@ -108,6 +109,7 @@ fn run(command: &str, rest: &[String]) -> Result<i32> {
         "render" => done(render::run(rest)),
         "inspect" => done(inspect::run(rest)),
         "bench" => done(bench::run(rest)),
+        "batch" => done(batch::run(rest)),
         _ => unreachable!("dispatched commands are listed in COMMAND_NAMES"),
     }
 }

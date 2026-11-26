@@ -1,4 +1,4 @@
-//! Library facade: `model` (data), `parse` (input), `render` (frames), `encode` (MP4), `agent` (check and MCP), `audio` (decode, mix, and AAC for `<audio>`), `speed` (variable playback speed curves for `<video>` and `<audio>`), `vector` (path measurement, self-drawing SVG strokes), `blocks` (ready-made blocks and themes), `camera` (the cinematic camera rig: smooth zoom and focus curves and subject tracking), `space` (2.5D spaces: hierarchical 3D plane transforms and perspective or orthographic projection), `captions` (transcript import, cue grouping, SRT/VTT export), `cli` (the command-line interface: dispatch, help, output style, and every subcommand), `setup` (agent skills and MCP config), `shader` (procedural `data-hf-shader` layers: the expression language, its compiler, and the deterministic vectorized evaluator), `profile` (the opt-in `AETHER_PROFILE` phase timer).
+//! Library facade: `model` (data), `parse` (input), `render` (frames), `encode` (MP4), `agent` (check and MCP), `audio` (decode, mix, and AAC for `<audio>`), `speed` (variable playback speed curves for `<video>` and `<audio>`), `vector` (path measurement, self-drawing SVG strokes), `blocks` (ready-made blocks and themes), `camera` (the cinematic camera rig: smooth zoom and focus curves and subject tracking), `space` (2.5D spaces: hierarchical 3D plane transforms and perspective or orthographic projection), `captions` (transcript import, cue grouping, SRT/VTT export), `cli` (the command-line interface: dispatch, help, output style, and every subcommand), `setup` (agent skills and MCP config), `shader` (procedural `data-hf-shader` layers: the expression language, its compiler, and the deterministic vectorized evaluator), `profile` (the opt-in `AETHER_PROFILE` phase timer), `system` (host CPU, container limits, and memory hints, natively with the `native-system` feature).
 
 pub mod agent;
 pub mod audio;
@@ -16,5 +16,6 @@ pub mod setup;
 pub mod shader;
 pub mod space;
 pub mod speed;
+pub mod system;
 pub mod vector;
 pub mod video;
