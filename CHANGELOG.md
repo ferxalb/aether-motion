@@ -9,6 +9,12 @@ CLI/MCP output may still change between minor releases.
 
 ### Added
 
+- Native host layer (opt-in Cargo feature `native-system`, or `native` for every C++ component):
+  `native/system.cpp` reads the instruction sets from CPUID and XGETBV, the physical cores of the
+  affinity mask, cache sizes, and cgroup CPU and memory limits, all shown by `doctor`. It backs
+  frame buffers of 4 MiB or more with transparent huge pages (`AETHER_HUGE_PAGES=off` disables it),
+  returns freed heap to the OS after every MCP tool call, adds peak RSS to `AETHER_PROFILE=1`, and
+  with `AETHER_PIN_THREADS=1` pins segment workers to distinct physical cores. Output is unchanged.
 - Procedural shader layers: `data-hf-shader` fills an element's padding box with a per-pixel
   expression program (`let` bindings and a final `rgb`/`rgba`). It has GLSL-style math, gradient
   noise, `fbm`, `ridge`, `voronoi`, `hash`, `palette`, `hsv`, `grain`, `vignette`, and compositing

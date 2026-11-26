@@ -197,6 +197,12 @@ pub fn summary() -> String {
             out.push_str(&format!(" {name}={};", value.load(Ordering::Relaxed)));
         }
     }
+    if let Some(bytes) = crate::system::peak_rss() {
+        out.push_str(&format!(
+            "\n  peak RSS      {:>9.1} MiB",
+            bytes as f64 / 1048576.0
+        ));
+    }
     out
 }
 

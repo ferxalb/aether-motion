@@ -39,6 +39,13 @@ cuda = []
 # at run time); builds native/texture_kernel.cpp with the system C++ compiler. See
 # src/scene3d/look/kernel.rs.
 cpp-kernel = ["dep:cc"]
+# Opt-in native host layer (native/system.cpp, built with the system C++ compiler): CPUID
+# instruction sets and cache sizes, cgroup CPU and memory limits, peak RSS, returning freed heap
+# to the OS after renders, huge pages for large pixel buffers, and opt-in worker pinning. It never
+# changes output. See src/system/mod.rs.
+native-system = ["dep:cc"]
+# Every native C++ component.
+native = ["cpp-kernel", "native-system"]
 
 [build-dependencies]
 cc = { version = "1", optional = true }

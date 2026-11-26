@@ -32,6 +32,63 @@ impl Report {
     }
 }
 
+/// CPU, instruction sets, caches, and container limits, as the renderer sees them.
+fn system_section(report: &Report) {
+    let style = report.style;
+    report.section("System");
+    let cpu = crate::system::cpu();
+    let name = [cpu.vendor.as_str(), cpu.brand.as_str()]
+        .iter()
+        .rev()
+        .find(|s| !s.is_empty())
+        .map_or("CPU".to_string(), |s| s.to_string());
+    let cores = match (cpu.logical, cpu.physical) {
+        (Some(l), Some(p)) => format!("{l} CPUs available, {p} physical cores"),
+        (Some(l), None) => format!("{l} CPUs available"),
+        _ => String::new(),
+    };
+    println!("{}", line(style, Mark::Info, &name, &cores));
+    let features = cpu.feature_names();
+    if !features.is_empty() {
+        println!(
+            "{}",
+            line(style, Mark::Info, "instruction sets", &features.join(" "))
+        );
+    }
+    let kib = |bytes: Option<u64>| bytes.map(|b| format!("{} KiB", b / 1024));
+    let caches: Vec<String> = [("L1d", cpu.l1d), ("L2", cpu.l2), ("L3", cpu.l3)]
+        .into_iter()
+        .filter_map(|(level, bytes)| kib(bytes).map(|size| format!("{level} {size}")))
+        .collect();
+    if !caches.is_empty() {
+        println!("{}", line(style, Mark::Info, "caches", &caches.join(", ")));
+    }
+    let mut limits = Vec::new();
+    if let Some(cpus) = crate::system::cpu_limit() {
+        limits.push(format!("{cpus:.2} CPUs"));
+    }
+    if let Some(bytes) = crate::system::memory_limit() {
+        limits.push(format!("{} MiB of memory", bytes / (1024 * 1024)));
+    }
+    let detail = if limits.is_empty() {
+        "none".to_string()
+    } else {
+        limits.join(", ")
+    };
+    println!("{}", line(style, Mark::Info, "container limits", &detail));
+    if !crate::system::NATIVE {
+        println!(
+            "{}",
+            line(
+                style,
+                Mark::Info,
+                "native host layer",
+                "not built (feature native-system)"
+            )
+        );
+    }
+}
+
 pub fn run() -> Result<()> {
     let style = Style::out();
     let mut report = Report { style, problems: 0 };
@@ -57,6 +114,8 @@ pub fn run() -> Result<()> {
             "optional, only for --encoder ffmpeg",
         )
     );
+
+    system_section(&report);
 
     report.section("Project");
     let root = Path::new(".");
