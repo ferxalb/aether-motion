@@ -94,8 +94,9 @@ pub fn trim_heap() -> bool {
     backend::trim_heap()
 }
 
-/// A zeroed byte buffer of `len` bytes. Large ones are backed by transparent huge pages where
-/// the OS supports them, which cuts TLB misses on full-frame passes; the contents are the same.
+/// A zeroed byte buffer of `len` bytes. With `AETHER_HUGE_PAGES=on`, large ones ask for
+/// transparent huge pages where the OS supports them; the contents are the same. Off by default:
+/// it made no measurable difference on 1080p and 4K frames (BENCHMARK.md, Native host layer).
 pub fn zeroed_buffer(len: usize) -> Vec<u8> {
     let mut buffer = vec![0u8; len];
     if len >= HUGE_PAGE_MIN && huge_pages_enabled() {
@@ -105,10 +106,10 @@ pub fn zeroed_buffer(len: usize) -> Vec<u8> {
     buffer
 }
 
-/// `AETHER_HUGE_PAGES=off` disables the huge-page hint, to compare speed and memory.
+/// `AETHER_HUGE_PAGES=on` enables the huge-page hint, to compare speed and memory.
 fn huge_pages_enabled() -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| std::env::var("AETHER_HUGE_PAGES").map_or(true, |v| v != "off"))
+    *ON.get_or_init(|| std::env::var("AETHER_HUGE_PAGES").is_ok_and(|v| v == "on"))
 }
 
 /// With `AETHER_PIN_THREADS=1`, pins the calling worker thread to the `slot`-th CPU of the

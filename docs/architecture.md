@@ -50,7 +50,7 @@ choose the same backend. The shaft uses the existing sRGB viewport layer at the 
 
 Composition, external scene, and variables files are limited to 16 MiB before they are read, and the MCP server accepts JSON-RPC messages of at most 32 MiB per line. The system font index is scanned once per process (`render/text/fonts.rs`) and cloned by each renderer.
 
-With `native-system`, frame and layer buffers of 4 MiB or more ask for transparent huge pages before they are first touched (`AETHER_HUGE_PAGES=off` opts out), the MCP server returns freed heap pages to the OS after each tool call, and `AETHER_PROFILE=1` also prints the process's peak RSS.
+With `native-system`, the MCP server returns freed heap pages to the OS after each tool call, and `AETHER_PROFILE=1` also prints the process's peak RSS. `AETHER_HUGE_PAGES=on` asks for transparent huge pages for frame and layer buffers of 4 MiB or more before they are first touched (off by default; no measurable gain, see BENCHMARK.md).
 
 The renderer keeps one RGBA frame, up to 64 MiB of scaled images, and up to 32 MiB of text masks. When the visible state matches the previous frame, it reuses the RGBA frame and the native encoder's YUV conversion.
 

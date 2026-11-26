@@ -11,8 +11,8 @@ CLI/MCP output may still change between minor releases.
 
 - Native host layer (opt-in Cargo feature `native-system`, or `native` for every C++ component):
   `native/system.cpp` reads the instruction sets from CPUID and XGETBV, the physical cores of the
-  affinity mask, cache sizes, and cgroup CPU and memory limits, all shown by `doctor`. It backs
-  frame buffers of 4 MiB or more with transparent huge pages (`AETHER_HUGE_PAGES=off` disables it),
+  affinity mask, cache sizes, and cgroup CPU and memory limits, all shown by `doctor`. With
+  `AETHER_HUGE_PAGES=on` it asks for transparent huge pages for frame buffers of 4 MiB or more. It
   returns freed heap to the OS after every MCP tool call, adds peak RSS to `AETHER_PROFILE=1`, and
   with `AETHER_PIN_THREADS=1` pins segment workers to distinct physical cores. Output is unchanged.
 - `batch`: runs many commands (`render`, `check`, `inspect`, `bench`, `block`, `captions`) in one

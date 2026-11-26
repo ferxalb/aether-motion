@@ -131,7 +131,11 @@ mod unix {
             let (id, args, cwd) = match parse_job(&line) {
                 Ok(job) => job,
                 Err(error) => {
-                    let mut out = result_line(Value::Null, 2, String::new(), started.elapsed());
+                    let id = serde_json::from_str::<Value>(&line)
+                        .ok()
+                        .and_then(|job| job.get("id").cloned())
+                        .unwrap_or(Value::Null);
+                    let mut out = result_line(id, 2, String::new(), started.elapsed());
                     out["error"] = json!(format!("{error:#}"));
                     writeln!(lines, "{out}")?;
                     lines.flush()?;
