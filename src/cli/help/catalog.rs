@@ -542,6 +542,22 @@ pub const COMMANDS: &[Command] = &[
             "Time 20 frames from frame 90",
         )],
     },
+    Command {
+        name: "batch",
+        args: "",
+        group: Group::Agents,
+        summary: "Run many commands in one long-lived process",
+        usage: &["aether-motion batch < jobs.jsonl"],
+        about: &[
+            "Reads one JSON job per stdin line, {\"id\": ..., \"args\": [\"render\", \"a.html\", \"-o\", \"a.mp4\"], \"cwd\": \"dir\"}, and runs them one after another in this process, so the font index and other per-process setup are built once. Allowed commands: render, check, inspect, bench, block, captions.",
+            "After each job one line goes to stdout: {\"id\", \"exit\", \"stdout\" (what the command printed, up to 4 MiB), \"elapsedMs\", \"peakRssBytes\"}. Stderr passes through, including --progress json updates. Freed memory is returned to the OS between jobs. A render lowers the priority of the whole process unless it passes --priority normal. Linux and macOS only.",
+        ],
+        sections: &[],
+        examples: &[(
+            "echo '{\"id\":1,\"args\":[\"check\",\"promo.html\"]}' | aether-motion batch",
+            "Check a composition through the job runner",
+        )],
+    },
 ];
 
 /// The entry for `name`.

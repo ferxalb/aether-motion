@@ -15,6 +15,10 @@ CLI/MCP output may still change between minor releases.
   frame buffers of 4 MiB or more with transparent huge pages (`AETHER_HUGE_PAGES=off` disables it),
   returns freed heap to the OS after every MCP tool call, adds peak RSS to `AETHER_PROFILE=1`, and
   with `AETHER_PIN_THREADS=1` pins segment workers to distinct physical cores. Output is unchanged.
+- `batch`: runs many commands (`render`, `check`, `inspect`, `bench`, `block`, `captions`) in one
+  long-lived process, one JSON job per stdin line and one result line per job on stdout (exit code,
+  captured output, elapsed time, peak RSS). Per-process setup such as the font index is built once,
+  and freed memory is returned to the OS between jobs.
 - Procedural shader layers: `data-hf-shader` fills an element's padding box with a per-pixel
   expression program (`let` bindings and a final `rgb`/`rgba`). It has GLSL-style math, gradient
   noise, `fbm`, `ridge`, `voronoi`, `hash`, `palette`, `hsv`, `grain`, `vignette`, and compositing
